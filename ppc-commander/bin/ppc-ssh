@@ -1,0 +1,56 @@
+#!/bin/bash
+# SSH to a Power Mac running Mac OS X Tiger (OpenSSH 5.x).
+# Settings come from ~/Library/Application Support/TigerDesk/config.sh
+#
+#   ppc-ssh                    interactive shell
+#   ppc-ssh 'remote command'   one command, no tty
+
+set -euo pipefail
+
+CONFIG="${TIGERDESK_CONFIG:-$HOME/Library/Application Support/TigerDesk/config.sh}"
+if [ -f "$CONFIG" ]; then
+  # shellcheck disable=SC1090
+  . "$CONFIG"
+fi
+
+: "${TIGER_HOST:?set TIGER_HOST in $CONFIG}"
+: "${TIGER_USER:?set TIGER_USER in $CONFIG}"
+TIGER_KEY="${TIGER_KEY:-$HOME/.ssh/ppc_tiger_rsa}"
+TIGER_KNOWN="${TIGER_KNOWN:-$HOME/.ssh/ppc_tiger_known_hosts}"
+
+if [ ! -f "$TIGER_KEY" ]; then
+  echo "ppc-ssh: missing $TIGER_KEY" >&2
+  exit 1
+fi
+if [ ! -f "$TIGER_KNOWN" ]; then
+  echo "ppc-ssh: missing $TIGER_KNOWN" >&2
+  exit 1
+fi
+
+SSH=(
+  ssh
+  -i "$TIGER_KEY"
+  -o IdentityAgent=none
+  -o IdentitiesOnly=yes
+  -o BatchMode=yes
+  -o PreferredAuthentications=publickey
+  -o PubkeyAuthentication=yes
+  -o PubkeyAcceptedAlgorithms=ssh-rsa
+  -o HostKeyAlgorithms=ssh-rsa
+  -o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1
+  -o Ciphers=aes128-cbc,3des-cbc,aes256-cbc
+  -o MACs=hmac-sha1,hmac-md5
+  -o RequiredRSASize=512
+  -o StrictHostKeyChecking=yes
+  -o "UserKnownHostsFile=$TIGER_KNOWN"
+  -o UpdateHostKeys=no
+  -o ConnectTimeout=15
+  -o ServerAliveInterval=30
+  -o ServerAliveCountMax=4
+)
+
+TARGET="$TIGER_USER@$TIGER_HOST"
+if [ "$#" -eq 0 ]; then
+  exec "${SSH[@]}" -t "$TARGET"
+fi
+exec "${SSH[@]}" -T "$TARGET" "$@"

@@ -1,0 +1,12 @@
+#!/bin/bash
+# MCP stdio entry point. Nothing but the protocol may be written to stdout.
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG="${TIGERDESK_CONFIG:-$HOME/Library/Application Support/TigerDesk/config.sh}"
+if [ -f "$CONFIG" ]; then
+  # shellcheck disable=SC1090
+  . "$CONFIG"
+fi
+REMOTE_COMMANDER="${REMOTE_COMMANDER:-\$HOME/ppc-commander/ppc_commander.py}"
+exec "$DIR/ppc-ssh" \
+  "exec /usr/bin/env LANG=C LC_ALL=C /usr/bin/python -u $REMOTE_COMMANDER"

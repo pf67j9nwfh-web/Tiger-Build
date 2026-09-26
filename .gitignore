@@ -1,0 +1,8 @@
+.env
+providers.json
+.DS_Store
+*.pyc
+__pycache__/
+build/
+dist/
+installer/*.pkg

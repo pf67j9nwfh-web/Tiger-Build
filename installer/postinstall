@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "Tiger Desk files are in /usr/local/tiger-desk."
+echo "As your own user, run: /usr/local/tiger-desk/scripts/setup.sh"
+exit 0
