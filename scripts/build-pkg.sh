@@ -71,12 +71,21 @@ if bad:
 print("secret scan ok")
 PY
 chmod 755 "$ROOT/installer/postinstall"
+COMPONENT="$(mktemp -d)"
+mkdir -p "$COMPONENT/scripts"
+cp "$ROOT/installer/postinstall" "$COMPONENT/scripts/postinstall"
+chmod 755 "$COMPONENT/scripts/postinstall"
 pkgbuild \
   --root "$STAGE" \
   --identifier local.jr.tigerdesk \
   --version "$VERSION" \
   --install-location /usr/local/tiger-desk \
-  --scripts "$ROOT/installer" \
+  --scripts "$COMPONENT/scripts" \
+  "$COMPONENT/TigerDesk-component.pkg"
+productbuild \
+  --distribution "$ROOT/installer/distribution.xml" \
+  --resources "$ROOT/installer/resources" \
+  --package-path "$COMPONENT" \
   "$DIST/TigerDesk-$VERSION.pkg"
-rm -rf "$STAGE"
+rm -rf "$STAGE" "$COMPONENT"
 echo "Wrote $DIST/TigerDesk-$VERSION.pkg"

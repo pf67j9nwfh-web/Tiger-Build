@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Tiger Desk 1.1</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="tigerdesk"/>
+    </choices-outline>
+    <choice id="tigerdesk" title="Tiger Desk" description="Relay for Tiger Build. API keys are added afterward in .env.">
+        <pkg-ref id="local.jr.tigerdesk"/>
+    </choice>
+    <pkg-ref id="local.jr.tigerdesk" version="1.1" auth="root">TigerDesk-component.pkg</pkg-ref>
+</installer-gui-script>

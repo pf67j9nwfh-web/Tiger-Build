@@ -54,9 +54,9 @@ To build an installer package instead:
 ./scripts/build-pkg.sh
 ```
 
-That writes `dist/TigerDesk-1.1.pkg`, which installs the bridge onto this Mac at `/usr/local/tiger-desk`. The package does not contain an API key. After installing, copy your `.env` into place and run `/usr/local/tiger-desk/scripts/setup.sh`.
+That writes `dist/TigerDesk-1.1.pkg`, which installs the relay on this Mac at `/usr/local/tiger-desk`. The package does not contain an API key. The installer’s last screen, and `/usr/local/tiger-desk/ENV-SETUP.txt`, explain how to create `.env` from `.env.example`, fill in the keys you have, edit `config.sh` for the Power Mac, and run `scripts/setup.sh`.
 
-`./scripts/build-tiger-pkg.sh` compiles Tiger Build on the Power Mac and writes `dist/TigerBuild-1.1.pkg`. That package installs the app into `/Applications` on Mac OS X 10.4. It does not contain an API key either.
+`./scripts/build-tiger-pkg.sh` compiles on the Power Mac and writes `dist/TigerBuild-1.1.pkg`. On Mac OS X 10.4 that package installs Tiger Build.app and copies ppc-commander to `~/ppc-commander/ppc_commander.py` for each user. It does not contain an API key.
 
 ## Build Tiger Build
 

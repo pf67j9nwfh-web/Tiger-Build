@@ -1,4 +1,47 @@
 #!/bin/bash
+# The Installer window shows these steps on the last page. This copy stays
+# next to the relay so they can be opened again later.
+
+cat > /usr/local/tiger-desk/ENV-SETUP.txt << 'EOF'
+Tiger Desk is installed at /usr/local/tiger-desk.
+This package does not contain API keys. Create .env yourself:
+
+1. In Terminal:
+
+   sudo cp /usr/local/tiger-desk/.env.example /usr/local/tiger-desk/.env
+   sudo chmod 600 /usr/local/tiger-desk/.env
+   sudo nano /usr/local/tiger-desk/.env
+
+2. Paste a key after the name, with no spaces around the equals sign.
+   Leave a line blank when you are not using that service.
+
+   XAI_API_KEY              Grok
+   OPENAI_API_KEY           ChatGPT
+   ANTHROPIC_API_KEY        Claude
+   ANTHROPIC_WORKSPACE_ID   only if the Claude key is not tied to one workspace
+   MISTRAL_API_KEY          Mistral
+   MUSE_API_KEY             Muse
+   GEMINI_API_KEY           Gemini
+   LOCAL_MODEL_URL          LM Studio on this Mac. The sample is http://127.0.0.1:1234/v1
+   LOCAL_API_KEY            only if that local server requires a key
+
+3. Tell the relay which Power Mac to use. The first run of setup.sh writes
+   ~/Library/Application Support/TigerDesk/config.sh from the example.
+   Set TIGER_HOST, TIGER_USER, TIGER_KEY, and TIGER_KNOWN.
+   Leave REMOTE_COMMANDER as $HOME/ppc-commander/ppc_commander.py.
+
+4. As your own user, not with sudo:
+
+   /usr/local/tiger-desk/scripts/setup.sh
+
+5. Check the relay:
+
+   curl http://127.0.0.1:8765/health
+
+   A working relay answers: ok grok-4.7
+EOF
+chmod 644 /usr/local/tiger-desk/ENV-SETUP.txt
 echo "Tiger Desk files are in /usr/local/tiger-desk."
-echo "As your own user, run: /usr/local/tiger-desk/scripts/setup.sh"
+echo "API keys go in /usr/local/tiger-desk/.env. See ENV-SETUP.txt."
+echo "Then, as your own user, run: /usr/local/tiger-desk/scripts/setup.sh"
 exit 0

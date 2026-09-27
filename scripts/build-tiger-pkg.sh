@@ -1,6 +1,7 @@
 #!/bin/bash
 # Compile Tiger Build on the Power Mac and pack a 10.4 installer.
-# The package contains the app only. It does not contain API keys.
+# The package installs the app and copies ppc-commander into each user's home.
+# It does not contain API keys.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,6 +12,7 @@ mkdir -p "$DIST"
 
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
 bash "$ROOT/scripts/install-tiger.sh"
+"$SSH" 'cat > "$HOME/TigerBuild-pkg-postflight"' < "$ROOT/installer/tiger-postflight"
 
 "$SSH" bash -s << 'REMOTE'
 set -e
@@ -24,6 +26,12 @@ fi
 rm -rf "$PAYLOAD" "$PKG"
 mkdir -p "$PAYLOAD" "$PKG/Contents/Resources/English.lproj"
 cp -R "$APP" "$PAYLOAD/Tiger Build.app"
+cp "$HOME/ppc-commander/ppc_commander.py" "$PAYLOAD/Tiger Build.app/Contents/Resources/ppc_commander.py"
+chmod 755 "$PAYLOAD/Tiger Build.app/Contents/Resources/ppc_commander.py"
+cp "$HOME/TigerBuild-pkg-postflight" "$PKG/Contents/Resources/postflight"
+cp "$HOME/TigerBuild-pkg-postflight" "$PKG/Contents/Resources/postinstall"
+cp "$HOME/TigerBuild-pkg-postflight" "$PKG/Contents/Resources/postupgrade"
+chmod 755 "$PKG/Contents/Resources/postflight" "$PKG/Contents/Resources/postinstall" "$PKG/Contents/Resources/postupgrade"
 cd "$PAYLOAD"
 pax -w . | gzip -c > "$PKG/Contents/Archive.pax.gz"
 mkbom . "$PKG/Contents/Archive.bom"
@@ -81,7 +89,7 @@ cat > "$PKG/Contents/Resources/English.lproj/Description.plist" << PLIST
   <key>IFPkgDescriptionVersion</key>
   <string>1.1</string>
   <key>IFPkgDescriptionDescription</key>
-  <string>Tiger Build 1.1 for Mac OS X 10.4. The app does not contain API keys. Point it at the bridge from Preferences or server.txt.</string>
+  <string>Installs Tiger Build and ppc-commander on Mac OS X 10.4. The commander is copied to each user's home at ppc-commander/ppc_commander.py. Remote Login is turned on when the installer can. No API keys are included. Point the app at the Tiger Desk relay from Preferences or server.txt.</string>
 </dict>
 </plist>
 PLIST
