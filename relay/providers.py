@@ -434,6 +434,202 @@ def _post_stream(url, payload, headers, ssl_context, api_error_text):
         raise RuntimeError(api_error_text(detail, exc.code))
 
 
+def _piece_text(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get("text") or value.get("content") or ""
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(item.get("text") or item.get("content") or "")
+        return "".join(parts)
+    return ""
+
+
+class AnswerStream(object):
+    """Hide think blocks and Qwen tool-call markup. Keep a hidden answer if needed."""
+
+    def __init__(self):
+        self.visible = []
+        self.hidden = []
+        self.reasoning = []
+        self.tool_markup = []
+        self.hiding = ""
+        self.buf = ""
+
+    def add_reasoning(self, text):
+        if text:
+            self.reasoning.append(text)
+
+    def add_content(self, text):
+        if not text:
+            return []
+        self.buf += text
+        return self._drain(False)
+
+    def _close_tag(self, end_tag, sink, final):
+        end = self.buf.find(end_tag)
+        if end < 0:
+            if final:
+                sink.append(self.buf)
+                self.buf = ""
+                self.hiding = ""
+            return False
+        sink.append(self.buf[:end])
+        self.buf = self.buf[end + len(end_tag):]
+        self.hiding = ""
+        return True
+
+    def _drain(self, final):
+        fresh = []
+        while True:
+            if self.hiding == "think":
+                if self._close_tag("</think>", self.hidden, final):
+                    continue
+                break
+            if self.hiding == "tool":
+                end = self.buf.find("</tool_call>")
+                if end < 0:
+                    if final:
+                        self.tool_markup.append("<tool_call>" + self.buf)
+                        self.buf = ""
+                        self.hiding = ""
+                    break
+                self.tool_markup.append("<tool_call>" + self.buf[:end] + "</tool_call>")
+                self.buf = self.buf[end + len("</tool_call>"):]
+                self.hiding = ""
+                continue
+            think_at = self.buf.find("<think>")
+            tool_at = self.buf.find("<tool_call>")
+            start = -1
+            kind = ""
+            tag_len = 0
+            if think_at >= 0 and (tool_at < 0 or think_at <= tool_at):
+                start = think_at
+                kind = "think"
+                tag_len = len("<think>")
+            elif tool_at >= 0:
+                start = tool_at
+                kind = "tool"
+                tag_len = len("<tool_call>")
+            if start < 0:
+                if not final:
+                    cut = self.buf.rfind("<")
+                    if cut >= 0 and cut >= len(self.buf) - 20:
+                        fresh.append(self.buf[:cut])
+                        self.buf = self.buf[cut:]
+                        break
+                fresh.append(self.buf)
+                self.buf = ""
+                break
+            fresh.append(self.buf[:start])
+            self.buf = self.buf[start + tag_len:]
+            self.hiding = kind
+        pieces = []
+        for piece in fresh:
+            if piece:
+                pieces.append(piece)
+                self.visible.append(piece)
+        return pieces
+
+    def finish(self):
+        self._drain(True)
+        if "".join(self.visible).strip():
+            return ""
+        thought = "".join(self.reasoning).strip()
+        if thought:
+            if "<tool_call>" in thought:
+                self.tool_markup.append(thought)
+            return _strip_think(thought)
+        return "".join(self.hidden).strip()
+
+
+def _strip_think(text):
+    stream = AnswerStream()
+    pieces = []
+    pieces.extend(stream.add_content(text))
+    pieces.extend(stream._drain(True))
+    visible = "".join(pieces).strip()
+    if visible:
+        return visible
+    hidden = "".join(stream.hidden).strip()
+    if hidden:
+        return hidden
+    if "<tool_call>" in (text or ""):
+        return ""
+    return (text or "").strip()
+
+
+def ensure_user_first(log):
+    """Qwen's prompt template rejects a transcript that starts with the assistant."""
+    if not log or log[0].get("role") == "user":
+        return log
+    return [{"role": "user", "content": "Hello."}] + list(log)
+
+
+def qwen_tool_calls(text):
+    """LM Studio's Qwen template asks for tool calls as XML, not OpenAI chunks."""
+    calls = []
+    if not text or "<tool_call>" not in text:
+        return calls
+    chunks = text.split("<tool_call>")
+    index = 0
+    for chunk in chunks[1:]:
+        body = chunk.split("</tool_call>")[0]
+        name_at = body.find("<function=")
+        if name_at < 0:
+            continue
+        name_end = body.find(">", name_at)
+        if name_end < 0:
+            continue
+        name = body[name_at + len("<function="):name_end].strip()
+        if not name:
+            continue
+        params = {}
+        rest = body[name_end + 1:]
+        while True:
+            mark = rest.find("<parameter=")
+            if mark < 0:
+                break
+            end = rest.find(">", mark)
+            if end < 0:
+                break
+            key = rest[mark + len("<parameter="):end].strip()
+            close = rest.find("</parameter>", end)
+            if close < 0:
+                params[key] = rest[end + 1:].strip()
+                break
+            params[key] = rest[end + 1:close].strip()
+            rest = rest[close + len("</parameter>"):]
+        index += 1
+        calls.append({
+            "id": "%s-%d" % (name, index),
+            "name": name,
+            "arguments": json.dumps(params),
+        })
+    return calls
+
+
+def _stream_failure(item):
+    if not isinstance(item, dict) or item.get("choices"):
+        return ""
+    err = item.get("error")
+    message = ""
+    if isinstance(err, dict):
+        message = err.get("message") or ""
+    elif isinstance(err, str):
+        message = err
+    if not message:
+        alt = item.get("message") or ""
+        message = alt if isinstance(alt, str) else ""
+    message = message.strip().split("\n")[0].strip()
+    return message[:400]
+
+
 def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_context, api_error_text):
     payload = {
         "model": model,
@@ -460,6 +656,7 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
         api_error_text,
     )
     slots = {}
+    answer = AnswerStream()
     try:
         raw_sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
         if raw_sock is not None:
@@ -468,14 +665,33 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
         pass
     try:
         for _event, item in iter_sse(response):
+            failure = _stream_failure(item)
+            if failure:
+                raise RuntimeError(failure)
             choices = item.get("choices") or []
             if not choices:
                 continue
             choice = choices[0]
             delta = choice.get("delta") or {}
-            text = delta.get("content") or ""
-            if isinstance(text, str) and text:
-                yield text
+            if not isinstance(delta, dict):
+                delta = {}
+            answer.add_reasoning(_piece_text(
+                delta.get("reasoning_content")
+                or delta.get("reasoning")
+                or delta.get("reasoning_details")
+            ))
+            for piece in answer.add_content(_piece_text(delta.get("content"))):
+                yield piece
+            answer.add_reasoning(_piece_text(choice.get("reasoning_content")))
+            message = choice.get("message") or {}
+            if isinstance(message, dict):
+                answer.add_reasoning(_piece_text(
+                    message.get("reasoning_content")
+                    or message.get("reasoning")
+                    or message.get("reasoning_details")
+                ))
+                for piece in answer.add_content(_piece_text(message.get("content"))):
+                    yield piece
             for call in delta.get("tool_calls") or []:
                 index = call.get("index", 0)
                 slot = slots.setdefault(index, {"id": "", "name": "", "arguments": ""})
@@ -492,7 +708,16 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
         pass
     finally:
         response.close()
-    holder["calls"] = [slot for slot in (slots[index] for index in sorted(slots)) if slot.get("name")]
+    calls = [slot for slot in (slots[index] for index in sorted(slots)) if slot.get("name")]
+    fallback = answer.finish()
+    if not calls:
+        markup = "\n".join(answer.tool_markup + answer.reasoning)
+        calls = qwen_tool_calls(markup)
+    if fallback and "<tool_call>" in fallback:
+        fallback = ""
+    if fallback and not calls:
+        yield fallback
+    holder["calls"] = calls
 
 
 def openai_responses_input(log):
@@ -711,7 +936,7 @@ def stream_round(provider, system, log, tools, holder, ssl_context, api_error_te
             local_key(),
             model,
             system,
-            log,
+            ensure_user_first(log),
             tools,
             holder,
             ssl_context,

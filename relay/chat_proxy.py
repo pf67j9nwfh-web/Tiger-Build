@@ -22,6 +22,13 @@ from app_config import ensure_config_file
 from app_config import local_models_text
 from app_config import settings_public
 from app_config import update_settings
+from media import create_media
+from media import media_dir
+from media import media_tools
+from media import safe_name
+from providers import AnswerStream
+from providers import ensure_user_first
+from providers import qwen_tool_calls
 from providers import gemini_contents
 from providers import normalize as normalize_provider
 from providers import resolve_model
@@ -47,8 +54,10 @@ SYSTEM = (
     "Do not use them for ordinary questions. "
     "Finish the task in this turn. Do not stop halfway, and do not ask the "
     "person to type continue, even if an earlier message did. Write a whole file in one call, then compile "
-    "or test. Run commands that exit. Do not start a GUI or anything that "
-    "keeps running. Use timeout_ms of 15000, or 20000 for a compile. "
+    "or test. Use timeout_ms of 15000, or 20000 for a compile. "
+    "You may launch GUI applications when the person asks. For a GUI, or anything "
+    "that should keep running, call start_process with detach set to true so it "
+    "is not tied to this chat. Use open for a Mac .app. "
     "The shell is bash and the system Python is 2.3. "
     "After the tools finish, answer in a few plain sentences."
 )
@@ -304,6 +313,71 @@ class ToolSession(object):
             return {}
         return args
 
+    def _stopped_early(self, output, exc):
+        detail = (output or "").strip()
+        if not detail and exc is not None:
+            detail = str(exc).strip()
+        if len(detail) > 600:
+            detail = detail[:600] + "..."
+        if not detail:
+            return "\n\nI couldn't finish after that step."
+        return "\n\nThe last command stopped with an error:\n" + detail
+
+    def _saved_media_text(self, kind, filename):
+        account = self.config.get("TIGER_USER") or "JR"
+        path = "/Users/%s/Library/Application Support/Tiger Build/media/%s" % (account, filename)
+        if kind == "video":
+            return "Saved the video on the Power Mac at %s." % path
+        return "Saved the image on the Power Mac at %s." % path
+
+    def _media_status(self, name):
+        if name == "generate_image":
+            return "Generating an image..."
+        if name == "generate_video":
+            return "Generating a video. This can take a minute..."
+        return ""
+
+    def _run_one_call(self, provider, call, client_holder):
+        name = call.get("name") or ""
+        args = self._call_args({"arguments": call.get("arguments") or "{}"})
+        if not args and isinstance(call.get("arguments"), dict):
+            args = call.get("arguments")
+        if name in ("start_process", "interact_with_process"):
+            args = self._cap_command_wait(args)
+        if name == "generate_image":
+            try:
+                info = create_media(provider, name, args.get("prompt") or "", ssl_context())
+            except Exception as exc:
+                return "Generating an image...", "error: %s" % exc, None, True
+            return (
+                "Generating an image...",
+                self._saved_media_text("image", info["filename"]),
+                "image %s" % info["filename"],
+                False,
+            )
+        if name == "generate_video":
+            try:
+                info = create_media(provider, name, args.get("prompt") or "", ssl_context())
+            except Exception as exc:
+                return "Generating a video. This can take a minute...", "error: %s" % exc, None, True
+            return (
+                "Generating a video. This can take a minute...",
+                self._saved_media_text("video", info["filename"]),
+                "video %s" % info["filename"],
+                False,
+            )
+        if client_holder[0] is None:
+            client_holder[0] = McpClient(ssh_command(self.config))
+            client_holder[0].start()
+        try:
+            result = client_holder[0].request("tools/call", {"name": name, "arguments": args})
+            output = result_text(result)
+            failed = bool(isinstance(result, dict) and result.get("isError"))
+        except Exception as exc:
+            output = "error: %s" % exc
+            failed = True
+        return tool_summary(name, args), output, None, failed
+
     def iter_turn(self, messages, use_tools=True, provider="grok", model=None, system_override=None):
         """Yield ('t', text) deltas and ('s', status) lines.
 
@@ -323,6 +397,22 @@ class ToolSession(object):
         if system_override:
             use_tools = False
             tools = []
+        else:
+            extra = media_tools(provider)
+            if extra:
+                tools = list(tools) + extra
+                account = self.config.get("TIGER_USER") or "JR"
+                media_root = "/Users/%s/Library/Application Support/Tiger Build/media" % account
+                system += (
+                    " If the person asks for a picture, call generate_image. "
+                    "If they ask for a video or animation, call generate_video. "
+                    "Do not say a file was created unless that tool saved one. "
+                    "Saved pictures and videos are files in %s on the Power Mac. "
+                    "If the person asks to put one somewhere else, copy that file "
+                    "with the shell. Do not invent a path."
+                ) % media_root
+        if system_override:
+            pass
         elif not use_tools:
             system += (
                 " ppc-commander is turned off for this chat. Do not claim you "
@@ -359,49 +449,56 @@ class ToolSession(object):
         round_index = 0
         forced = False
         last_output = ""
+        last_failed = False
         try:
             while True:
                 if round_index:
                     yield ("s", "Working on the next step...")
                 saw_text = False
                 completed = None
-                for event in iter_response_events(payload):
-                    etype = event.get("type") if isinstance(event, dict) else ""
-                    delta = text_delta(event)
-                    if delta:
-                        saw_text = True
-                        yield ("t", delta)
-                    elif etype == "response.completed" and isinstance(event.get("response"), dict):
-                        completed = event["response"]
-                    elif etype in ("error", "response.failed", "response.error"):
-                        raise RuntimeError(event_error_message(event))
+                try:
+                    for event in iter_response_events(payload):
+                        etype = event.get("type") if isinstance(event, dict) else ""
+                        delta = text_delta(event)
+                        if delta:
+                            saw_text = True
+                            yield ("t", delta)
+                        elif etype == "response.completed" and isinstance(event.get("response"), dict):
+                            completed = event["response"]
+                        elif etype in ("error", "response.failed", "response.error"):
+                            raise RuntimeError(event_error_message(event))
+                except Exception as exc:
+                    if saw_text or last_output:
+                        yield ("t", self._stopped_early(last_output if last_failed else "", exc))
+                        return
+                    raise
                 if not isinstance(completed, dict):
                     if saw_text:
+                        return
+                    if last_failed:
+                        yield ("t", self._stopped_early(last_output, None))
                         return
                     raise RuntimeError("The model stream ended early.")
                 if completed.get("error"):
                     raise RuntimeError(event_error_message(completed))
                 calls = function_calls(completed) if tools else []
                 if calls and completed.get("id") and not forced and round_index < MAX_TOOL_ROUNDS:
-                    if client is None:
-                        client = McpClient(ssh_command(self.config))
-                        client.start()
+                    client_holder = [client]
                     outputs = []
                     for call in calls:
-                        name = call.get("name") or ""
-                        args = self._call_args(call)
-                        if name in ("start_process", "interact_with_process"):
-                            args = self._cap_command_wait(args)
-                        yield ("s", tool_summary(name, args))
-                        try:
-                            result = client.request("tools/call", {
-                                "name": name,
-                                "arguments": args,
-                            })
-                            output = result_text(result)
-                        except Exception as exc:
-                            output = "error: %s" % exc
+                        announced = self._media_status(call.get("name") or "")
+                        if announced:
+                            yield ("s", announced)
+                        summary, output, media, failed = self._run_one_call(
+                            provider, call, client_holder
+                        )
+                        client = client_holder[0]
+                        if not announced:
+                            yield ("s", summary)
+                        if media:
+                            yield ("m", media)
                         last_output = output
+                        last_failed = failed
                         if round_index >= MAX_TOOL_ROUNDS - 3:
                             output += (
                                 "\n\nFinish the task with the calls you have left. "
@@ -451,6 +548,8 @@ class ToolSession(object):
                         text = ""
                     if text:
                         yield ("t", text)
+                    elif last_failed:
+                        yield ("t", self._stopped_early(last_output, None))
                     elif last_output:
                         yield ("t", last_output)
                     elif round_index:
@@ -466,9 +565,11 @@ class ToolSession(object):
         log = []
         for message in messages:
             log.append({"role": message["role"], "content": message["content"]})
-        client = None
+        client_holder = [None]
         round_index = 0
         last_output = ""
+        last_failed = False
+        any_text = False
         try:
             while True:
                 if round_index:
@@ -476,50 +577,59 @@ class ToolSession(object):
                 holder = {}
                 saw_text = False
                 spoken = []
-                for delta in stream_round(
-                    provider, system, log, tools, holder, ssl_context(), api_error_text, model
-                ):
-                    if delta:
-                        saw_text = True
-                        spoken.append(delta)
-                        yield ("t", delta)
+                try:
+                    for delta in stream_round(
+                        provider, system, log, tools, holder, ssl_context(), api_error_text, model
+                    ):
+                        if delta:
+                            saw_text = True
+                            any_text = True
+                            spoken.append(delta)
+                            yield ("t", delta)
+                except Exception as exc:
+                    if any_text or last_output:
+                        yield ("t", self._stopped_early(last_output if last_failed else "", exc))
+                        return
+                    raise
                 calls = holder.get("calls") or []
                 if not calls or round_index >= MAX_TOOL_ROUNDS:
-                    if not saw_text and last_output:
+                    if not saw_text and last_failed:
+                        yield ("t", self._stopped_early(last_output, None))
+                    elif not saw_text and last_output and not any_text:
                         yield ("t", last_output)
-                    elif not saw_text and not calls:
+                    elif not saw_text and not calls and not any_text and not round_index:
                         raise RuntimeError("The model returned no text.")
+                    elif not saw_text and round_index and not any_text:
+                        yield ("t", "Done.")
                     return
-                if client is None:
-                    client = McpClient(ssh_command(self.config))
-                    client.start()
                 log.append({
                     "role": "assistant",
                     "content": "".join(spoken),
                     "calls": calls,
                 })
                 for call in calls:
-                    name = call.get("name") or ""
-                    args = self._call_args({"arguments": call.get("arguments") or "{}"})
-                    if name in ("start_process", "interact_with_process"):
-                        args = self._cap_command_wait(args)
-                    yield ("s", tool_summary(name, args))
-                    try:
-                        result = client.request("tools/call", {"name": name, "arguments": args})
-                        output = result_text(result)
-                    except Exception as exc:
-                        output = "error: %s" % exc
+                    announced = self._media_status(call.get("name") or "")
+                    if announced:
+                        yield ("s", announced)
+                    summary, output, media, failed = self._run_one_call(
+                        provider, call, client_holder
+                    )
+                    if not announced:
+                        yield ("s", summary)
+                    if media:
+                        yield ("m", media)
                     last_output = output
+                    last_failed = failed
                     log.append({
                         "role": "tool",
-                        "id": call.get("id") or name,
-                        "name": name,
+                        "id": call.get("id") or call.get("name") or "",
+                        "name": call.get("name") or "",
                         "content": output,
                     })
                 round_index += 1
         finally:
-            if client is not None:
-                client.close()
+            if client_holder[0] is not None:
+                client_holder[0].close()
 
     def plain_complete(self, provider, model, system, messages):
         parts = []
@@ -682,6 +792,34 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send(200, "ok " + MODEL + "\n")
             return
+        if path.startswith("/v1/media/"):
+            name = safe_name(path[len("/v1/media/"):])
+            folder = os.path.realpath(media_dir())
+            file_path = os.path.realpath(os.path.join(folder, name)) if name else ""
+            if (
+                not name
+                or not file_path.startswith(folder + os.sep)
+                or not os.path.isfile(file_path)
+            ):
+                self._send(404, "not found\n")
+                return
+            handle = open(file_path, "rb")
+            try:
+                payload = handle.read()
+            finally:
+                handle.close()
+            kind = "image/jpeg"
+            if name.endswith(".png"):
+                kind = "image/png"
+            elif name.endswith(".mp4"):
+                kind = "video/mp4"
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if path == "/v1/settings":
             self._send(200, settings_public())
             return
@@ -750,7 +888,7 @@ class Handler(BaseHTTPRequestHandler):
         self._begin_stream()
         try:
             for kind, text in SESSION.iter_turn(cleaned, use_tools, provider, requested_model):
-                if kind in ("t", "s"):
+                if kind in ("t", "s", "m"):
                     self._frame(kind, text)
             self._frame("d", "")
         except Exception as exc:
@@ -822,6 +960,48 @@ def self_test():
         raise SystemExit("local model allowlist failed")
     if clean_title('  "Four word title"  ') != "Four word title":
         raise SystemExit("title cleanup failed")
+    hidden = AnswerStream()
+    pieces = []
+    pieces.extend(hidden.add_content("Hello <think>secret"))
+    pieces.extend(hidden.add_content(" thought</think> there"))
+    if "".join(pieces) != "Hello  there" or hidden.finish():
+        raise SystemExit("think tags leaked")
+    quiet = AnswerStream()
+    quiet.add_reasoning("The answer is pong.")
+    if quiet.finish() != "The answer is pong.":
+        raise SystemExit("reasoning fallback failed")
+    wrapped = AnswerStream()
+    wrapped.add_reasoning("<think>scratch</think>The answer is pong.")
+    if wrapped.finish() != "The answer is pong.":
+        raise SystemExit("reasoning think tags leaked")
+    only = AnswerStream()
+    if only.add_content("<think>secret answer</think>") or only.finish() != "secret answer":
+        raise SystemExit("think-only answer was dropped")
+    if media_tools("claude") or media_tools("mistral") or media_tools("local"):
+        raise SystemExit("media tools were offered to a provider without them")
+    if len(media_tools("grok")) != 2 or len(media_tools("muse")) != 1:
+        raise SystemExit("media tool list failed")
+    if safe_name("../x") or safe_name("a/b") or safe_name("ok.png") != "ok.png":
+        raise SystemExit("media name check failed")
+    grounded = ensure_user_first([
+        {"role": "assistant", "content": "Hello. Ask me anything."},
+        {"role": "user", "content": "ping"},
+    ])
+    if grounded[0].get("role") != "user" or grounded[2].get("content") != "ping":
+        raise SystemExit("local transcript was not grounded")
+    if ensure_user_first([{"role": "user", "content": "ping"}])[0]["content"] != "ping":
+        raise SystemExit("user transcript was rewritten")
+    marked = AnswerStream()
+    shown = marked.add_content(
+        "Sure.\n<tool_call>\n<function=list_directory>\n<parameter=path>\n/Users/JR/Desktop\n</parameter>\n</function>\n</tool_call>"
+    )
+    if "".join(shown).strip() != "Sure.":
+        raise SystemExit("tool markup was shown")
+    parsed = qwen_tool_calls("\n".join(marked.tool_markup))
+    if len(parsed) != 1 or parsed[0]["name"] != "list_directory":
+        raise SystemExit("qwen tool call was not parsed")
+    if json.loads(parsed[0]["arguments"]).get("path") != "/Users/JR/Desktop":
+        raise SystemExit("qwen tool arguments were not parsed")
     if context_for("grok", "grok-4.7") < 1000:
         raise SystemExit("context limit missing")
     from app_config import usable_local_models

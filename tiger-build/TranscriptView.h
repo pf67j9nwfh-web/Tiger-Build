@@ -8,6 +8,8 @@
     NSDictionary *bodyAttrs;
     NSDictionary *userAttrs;
     NSDictionary *statusAttrs;
+    NSMutableArray *movieViews;
+    NSMutableArray *moviePaths;
 }
 
 - (void)setMessages:(NSArray *)newMessages;

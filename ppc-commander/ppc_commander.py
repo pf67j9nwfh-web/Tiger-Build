@@ -589,7 +589,9 @@ def instructions():
         'allowedDirectories limits file tools only; an empty list means the whole filesystem. '
         'Terminal commands are not limited by that list. Disk-erase commands stay blocked. '
         'Prefer edit_block for small changes. start_process returns when output goes idle '
-        'or timeout_ms elapses (capped at 120s) and leaves the process running.'
+        'or timeout_ms elapses (capped at 120s) and leaves the process running. '
+        'GUI apps are allowed. start_process with detach true runs them outside this '
+        'session so they stay open after the chat moves on.'
         % (
             SYSINFO.get('uname', ''),
             sw,
@@ -1736,6 +1738,61 @@ def session_page(session, offset, length, new_only):
     return body, start, end, total
 
 
+def detach_command(command, shell):
+    # Double-fork into a session with no terminal. The chat's SSH connection
+    # can close without delivering SIGHUP to a GUI that should stay open.
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.close(read_fd)
+            os.setsid()
+            pid2 = os.fork()
+            if pid2 != 0:
+                try:
+                    os.write(write_fd, '%d\n' % pid2)
+                except Exception:
+                    pass
+                os._exit(0)
+            try:
+                os.close(write_fd)
+            except OSError:
+                pass
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            devnull = os.open('/dev/null', os.O_RDWR)
+            os.dup2(devnull, 0)
+            os.dup2(devnull, 1)
+            os.dup2(devnull, 2)
+            if devnull > 2:
+                os.close(devnull)
+            os.execv(shell, [os.path.basename(shell), '-c', command])
+        except Exception:
+            os._exit(127)
+    os.close(write_fd)
+    data = ''
+    while True:
+        try:
+            chunk = os.read(read_fd, 64)
+        except OSError:
+            break
+        if not chunk:
+            break
+        data = data + chunk
+    os.close(read_fd)
+    try:
+        os.waitpid(pid, 0)
+    except OSError:
+        pass
+    text = data.strip()
+    if text == '':
+        raise ToolError('could not detach the process')
+    try:
+        child = int(text)
+    except ValueError:
+        raise ToolError('could not detach the process')
+    return child
+
+
 def tool_start_process(args):
     if pty is None:
         raise ToolError('this Python has no pty module')
@@ -1758,6 +1815,15 @@ def tool_start_process(args):
     why = command_blocked(command)
     if why:
         raise ToolError('blocked command (%s). Change blockedCommands only if you mean to.' % why)
+    if opt_bool(args, 'detach', False):
+        child = detach_command(command, shell)
+        lines = [
+            'pid: %s' % child,
+            'command: %s' % clip(command, 400),
+            'status: detached',
+            'note: running on its own; closing the chat will not stop it',
+        ]
+        return cap_text('\n'.join(lines))
     pid, fd = pty.fork()
     if pid == 0:
         try:
@@ -2245,6 +2311,9 @@ def tool_defs():
                 'Run a shell command on the Power Mac under bash -c, on a pseudo-terminal. '
                 'Returns when the process exits, when output has been idle for about 0.4s, '
                 'or when timeout_ms elapses (capped at 120000). The process keeps running after a timeout. '
+                'Set detach true for a GUI or anything that should keep running after this call: '
+                'it is started in its own session, with no terminal, and closing the chat does not stop it. '
+                'Use open for a Mac .app. '
                 'Include a trailing newline yourself when talking to an interactive program later.'
             ),
             'inputSchema': {
@@ -2253,6 +2322,7 @@ def tool_defs():
                     'command': prop('string', 'Shell command'),
                     'timeout_ms': prop('number', 'How long to wait for the first output'),
                     'shell': prop('string', 'Optional shell path, default /bin/bash'),
+                    'detach': prop('boolean', 'Start outside this chat so a GUI can keep running'),
                 },
                 'required': ['command', 'timeout_ms'],
                 'additionalProperties': True,
@@ -2675,6 +2745,27 @@ def run_self_test():
 
         proc = tool_start_process({'command': 'echo ppc-process-ok', 'timeout_ms': 5000})
         expect('process', 'ppc-process-ok' in proc and 'status: exited' in proc, failures, proc)
+        detached = tool_start_process({
+            'command': 'sleep 30',
+            'timeout_ms': 1000,
+            'detach': True,
+        })
+        expect('detach status', 'status: detached' in detached, failures, detached)
+        dm = re.search(r'pid: (\d+)', detached)
+        if not dm:
+            expect('detach pid', False, failures, detached)
+        else:
+            dpid = int(dm.group(1))
+            alive = True
+            try:
+                os.kill(dpid, 0)
+            except OSError:
+                alive = False
+            expect('detach alive', alive, failures, detached)
+            try:
+                os.kill(dpid, signal.SIGTERM)
+            except OSError:
+                pass
         m = re.search(r'pid: (\d+)', proc)
         if not m:
             expect('process pid', False, failures, proc)

@@ -54,7 +54,9 @@ To build an installer package instead:
 ./scripts/build-pkg.sh
 ```
 
-That writes `dist/TigerDesk-1.0.0.pkg`, which installs the files to `/usr/local/tiger-desk`. The package does not contain an API key. After installing, copy your `.env` into place and run `/usr/local/tiger-desk/scripts/setup.sh`.
+That writes `dist/TigerDesk-1.1.pkg`, which installs the bridge onto this Mac at `/usr/local/tiger-desk`. The package does not contain an API key. After installing, copy your `.env` into place and run `/usr/local/tiger-desk/scripts/setup.sh`.
+
+`./scripts/build-tiger-pkg.sh` compiles Tiger Build on the Power Mac and writes `dist/TigerBuild-1.1.pkg`. That package installs the app into `/Applications` on Mac OS X 10.4. It does not contain an API key either.
 
 ## Build Tiger Build
 
@@ -64,7 +66,7 @@ The Cocoa app is built on the PowerPC Mac, not on the current Mac. `scripts/inst
 gcc -arch ppc -isysroot /Developer/SDKs/MacOSX10.4u.sdk -mmacosx-version-min=10.4 -Wall -O2 \
   -o TigerBuild.app/Contents/MacOS/TigerBuild \
   main.m ChatController.m TranscriptView.m \
-  -framework Cocoa -framework CoreServices
+  -framework Cocoa -framework CoreServices -framework QTKit
 ```
 
 `make` produces `TigerBuild.app`. `install-tiger.sh` copies it to `~/Desktop/Tiger Build.app` and writes the relay address into `~/Library/Application Support/Tiger Build/server.txt`. Open the app from Finder. Launching the Mach-O directly over SSH crashes in CoreDrag.

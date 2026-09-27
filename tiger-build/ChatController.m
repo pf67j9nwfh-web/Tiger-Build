@@ -28,7 +28,12 @@
 - (void)refreshLocalModels;
 - (void)compactCurrentChatIfNeeded;
 - (void)autonameChat:(NSMutableDictionary *)chat;
+- (NSData *)relayDataForPath:(NSString *)path timeout:(double)timeout status:(int *)status;
+- (void)attachMedia:(NSString *)line toChat:(NSMutableDictionary *)chat;
 @end
+
+static int streamDepth = 0;
+static int streamEndDeferred = 0;
 
 static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void *info)
 {
@@ -178,6 +183,11 @@ static NSString *jsonEscape(NSString *value)
 - (int)status
 {
     return statusCode;
+}
+
+- (NSData *)raw
+{
+    return payload;
 }
 
 - (NSString *)text
@@ -1515,7 +1525,7 @@ static void relayCallback(CFReadStreamRef stream, CFStreamEventType type, void *
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.0";
+        version = @"1.1";
     NSRunAlertPanel(@"About Tiger Build",
         @"Version %@\nLicensed under the MIT License.",
         @"OK", nil, nil, version);
@@ -1592,6 +1602,104 @@ static void relayCallback(CFReadStreamRef stream, CFStreamEventType type, void *
     text = [exchange text];
     [exchange release];
     return text;
+}
+
+- (NSData *)relayDataForPath:(NSString *)path timeout:(double)timeout status:(int *)status
+{
+    RelayExchange *exchange;
+    NSURL *url;
+    CFHTTPMessageRef message;
+    CFReadStreamRef stream;
+    CFStreamClientContext context;
+    double start;
+    NSData *data;
+    if (status)
+        *status = 0;
+    url = [NSURL URLWithString:[[self serverBase] stringByAppendingString:path]];
+    if (!url)
+        return nil;
+    exchange = [[RelayExchange alloc] init];
+    message = CFHTTPMessageCreateRequest(NULL, CFSTR("GET"), (CFURLRef)url, kCFHTTPVersion1_0);
+    CFHTTPMessageSetHeaderFieldValue(message, CFSTR("User-Agent"), CFSTR("TigerBuild/1.0"));
+    stream = CFReadStreamCreateForHTTPRequest(NULL, message);
+    CFRelease(message);
+    if (!stream) {
+        [exchange release];
+        return nil;
+    }
+    memset(&context, 0, sizeof(context));
+    context.info = exchange;
+    CFReadStreamSetClient(stream,
+        kCFStreamEventHasBytesAvailable | kCFStreamEventEndEncountered | kCFStreamEventErrorOccurred,
+        relayCallback, &context);
+    CFReadStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+    if (!CFReadStreamOpen(stream)) {
+        CFReadStreamSetClient(stream, 0, NULL, NULL);
+        CFReadStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+        CFRelease(stream);
+        [exchange release];
+        return nil;
+    }
+    start = CFAbsoluteTimeGetCurrent();
+    while (![exchange finished]) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true);
+        if (CFAbsoluteTimeGetCurrent() - start > timeout)
+            break;
+    }
+    CFReadStreamSetClient(stream, 0, NULL, NULL);
+    CFReadStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+    CFReadStreamClose(stream);
+    CFRelease(stream);
+    if (status)
+        *status = [exchange status];
+    data = [[exchange raw] copy];
+    [exchange release];
+    return [data autorelease];
+}
+
+- (void)attachMedia:(NSString *)line toChat:(NSMutableDictionary *)chat
+{
+    NSArray *parts;
+    NSString *kind;
+    NSString *name;
+    NSString *dir;
+    NSString *path;
+    NSData *data;
+    NSMutableDictionary *open;
+    int status = 0;
+    if (!line || !chat)
+        return;
+    parts = [line componentsSeparatedByString:@" "];
+    if ([parts count] < 2)
+        return;
+    kind = [parts objectAtIndex:0];
+    name = [parts objectAtIndex:1];
+    if ([name rangeOfString:@"/"].location != NSNotFound || [name rangeOfString:@".."].location != NSNotFound)
+        return;
+    dir = [[self supportDir] stringByAppendingPathComponent:@"media"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir attributes:nil];
+    path = [dir stringByAppendingPathComponent:name];
+    data = [self relayDataForPath:[@"/v1/media/" stringByAppendingString:name]
+        timeout:([kind isEqualToString:@"video"] ? 180 : 90) status:&status];
+    if (status != 200 || !data || [data length] == 0) {
+        [self appendDelta:@"\nThe file could not be saved." toChat:chat];
+        return;
+    }
+    [data writeToFile:path atomically:YES];
+    open = [self openMessageIn:chat];
+    if (!open) {
+        open = [NSMutableDictionary dictionary];
+        [open setObject:@"assistant" forKey:@"role"];
+        [open setObject:@"" forKey:@"text"];
+        [open setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+        [open setObject:[NSNumber numberWithBool:YES] forKey:@"open"];
+        [[chat objectForKey:@"messages"] addObject:open];
+    }
+    if ([kind isEqualToString:@"image"])
+        [open setObject:path forKey:@"image"];
+    else
+        [open setObject:path forKey:@"video"];
+    [self refreshTranscriptIfCurrent:chat];
 }
 
 - (NSString *)tokenString:(int)count
@@ -2199,12 +2307,33 @@ static void relayCallback(CFReadStreamRef stream, CFStreamEventType type, void *
             else
                 [frameBuffer appendBytes:buf length:count];
         }
-        if (httpStatus < 400)
+        if (httpStatus < 400 && streamDepth == 0) {
+            streamDepth = 1;
             [self drainFrames];
+            streamDepth = 0;
+            if (streamEndDeferred) {
+                streamEndDeferred = 0;
+                [self finishStream];
+            }
+        }
         return;
     }
     if (type == kCFStreamEventEndEncountered) {
         [self noteResponseStatus:stream];
+        if (streamDepth) {
+            UInt8 buf[4096];
+            while (CFReadStreamHasBytesAvailable(stream)) {
+                CFIndex count = CFReadStreamRead(stream, buf, sizeof(buf));
+                if (count <= 0)
+                    break;
+                if (httpStatus >= 400)
+                    [errorBody appendBytes:buf length:count];
+                else
+                    [frameBuffer appendBytes:buf length:count];
+            }
+            streamEndDeferred = 1;
+            return;
+        }
         if (httpStatus >= 400) {
             NSString *text = [[NSString alloc] initWithData:errorBody encoding:NSUTF8StringEncoding];
             if (!text || [text length] == 0) {
@@ -2220,6 +2349,10 @@ static void relayCallback(CFReadStreamRef stream, CFStreamEventType type, void *
         return;
     }
     if (type == kCFStreamEventErrorOccurred) {
+        if (streamDepth) {
+            streamEndDeferred = 1;
+            return;
+        }
         [self addStatus:@"The chat connection failed." toChat:[self chatWithId:streamingId]];
         [self finishStream];
     }
@@ -2237,7 +2370,9 @@ static void relayCallback(CFReadStreamRef stream, CFStreamEventType type, void *
         open = [self openMessageIn:chat];
         if (open) {
             [open setObject:[NSNumber numberWithBool:NO] forKey:@"open"];
-            if ([[open objectForKey:@"text"] length] == 0)
+            if ([[open objectForKey:@"text"] length] == 0
+                && [open objectForKey:@"image"] == nil
+                && [open objectForKey:@"video"] == nil)
                 [[chat objectForKey:@"messages"] removeObject:open];
         }
         [self saveStore];
@@ -2265,6 +2400,8 @@ static void relayCallback(CFReadStreamRef stream, CFStreamEventType type, void *
     }
     if (kind == 't')
         [self appendDelta:text toChat:chat];
+    else if (kind == 'm')
+        [self attachMedia:text toChat:chat];
     else if (kind == 's' || kind == 'e')
         [self addStatus:text toChat:chat];
     [text release];

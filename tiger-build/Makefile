@@ -2,7 +2,7 @@
 SDK := /Developer/SDKs/MacOSX10.4u.sdk
 CC := gcc
 CFLAGS := -arch ppc -isysroot $(SDK) -mmacosx-version-min=10.4 -Wall -O2
-LIBS := -framework Cocoa -framework CoreServices
+LIBS := -framework Cocoa -framework CoreServices -framework QTKit
 SOURCES := main.m ChatController.m TranscriptView.m
 APP := TigerBuild.app
 
