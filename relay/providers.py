@@ -6,6 +6,7 @@ provider's own event stream into text deltas and a list of tool calls.
 
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -72,7 +73,7 @@ def require_key(provider):
     else:
         raise RuntimeError("Unknown model.")
     if not key:
-        raise RuntimeError("Add %s to the relay .env and start the relay again." % label)
+        raise RuntimeError("Add %s in Tiger Build Preferences or the relay .env." % label)
     return key
 
 
@@ -81,94 +82,132 @@ def require_key(provider):
 # relay uses. The first id is that provider's default. Gemini 2.5 is closed
 # to new keys. Mistral Medium, Small, and Magistral report a zero per-minute
 # limit. Grok's multi-agent model needs beta access.
+PROVIDERS = (
+    ("grok", "Grok"),
+    ("chatgpt", "ChatGPT"),
+    ("claude", "Claude"),
+    ("mistral", "Mistral"),
+    ("muse", "Muse"),
+    ("gemini", "Gemini"),
+    ("local", "Local"),
+)
+
+# (id, title) in the order Tiger Build shows them. This is the only copy of
+# the list: Tiger Build reads it from /v1/models, and install-tiger.sh bakes
+# it into the app bundle as models.txt for when the relay cannot be reached.
 CATALOG = {
     "grok": (
-        "grok-4.7",
-        "grok-4.6",
-        "grok-4.5",
-        "grok-4.3",
-        "grok-4.20-0309-reasoning",
-        "grok-4.20-0309-non-reasoning",
-        "grok-build-0.1",
+        ("grok-4.7", "4.7"),
+        ("grok-4.6", "4.6"),
+        ("grok-4.5", "4.5"),
+        ("grok-4.3", "4.3"),
+        ("grok-4.20-0309-reasoning", "4.20 Reasoning"),
+        ("grok-4.20-0309-non-reasoning", "4.20"),
+        ("grok-build-0.1", "Build 0.1"),
     ),
     "chatgpt": (
-        "gpt-5.5",
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol",
-        "gpt-5.6-luna",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.5-pro",
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5.4-nano",
-        "gpt-5.4-pro",
-        "gpt-5.2",
-        "gpt-5.2-pro",
-        "gpt-5.1",
-        "gpt-5",
-        "gpt-5-mini",
-        "gpt-5-nano",
-        "gpt-5-pro",
-        "gpt-4.1",
-        "gpt-4.1-mini",
-        "gpt-4.1-nano",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4-turbo",
-        "gpt-4",
-        "gpt-3.5-turbo",
-        "o3",
-        "o4-mini",
-        "o3-mini",
-        "o1",
-        "o1-pro",
-        "chat-latest",
+        ("gpt-6-astra", "6 Astra"),
+        ("gpt-6-luna", "6 Luna"),
+        ("gpt-6-sol", "6 Sol"),
+        ("gpt-5.6-luna", "5.6 Luna"),
+        ("gpt-5.6-sol", "5.6 Sol"),
+        ("gpt-5.6-terra", "5.6 Terra"),
+        ("gpt-5.5", "5.5"),
+        ("gpt-5.5-pro", "5.5 Pro"),
+        ("gpt-5.4", "5.4"),
+        ("gpt-5.4-mini", "5.4 Mini"),
+        ("gpt-5.4-nano", "5.4 Nano"),
+        ("gpt-5.4-pro", "5.4 Pro"),
+        ("gpt-5.2", "5.2"),
+        ("gpt-5.2-pro", "5.2 Pro"),
+        ("gpt-5.1", "5.1"),
+        ("gpt-5", "5"),
+        ("gpt-5-mini", "5 Mini"),
+        ("gpt-5-nano", "5 Nano"),
+        ("gpt-5-pro", "5 Pro"),
+        ("gpt-4.1", "4.1"),
+        ("gpt-4.1-mini", "4.1 Mini"),
+        ("gpt-4.1-nano", "4.1 Nano"),
+        ("gpt-4o", "4o"),
+        ("gpt-4o-mini", "4o Mini"),
+        ("gpt-4-turbo", "4 Turbo"),
+        ("gpt-4", "4"),
+        ("gpt-3.5-turbo", "3.5"),
+        ("o3", "o3"),
+        ("o4-mini", "o4 Mini"),
+        ("o3-mini", "o3 Mini"),
+        ("o1", "o1"),
+        ("o1-pro", "o1 Pro"),
+        ("chat-latest", "Latest"),
     ),
     "claude": (
-        "claude-sonnet-5",
-        "claude-opus-5-5",
-        "claude-opus-5",
-        "claude-opus-4-8",
-        "claude-opus-4-7",
-        "claude-opus-4-6",
-        "claude-opus-4-5-20251101",
-        "claude-fable-5-1",
-        "claude-fable-5",
-        "claude-sonnet-4-6",
-        "claude-sonnet-4-5-20250929",
-        "claude-haiku-4-5-20251001",
+        ("claude-opus-5-5", "Opus 5.5"),
+        ("claude-opus-5", "Opus 5"),
+        ("claude-opus-4-8", "Opus 4.8"),
+        ("claude-opus-4-7", "Opus 4.7"),
+        ("claude-opus-4-6", "Opus 4.6"),
+        ("claude-opus-4-5-20251101", "Opus 4.5"),
+        ("claude-fable-5-1", "Fable 5.1"),
+        ("claude-fable-5", "Fable 5"),
+        ("claude-sonnet-5", "Sonnet 5"),
+        ("claude-sonnet-4-6", "Sonnet 4.6"),
+        ("claude-sonnet-4-5-20250929", "Sonnet 4.5"),
+        ("claude-haiku-4-5-20251001", "Haiku 4.5"),
     ),
     "mistral": (
-        "ministral-14b-latest",
-        "ministral-8b-latest",
-        "ministral-3b-latest",
-        "codestral-latest",
-        "mistral-code-latest",
-        "voxtral-small-latest",
+        ("ministral-14b-latest", "Ministral 14B"),
+        ("ministral-8b-latest", "Ministral 8B"),
+        ("ministral-3b-latest", "Ministral 3B"),
+        ("codestral-latest", "Codestral"),
+        ("mistral-code-latest", "Mistral Code"),
+        ("voxtral-small-latest", "Voxtral Small"),
     ),
     "muse": (
-        "muse-spark-1.3",
-        "muse-spark-1.3-contributor",
-        "muse-spark-1.2",
-        "muse-spark-1.2-contributor",
-        "muse-spark-1.1",
+        ("muse-spark-1.3", "Spark 1.3"),
+        ("muse-spark-1.3-contributor", "1.3 Contributor"),
+        ("muse-spark-1.2", "Spark 1.2"),
+        ("muse-spark-1.2-contributor", "1.2 Contributor"),
+        ("muse-spark-1.1", "Spark 1.1"),
     ),
     "gemini": (
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-pro-preview",
-        "gemini-3.1-pro-preview-customtools",
-        "gemini-3.1-flash-lite",
-        "gemini-3-flash-preview",
-        "gemma-4-31b-it",
-        "gemma-4-26b-a4b-it",
+        ("gemini-3.8-flash", "3.8 Flash"),
+        ("gemini-3.7-flash", "3.7 Flash"),
+        ("gemini-3.6-flash", "3.6 Flash"),
+        ("gemini-3.5-flash", "3.5 Flash"),
+        ("gemini-3.5-flash-lite", "3.5 Flash Lite"),
+        ("gemini-3.1-pro-preview", "3.1 Pro"),
+        ("gemini-3.1-pro-preview-customtools", "3.1 Pro Tools"),
+        ("gemini-3.1-flash-lite", "3.1 Flash Lite"),
+        ("gemini-3-flash-preview", "3 Flash"),
+        ("gemma-4-31b-it", "Gemma 4 31B"),
+        ("gemma-4-26b-a4b-it", "Gemma 4 26B"),
     ),
 }
+
+DEFAULTS = {
+    "grok": "grok-4.7",
+    "chatgpt": "gpt-5.5",
+    "claude": "claude-sonnet-5",
+    "mistral": "ministral-14b-latest",
+    "muse": "muse-spark-1.3",
+    "gemini": "gemini-3.8-flash",
+}
+
+
+def models_text():
+    """Tab-separated catalogue for Tiger Build: provider and model lines."""
+    lines = []
+    for provider, title in PROVIDERS:
+        lines.append("provider\t%s\t%s" % (provider, title))
+        for model, label in CATALOG.get(provider, ()):
+            is_default = "1" if model == DEFAULTS.get(provider) else "0"
+            lines.append("model\t%s\t%s\t%s\t%s" % (provider, model, label, is_default))
+    return "\n".join(lines) + "\n"
+
+
+def catalog_ids(provider):
+    return tuple(model for model, _title in CATALOG.get(provider) or CATALOG["grok"])
+
 
 # These chat models reject function tools unless reasoning_effort is one of these.
 OPENAI_EFFORT = {
@@ -212,18 +251,52 @@ def local_model_name(requested):
     return name
 
 
+# discovery.py fills these in at relay start. Without it (self-tests, an
+# MCP client importing this file) only the static catalog is used.
+LIVE = {"allowed": None, "default": None, "endpoint": None, "info": None}
+
+
+def set_live(allowed, default, endpoint, info=None):
+    LIVE["allowed"] = allowed
+    LIVE["default"] = default
+    LIVE["endpoint"] = endpoint
+    LIVE["info"] = info
+
+
+def live_info(provider, model):
+    getter = LIVE.get("info")
+    if not getter:
+        return {}
+    try:
+        return getter(provider, model) or {}
+    except Exception:
+        return {}
+
+
+def model_allowed(provider, model):
+    if not isinstance(model, str) or not model:
+        return False
+    if model in catalog_ids(provider):
+        return True
+    check = LIVE["allowed"]
+    return bool(check and check(provider, model))
+
+
 def resolve_model(provider, requested):
     if provider == "local":
         return local_model_name(requested)
-    allowed = CATALOG.get(provider) or CATALOG["grok"]
-    if isinstance(requested, str) and requested.strip() in allowed:
-        return requested.strip()
+    if provider not in CATALOG:
+        provider = "grok"
+    wanted = requested.strip() if isinstance(requested, str) else ""
+    if wanted and model_allowed(provider, wanted):
+        return wanted
     env_name = ENV_MODEL.get(provider)
     if env_name:
         env_value = os.environ.get(env_name, "").strip()
-        if env_value in allowed:
+        if env_value and model_allowed(provider, env_value):
             return env_value
-    return allowed[0]
+    live_default = LIVE["default"](provider) if LIVE["default"] else ""
+    return live_default or DEFAULTS[provider]
 
 
 def model_name(provider, requested=None):
@@ -327,6 +400,11 @@ def anthropic_messages(log):
                 messages[-1]["content"].append(block)
             else:
                 messages.append({"role": "user", "content": [block]})
+            continue
+        if role == "assistant" and item.get("claude_blocks"):
+            # Replay original signed/encrypted blocks, in their original order.
+            # Never reconstruct thinking from UI text or merge it with answers.
+            messages.append({"role":"assistant", "content":item["claude_blocks"]})
             continue
         if role == "assistant" and item.get("calls"):
             blocks = []
@@ -450,6 +528,30 @@ def _piece_text(value):
     return ""
 
 
+def _chunk_thinking(value):
+    """Mistral Magistral sends content as chunks; {"type":"thinking"} ones
+    hold the reasoning. _piece_text skips them because they have no text key."""
+    if not isinstance(value, list):
+        return ""
+    parts = []
+    for item in value:
+        if isinstance(item, dict) and item.get("type") == "thinking":
+            parts.append(_piece_text(item.get("thinking")))
+    return "".join(parts)
+
+
+# Mistral models that rejected reasoning_effort during this run.
+MISTRAL_NO_REASONING = set()
+
+
+def show_thinking():
+    """One switch for every service. The key keeps its original name so
+    saved settings and backups still load. It asks Claude, ChatGPT Responses,
+    Gemini and Mistral for thinking, and shows what local models return."""
+    from integrations import read as integration_config
+    return bool(integration_config().get("claude_thinking"))
+
+
 class AnswerStream(object):
     """Hide think blocks and Qwen tool-call markup. Keep a hidden answer if needed."""
 
@@ -460,6 +562,13 @@ class AnswerStream(object):
         self.tool_markup = []
         self.hiding = ""
         self.buf = ""
+        self.thoughts = []
+
+    def take_thoughts(self):
+        """Inline <think> text seen since the last call, for live display."""
+        out = [piece for piece in self.thoughts if piece]
+        self.thoughts = []
+        return out
 
     def add_reasoning(self, text):
         if text:
@@ -471,25 +580,29 @@ class AnswerStream(object):
         self.buf += text
         return self._drain(False)
 
-    def _close_tag(self, end_tag, sink, final):
-        end = self.buf.find(end_tag)
-        if end < 0:
-            if final:
-                sink.append(self.buf)
-                self.buf = ""
-                self.hiding = ""
-            return False
-        sink.append(self.buf[:end])
-        self.buf = self.buf[end + len(end_tag):]
-        self.hiding = ""
-        return True
+    def _think(self, text):
+        if text:
+            self.hidden.append(text)
+            self.thoughts.append(text)
 
     def _drain(self, final):
         fresh = []
         while True:
             if self.hiding == "think":
-                if self._close_tag("</think>", self.hidden, final):
+                end = self.buf.find("</think>")
+                if end >= 0:
+                    self._think(self.buf[:end])
+                    self.buf = self.buf[end + len("</think>"):]
+                    self.hiding = ""
                     continue
+                # Release finished think text now; hold back a possible partial tag.
+                keep = 0 if final else len("</think>") - 1
+                if len(self.buf) > keep:
+                    cut = len(self.buf) - keep
+                    self._think(self.buf[:cut])
+                    self.buf = self.buf[cut:]
+                if final:
+                    self.hiding = ""
                 break
             if self.hiding == "tool":
                 end = self.buf.find("</tool_call>")
@@ -535,6 +648,10 @@ class AnswerStream(object):
                 pieces.append(piece)
                 self.visible.append(piece)
         return pieces
+
+    def flush(self):
+        """Visible text still buffered at the end of the stream."""
+        return self._drain(True)
 
     def finish(self):
         self._drain(True)
@@ -644,17 +761,26 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
             payload["reasoning_effort"] = effort
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "TigerBuild-relay/1.0",
+        "User-Agent": "TigerBuild-relay/1.2",
     }
     if key:
         headers["Authorization"] = "Bearer " + key
-    response = _post_stream(
-        url,
-        payload,
-        headers,
-        ssl_context,
-        api_error_text,
-    )
+    thinking = show_thinking() and not holder.get("probe")
+    # Magistral and other Mistral reasoning models only return thinking
+    # chunks when asked. They accept "none" or "high"; models without
+    # reasoning reject the field, so remember those and stop asking.
+    ask_mistral = thinking and url == MISTRAL_URL and model not in MISTRAL_NO_REASONING
+    if ask_mistral:
+        payload["reasoning_effort"] = "high"
+    try:
+        response = _post_stream(url, payload, headers, ssl_context, api_error_text)
+    except RuntimeError as exc:
+        # Retry only for the "not enabled / not supported" reply, not a 429 or outage.
+        if not ask_mistral or "reasoning_effort" not in str(exc):
+            raise
+        payload.pop("reasoning_effort", None)
+        response = _post_stream(url, payload, headers, ssl_context, api_error_text)
+        MISTRAL_NO_REASONING.add(model)
     slots = {}
     answer = AnswerStream()
     try:
@@ -675,22 +801,29 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
             delta = choice.get("delta") or {}
             if not isinstance(delta, dict):
                 delta = {}
-            answer.add_reasoning(_piece_text(
-                delta.get("reasoning_content")
-                or delta.get("reasoning")
-                or delta.get("reasoning_details")
-            ))
-            for piece in answer.add_content(_piece_text(delta.get("content"))):
-                yield piece
-            answer.add_reasoning(_piece_text(choice.get("reasoning_content")))
+            sources = [(delta, choice.get("reasoning_content"))]
             message = choice.get("message") or {}
             if isinstance(message, dict):
-                answer.add_reasoning(_piece_text(
-                    message.get("reasoning_content")
-                    or message.get("reasoning")
-                    or message.get("reasoning_details")
-                ))
-                for piece in answer.add_content(_piece_text(message.get("content"))):
+                sources.append((message, None))
+            for source, extra in sources:
+                content = source.get("content")
+                reasoning = "".join([
+                    _piece_text(
+                        source.get("reasoning_content")
+                        or source.get("reasoning")
+                        or source.get("reasoning_details")
+                    ),
+                    _piece_text(extra),
+                    _chunk_thinking(content),
+                ])
+                answer.add_reasoning(reasoning)
+                if thinking and reasoning:
+                    yield {"thinking": reasoning}
+                pieces = answer.add_content(_piece_text(content))
+                if thinking:
+                    for thought in answer.take_thoughts():
+                        yield {"thinking": thought}
+                for piece in pieces:
                     yield piece
             for call in delta.get("tool_calls") or []:
                 index = call.get("index", 0)
@@ -709,6 +842,13 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
     finally:
         response.close()
     calls = [slot for slot in (slots[index] for index in sorted(slots)) if slot.get("name")]
+    # Text held back as a possible tag start (for example "a<b" at the end).
+    tail = answer.flush()
+    if thinking:
+        for thought in answer.take_thoughts():
+            yield {"thinking": thought}
+    for piece in tail:
+        yield piece
     fallback = answer.finish()
     if not calls:
         markup = "\n".join(answer.tool_markup + answer.reasoning)
@@ -782,23 +922,35 @@ def stream_openai_responses(key, model, system, log, tools, holder, ssl_context,
             "parameters": tool.get("parameters") or {"type": "object", "properties": {}},
         } for tool in tools]
         payload["tool_choice"] = "auto"
-    response = _post_stream(
-        OPENAI_RESPONSES_URL,
-        payload,
-        {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + key,
-            "User-Agent": "TigerBuild-relay/1.0",
-        },
-        ssl_context,
-        api_error_text,
-    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + key,
+        "User-Agent": "TigerBuild-relay/1.2",
+    }
+    thinking = show_thinking() and not holder.get("probe")
+    if thinking:
+        payload["reasoning"] = {"summary": "auto"}
+    try:
+        response = _post_stream(OPENAI_RESPONSES_URL, payload, headers, ssl_context, api_error_text)
+    except RuntimeError:
+        if not thinking:
+            raise
+        # Summaries need a reasoning model and, for some accounts, a verified
+        # organization. Answer without them instead of failing the turn.
+        payload.pop("reasoning", None)
+        thinking = False
+        response = _post_stream(OPENAI_RESPONSES_URL, payload, headers, ssl_context, api_error_text)
     completed = None
     try:
         for _event, item in iter_sse(response):
             kind = item.get("type")
             if kind == "response.output_text.delta" and item.get("delta"):
                 yield item["delta"]
+            elif kind == "response.reasoning_summary_text.delta" and item.get("delta"):
+                if thinking:
+                    yield {"thinking": item["delta"]}
+            elif kind == "response.reasoning_summary_part.done" and thinking:
+                yield {"thinking": "\n\n"}
             elif kind == "response.completed" and isinstance(item.get("response"), dict):
                 completed = item["response"]
     finally:
@@ -806,60 +958,111 @@ def stream_openai_responses(key, model, system, log, tools, holder, ssl_context,
     holder["calls"] = _response_calls(completed or {})
 
 
+# Output cap for Claude. Thinking counts against it, and Opus 5.x thinks
+# even when not asked, so a small cap cut long answers off mid-sentence.
+# The Models API reports each model's own max_tokens and thinking type;
+# discovery.py stores them and we use them. Without that list (first start,
+# listing failed) 64000 is used, the highest every current model accepts.
+# A model that allows less says so, and we retry with its number.
+CLAUDE_MAX_TOKENS = 64000
+CLAUDE_LIMITS = {}
+CLAUDE_CUT_NOTE = "\n\n[The reply stopped here because it reached Claude's length limit. Ask it to continue.]"
+
+
+def claude_max_tokens(model, info=None):
+    """Learned limit, else the model list's max_tokens, else the fallback."""
+    if model in CLAUDE_LIMITS:
+        return CLAUDE_LIMITS[model]
+    listed = int((info or {}).get("max_output") or 0)
+    return listed if listed > 0 else CLAUDE_MAX_TOKENS
+
+
+def claude_thinking_type(model, info=None):
+    """"adaptive", "enabled", or "" (no thinking). Uses the model list when
+    it has the answer; otherwise the family names known when this shipped."""
+    info = info or {}
+    if "thinking" in info:
+        return info.get("thinking") or ""
+    adaptive = ("opus-4-6", "opus-4-7", "opus-4-8", "opus-5", "sonnet-4-6", "sonnet-5", "fable-5")
+    return "adaptive" if any(x in model for x in adaptive) else "enabled"
+
+
+def _claude_limit(message):
+    found = re.search(r"max_tokens:\s*\d+\s*>\s*(\d+)", message or "")
+    return int(found.group(1)) if found else 0
+
+
 def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error_text):
-    payload = {
-        "model": model,
-        "max_tokens": 4096,
-        "stream": True,
-        "system": system,
-        "messages": anthropic_messages(log),
-    }
-    if tools:
-        payload["tools"] = anthropic_tools(tools)
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "User-Agent": "TigerBuild-relay/1.0",
-    }
-    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
-    if workspace:
-        headers["anthropic-workspace-id"] = workspace
-    response = _post_stream(
-        ANTHROPIC_URL,
-        payload,
-        headers,
-        ssl_context,
-        api_error_text,
-    )
-    blocks = {}
+    info=live_info("claude",model)
+    payload = {"model":model,"max_tokens":claude_max_tokens(model,info),"stream":True,"system":system,"messages":anthropic_messages(log)}
+    if tools: payload["tools"]=anthropic_tools(tools)
+    kind=claude_thinking_type(model,info)
+    if kind and show_thinking() and not holder.get("probe"):
+        # Adaptive thinking text is omitted unless display is "summarized".
+        # Older models take a bounded enabled budget instead.
+        payload["thinking"]={"type":"adaptive","display":"summarized"} if kind=="adaptive" else {"type":"enabled","budget_tokens":2048}
+    headers={"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","User-Agent":"TigerBuild-relay/1.2"}
+    workspace=os.environ.get("ANTHROPIC_WORKSPACE_ID","").strip()
+    if workspace:headers["anthropic-workspace-id"]=workspace
     try:
-        for _event, item in iter_sse(response):
-            kind = item.get("type")
-            if kind == "content_block_start":
-                block = item.get("content_block") or {}
-                blocks[item.get("index", 0)] = {
-                    "type": block.get("type"),
-                    "id": block.get("id") or "",
-                    "name": block.get("name") or "",
-                    "arguments": "",
-                }
-            elif kind == "content_block_delta":
-                delta = item.get("delta") or {}
-                if delta.get("type") == "text_delta" and delta.get("text"):
-                    yield delta["text"]
-                elif delta.get("type") == "input_json_delta":
-                    slot = blocks.get(item.get("index", 0))
-                    if slot is not None:
-                        slot["arguments"] += delta.get("partial_json") or ""
-    finally:
-        response.close()
-    calls = []
+        response=_post_stream(ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
+    except RuntimeError as exc:
+        limit=_claude_limit(str(exc))
+        if not limit or limit>=payload["max_tokens"]:raise
+        CLAUDE_LIMITS[model]=limit;payload["max_tokens"]=limit
+        response=_post_stream(ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
+    blocks={};arguments={};complete=set();stop=""
+    try:
+        for _event,item in iter_sse(response):
+            kind=item.get("type");index=item.get("index",0)
+            if kind=="error":raise RuntimeError(str((item.get("error") or {}).get("message") or "Claude stream error"))
+            if kind=="content_block_start":
+                block=dict(item.get("content_block") or {})
+                blocks[index]=block
+                if block.get("type")=="tool_use":arguments[index]=""
+            elif kind=="content_block_delta":
+                delta=item.get("delta") or {};block=blocks.get(index)
+                if block is None:raise RuntimeError("Claude delta without content block")
+                dt=delta.get("type")
+                if dt=="text_delta":
+                    text=delta.get("text") or "";block["text"]=block.get("text","")+text
+                    if text:yield text
+                elif dt=="thinking_delta":
+                    text=delta.get("thinking") or "";block["thinking"]=block.get("thinking","")+text
+                    if text:yield {"thinking":text}
+                elif dt=="signature_delta":
+                    block["signature"]=block.get("signature","")+(delta.get("signature") or "")
+                elif dt=="input_json_delta":arguments[index]=arguments.get(index,"")+(delta.get("partial_json") or "")
+            elif kind=="message_delta":
+                stop=(item.get("delta") or {}).get("stop_reason") or stop
+            elif kind=="content_block_stop":
+                block=blocks.get(index,{})
+                if block.get("type")=="tool_use" and arguments.get(index):
+                    try:block["input"]=json.loads(arguments[index])
+                    except ValueError:block["cut"]=True  # arguments ended at the length limit
+                complete.add(index)
+    finally:response.close()
+    if stop=="max_tokens":
+        # A tool call cut off mid-arguments must not run or be replayed.
+        # Drop it, tell the user, and end the turn cleanly.
+        for index in sorted(blocks):
+            if blocks[index].get("type")=="tool_use" and (blocks[index].get("cut") or index not in complete):
+                for later in [i for i in blocks if i>=index]:blocks.pop(later,None)
+                break
+        yield CLAUDE_CUT_NOTE
+        holder["claude_blocks"]=[];holder["calls"]=[]
+        return
+    ordered=[];calls=[]
     for index in sorted(blocks):
-        slot = blocks[index]
-        if slot.get("type") == "tool_use":
-            calls.append(slot)
-    holder["calls"] = calls
+        block=blocks[index]
+        if index not in complete:raise RuntimeError("Claude returned an incomplete content block; refusing to replay it")
+        if block.get("type")=="thinking" and not block.get("signature"):
+            raise RuntimeError("Claude thinking block missing its signature; refusing to replay it")
+        ordered.append(block)
+        if block.get("type")=="tool_use":
+            calls.append({"id":block.get("id"),"name":block.get("name"),"type":"tool_use","arguments":json.dumps(block.get("input") or {})})
+    holder["claude_blocks"]=ordered
+    holder["calls"]=calls
 
 
 def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error_text):
@@ -870,17 +1073,23 @@ def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error
     declared = gemini_tools(tools)
     if declared:
         payload["tools"] = declared
-    response = _post_stream(
-        GEMINI_URL % model,
-        payload,
-        {
-            "Content-Type": "application/json",
-            "x-goog-api-key": key,
-            "User-Agent": "TigerBuild-relay/1.0",
-        },
-        ssl_context,
-        api_error_text,
-    )
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": key,
+        "User-Agent": "TigerBuild-relay/1.2",
+    }
+    thinking = show_thinking() and not holder.get("probe")
+    if thinking:
+        payload["generationConfig"] = {"thinkingConfig": {"includeThoughts": True}}
+    try:
+        response = _post_stream(GEMINI_URL % model, payload, headers, ssl_context, api_error_text)
+    except RuntimeError:
+        if not thinking:
+            raise
+        # Models without thinking reject thinkingConfig; answer without it.
+        payload.pop("generationConfig", None)
+        thinking = False
+        response = _post_stream(GEMINI_URL % model, payload, headers, ssl_context, api_error_text)
     calls = []
     seen = {}
     loose_signature = ""
@@ -893,6 +1102,8 @@ def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error
                     if isinstance(signature, str) and signature:
                         loose_signature = signature
                     if part.get("thought"):
+                        if thinking and part.get("text"):
+                            yield {"thinking": part["text"]}
                         continue
                     text = part.get("text") or ""
                     if text:
@@ -924,9 +1135,20 @@ def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error
     holder["calls"] = calls
 
 
-def stream_round(provider, system, log, tools, holder, ssl_context, api_error_text, model=None):
-    model = resolve_model(provider, model)
+def stream_round(provider, system, log, tools, holder, ssl_context, api_error_text,
+                 model=None, endpoint=None, probing=False):
+    """One model call. probing=True is the model check in discovery.py: it
+    uses the model as given (it is not on the allowlist yet) and the given
+    endpoint ("chat" or "responses" for ChatGPT)."""
+    if probing:
+        if not isinstance(model, str) or not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,180}$", model) or ".." in model:
+            raise RuntimeError("bad model id")
+    else:
+        model = resolve_model(provider, model)
+        if provider == "chatgpt" and endpoint is None and LIVE["endpoint"]:
+            endpoint = LIVE["endpoint"](provider, model) or None
     holder["calls"] = []
+    holder["probe"] = probing
     if provider == "local":
         from app_config import local_base, local_key
         if not model:
@@ -944,7 +1166,7 @@ def stream_round(provider, system, log, tools, holder, ssl_context, api_error_te
         )
         return
     key = require_key(provider)
-    if provider == "chatgpt" and model in OPENAI_RESPONSES:
+    if provider == "chatgpt" and (endpoint == "responses" or (endpoint is None and model in OPENAI_RESPONSES)):
         yield from stream_openai_responses(
             key, model, system, log, tools, holder, ssl_context, api_error_text
         )

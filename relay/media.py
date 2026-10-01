@@ -55,9 +55,8 @@ def media_tools(provider):
 
 
 def media_dir():
-    folder = os.path.join(
-        os.path.expanduser("~/Library/Application Support"), "TigerDesk", "media"
-    )
+    from paths import support_dir
+    folder = os.path.join(support_dir(), "media")
     if not os.path.isdir(folder):
         os.makedirs(folder)
     return folder

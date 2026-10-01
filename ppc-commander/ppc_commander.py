@@ -5,8 +5,8 @@
 # Do not use print functions, with, except-as, set(), sorted(), decorators,
 # json, subprocess, hashlib, or 0o octal literals.
 #
-# The copy that actually runs lives on the Power Mac at
-# /Users/JR/ppc-commander/ppc_commander.py. Edit this file on the modern Mac
+# The copy that actually runs lives on the Tiger Mac at
+# ~/ppc-commander/ppc_commander.py. Edit this file on the relay Mac
 # and upload it again. Stdio is the MCP stream: logs go to stderr only.
 
 import difflib
@@ -37,11 +37,13 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
 MAX_PROCESS_OUTPUT = 1500000
+HISTORY_MAX_BYTES = 150000
+HISTORY_KEEP_LINES = 200
 SKIP_DIRS = {
     '/dev': 1,
     '/automount': 1,
@@ -68,6 +70,21 @@ DEFAULT_CONFIG = {
     'fileWriteLineLimit': 1000,
     'telemetryEnabled': False,
 }
+
+
+# These keys decide what the model may run and touch, so the model may not
+# change them. They come from config.json, which the file tools may not edit,
+# and a root-owned /etc/ppc-commander.json overrides them when it exists.
+LOCKED_KEYS = ['blockedCommands', 'allowedDirectories', 'defaultShell']
+POLICY_PATH = '/etc/ppc-commander.json'
+
+# Programs that run the word after them. A blocked name anywhere after one of
+# these, in the same command, is treated as the program being run.
+WRAPPERS = [
+    'sudo', 'env', 'exec', 'nohup', 'time', 'nice', 'xargs', 'eval', 'command',
+    'builtin', 'arch', 'caffeinate', 'osascript', 'perl', 'python', 'ruby',
+    'sh', 'bash', 'zsh', 'csh', 'tcsh', 'ksh', 'dash', 'source', '.',
+]
 
 
 class ToolError(Exception):
@@ -503,11 +520,43 @@ def load_config():
     except Exception, exc:
         log('config unreadable (%s); using defaults' % exc)
         return
-    if not isinstance(data, dict):
+    if isinstance(data, dict):
+        for key in DEFAULT_CONFIG.keys():
+            if key in data:
+                CONFIG[key] = data[key]
+    apply_policy()
+
+
+def apply_policy():
+    """Merge the root-owned policy file. It can only tighten the config."""
+    try:
+        info = os.stat(POLICY_PATH)
+    except OSError:
         return
-    for key in DEFAULT_CONFIG.keys():
-        if key in data:
-            CONFIG[key] = data[key]
+    if info.st_uid != 0 or (info.st_mode & 0022):
+        log('ignoring %s: it must be owned by root and not writable by others' % POLICY_PATH)
+        return
+    try:
+        f = open(POLICY_PATH, 'rb')
+        try:
+            policy = loads(f.read())
+        finally:
+            f.close()
+    except Exception, exc:
+        log('policy unreadable (%s)' % exc)
+        return
+    if not isinstance(policy, dict):
+        return
+    blocked = policy.get('blockedCommands')
+    if isinstance(blocked, list):
+        merged = list(CONFIG.get('blockedCommands', []))
+        for word in blocked:
+            if word not in merged:
+                merged.append(word)
+        CONFIG['blockedCommands'] = merged
+    for key in ('allowedDirectories', 'defaultShell'):
+        if key in policy:
+            CONFIG[key] = policy[key]
 
 
 def save_config():
@@ -588,6 +637,8 @@ def instructions():
         'Excel, PDF, and DOCX tools are not available. '
         'allowedDirectories limits file tools only; an empty list means the whole filesystem. '
         'Terminal commands are not limited by that list. Disk-erase commands stay blocked. '
+        'blockedCommands, allowedDirectories, and defaultShell are locked, and the file '
+        'tools cannot edit ppc-commander itself. '
         'Prefer edit_block for small changes. start_process returns when output goes idle '
         'or timeout_ms elapses (capped at 120s) and leaves the process running. '
         'GUI apps are allowed. start_process with detach true runs them outside this '
@@ -675,6 +726,25 @@ def denied_message(path):
     )
 
 
+def protected_paths():
+    return [
+        os.path.realpath(script_dir()),
+        os.path.realpath(os.path.abspath(__file__)),
+        POLICY_PATH,
+    ]
+
+
+def check_writable(path):
+    """File tools may not change ppc-commander itself, its config, or the policy."""
+    for guarded in protected_paths():
+        if path == guarded or path.startswith(guarded.rstrip(os.sep) + os.sep):
+            raise ToolError(
+                'ppc-commander does not let tools change its own files (%s). '
+                'Edit them by hand on this Mac.' % guarded
+            )
+    return path
+
+
 def check_path(path):
     path = fix_mac_unicode(os.path.expanduser(path))
     if not os.path.isabs(path):
@@ -685,26 +755,56 @@ def check_path(path):
     return resolved
 
 
-def command_word_blocked(command, word):
-    pattern = (
-        r'(?:^|&&|\|\||[;&|`(\n/])\s*(?:sudo\s+)*'
-        + re.escape(word)
-        + r'(?:\s|$)'
-    )
-    if re.search(pattern, command):
-        return True
-    return False
+def normalize_command(command):
+    """Undo the easy disguises before matching program names.
+
+    Quotes and backslashes do not change which program runs (d''d, "dd", \dd),
+    so they are removed. $( ), backticks, parentheses, braces, ;, &, | and
+    newlines all start a new command, so they become one separator.
+    """
+    text = command.replace('\\\n', ' ')
+    text = re.sub(r'[\'"\\]', '', text)
+    text = re.sub(r'\$\(|[`(){}]', '\0', text)
+    text = re.sub(r'&&|\|\||[;&|\n]', '\0', text)
+    return text
+
+
+def command_words(command):
+    """Names that may be run as programs in this command line.
+
+    The first word of each command counts, after VAR=value prefixes. Once a
+    wrapper such as sudo, env, xargs, or sh -c appears, every later word in
+    that command counts too, because the wrapper may run any of them.
+    """
+    found = []
+    for segment in normalize_command(command).split('\0'):
+        wrapped = 0
+        first = 1
+        for token in segment.split():
+            if first and '=' in token and not token.startswith('='):
+                continue
+            if token.startswith('-') and not first:
+                continue
+            name = os.path.basename(token)
+            if first or wrapped:
+                found.append(name)
+            if name in WRAPPERS:
+                wrapped = 1
+            first = 0
+    return found
 
 
 def command_blocked(command):
-    if re.search(r'>\s*/dev/r?disk', command):
-        return 'redirect to a disk device'
-    if re.search(r'(?:^|\s)of=/dev/r?disk', command):
-        return 'write to a disk device'
-    if re.search(
-        r'(?:^|&&|\|\||[;&|`(\n/])\s*(?:sudo\s+)*diskutil\s+'
-        r'(erase|partition|zero|split|secureErase)',
-        command,
+    flat = normalize_command(command).replace('\0', ' ; ')
+    for text in (command, flat):
+        if re.search(r'>\s*/dev/r?disk', text):
+            return 'redirect to a disk device'
+        if re.search(r'(?:^|\s)of=/dev/r?disk', text):
+            return 'write to a disk device'
+    words = command_words(command)
+    if 'diskutil' in words and re.search(
+        r'diskutil\s+(?:\S+\s+)*?(erase\w*|partition\w*|zero\w*|split\w*|secureErase\w*|reformat)',
+        flat,
     ):
         return 'diskutil erase/partition'
     blocked = CONFIG.get('blockedCommands', [])
@@ -715,7 +815,7 @@ def command_blocked(command):
             name = as_str(word)
         except ToolError:
             continue
-        if name and command_word_blocked(command, name):
+        if name and name in words:
             return name
     return None
 
@@ -727,7 +827,7 @@ def append_history(name, args, text, ok, dur):
             if isinstance(value, unicode):
                 value = value.encode('utf-8', 'replace')
             if isinstance(value, str):
-                safe_args[key] = clip(value, 1500)
+                safe_args[key] = clip(value, 600)
             else:
                 safe_args[key] = value
     else:
@@ -738,7 +838,7 @@ def append_history(name, args, text, ok, dur):
         'ok': ok,
         'duration_ms': dur,
         'arguments': safe_args,
-        'output_preview': clip(text, 1500),
+        'output_preview': clip(text, 600),
     }
     path = history_path()
     f = open(path, 'ab')
@@ -748,16 +848,16 @@ def append_history(name, args, text, ok, dur):
     finally:
         f.close()
     try:
-        if os.path.getsize(path) > 800000:
+        if os.path.getsize(path) > HISTORY_MAX_BYTES:
             f = open(path, 'rb')
             try:
                 lines = f.readlines()
             finally:
                 f.close()
-            if len(lines) > 200:
+            if len(lines) > HISTORY_KEEP_LINES:
                 f = open(path, 'wb')
                 try:
-                    f.writelines(lines[-200:])
+                    f.writelines(lines[-HISTORY_KEEP_LINES:])
                 finally:
                     f.close()
     except OSError:
@@ -962,7 +1062,7 @@ def tool_read_multiple(args):
 
 
 def tool_write_file(args):
-    path = check_path(need_str(args, 'path'))
+    path = check_writable(check_path(need_str(args, 'path')))
     content = need_str(args, 'content')
     mode = opt_str(args, 'mode', 'rewrite')
     if mode not in ('rewrite', 'append'):
@@ -991,7 +1091,7 @@ def tool_write_file(args):
 
 
 def tool_create_directory(args):
-    path = check_path(need_str(args, 'path'))
+    path = check_writable(check_path(need_str(args, 'path')))
     if os.path.isdir(path):
         return 'directory already exists: %s' % path
     if os.path.exists(path):
@@ -1079,8 +1179,8 @@ def tool_list_directory(args):
 
 
 def tool_move_file(args):
-    source = check_path(need_str(args, 'source'))
-    dest = check_path(need_str(args, 'destination'))
+    source = check_writable(check_path(need_str(args, 'source')))
+    dest = check_writable(check_path(need_str(args, 'destination')))
     if not os.path.exists(source) and not os.path.islink(source):
         raise ToolError('source not found: %s' % source)
     parent = os.path.dirname(dest)
@@ -1149,13 +1249,13 @@ def edit_hint(old, text):
 
 def tool_edit_block(args):
     if opt_str(args, 'range', None) and not opt_str(args, 'old_string', None):
-        raise ToolError('Excel range edits are not supported on this Power Mac')
+        raise ToolError('Excel range edits are not supported on this Mac')
     path = opt_str(args, 'file_path', None)
     if not path:
         path = opt_str(args, 'path', None)
     if not path:
         raise ToolError('missing file_path')
-    path = check_path(path)
+    path = check_writable(check_path(path))
     if 'old_string' not in args or args['old_string'] is None:
         raise ToolError('missing old_string')
     if 'new_string' not in args or args['new_string'] is None:
@@ -2012,6 +2112,12 @@ def tool_set_config_value(args):
     if 'value' not in args:
         raise ToolError('missing value')
     value = args['value']
+    if key in LOCKED_KEYS:
+        raise ToolError(
+            '%s is locked. It controls what tools may run and touch, so only a '
+            'person can change it, by editing %s on this Mac '
+            '(or %s as an administrator).' % (key, config_path(), POLICY_PATH)
+        )
     if key in ('blockedCommands', 'allowedDirectories'):
         value = as_str_list(value)
         if key == 'blockedCommands':
@@ -2116,15 +2222,15 @@ def tool_defs():
     return [
         {
             'name': 'get_config',
-            'description': 'Show ppc-commander configuration and what this Power Mac is running.',
+            'description': 'Show ppc-commander configuration and what this Mac is running.',
             'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': True},
         },
         {
             'name': 'set_config_value',
             'description': (
-                'Set one config key. Keys: blockedCommands (array of command names), '
-                'defaultShell, allowedDirectories (array of paths; empty means the whole filesystem), '
-                'fileReadLineLimit, fileWriteLineLimit, telemetryEnabled (stored only; nothing is sent).'
+                'Set one config key: fileReadLineLimit, fileWriteLineLimit, or telemetryEnabled '
+                '(stored only; nothing is sent). blockedCommands, allowedDirectories, and '
+                'defaultShell are locked and can only be changed by a person on this Mac.'
             ),
             'inputSchema': {
                 'type': 'object',
@@ -2139,7 +2245,7 @@ def tool_defs():
         {
             'name': 'read_file',
             'description': (
-                'Read a text file on the Power Mac. offset is a 0-based line number; '
+                'Read a text file on this Mac. offset is a 0-based line number; '
                 'negative offset reads from the end (like tail). length defaults to fileReadLineLimit. '
                 'Also fetches http, https, or ftp URLs. Excel, PDF, and DOCX are not parsed. '
                 'Modern HTTPS usually fails on Tiger.'
@@ -2162,7 +2268,7 @@ def tool_defs():
             'inputSchema': {
                 'type': 'object',
                 'properties': {
-                    'paths': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Paths on the Power Mac'},
+                    'paths': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Paths on this Mac'},
                 },
                 'required': ['paths'],
                 'additionalProperties': True,
@@ -2253,7 +2359,7 @@ def tool_defs():
         {
             'name': 'start_search',
             'description': (
-                'Search the Power Mac. searchType "files" matches names (glob if the pattern has * ? or [, '
+                'Search this Mac. searchType "files" matches names (glob if the pattern has * ? or [, '
                 'otherwise a substring). searchType "content" uses a Python regular expression unless '
                 'literalSearch is true. There is no ripgrep. Returns a sessionId for later pages.'
             ),
@@ -2308,7 +2414,7 @@ def tool_defs():
         {
             'name': 'start_process',
             'description': (
-                'Run a shell command on the Power Mac under bash -c, on a pseudo-terminal. '
+                'Run a shell command on this Mac under bash -c, on a pseudo-terminal. '
                 'Returns when the process exits, when output has been idle for about 0.4s, '
                 'or when timeout_ms elapses (capped at 120000). The process keeps running after a timeout. '
                 'Set detach true for a GUI or anything that should keep running after this call: '
@@ -2380,7 +2486,7 @@ def tool_defs():
         },
         {
             'name': 'list_processes',
-            'description': 'Run ps auxww on the Power Mac.',
+            'description': 'Run ps auxww on this Mac.',
             'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': True},
         },
         {
@@ -2663,6 +2769,30 @@ def run_self_test():
     expect('block diskutil list', command_blocked('diskutil list') is None, failures, str(command_blocked('diskutil list')))
     expect('block diskutil erase', command_blocked('diskutil eraseDisk JHFS+ X disk1') is not None, failures, '')
     expect('block redirect', command_blocked('echo hi > /dev/disk0') is not None, failures, '')
+    for disguised in (
+        "sh -c 'dd if=/dev/zero of=/tmp/x count=1'",
+        "d''d if=/dev/zero of=/tmp/x",
+        '\\shutdown -h now',
+        'env FOO=1 halt',
+        'sudo -u root reboot',
+        'echo x; $(echo y); poweroff',
+        'FOO=1 BAR=2 shutdown -r now',
+        'echo a | xargs shutdown',
+        'bash -c "diskutil eraseDisk JHFS+ X disk1"',
+    ):
+        expect('block %s' % disguised, command_blocked(disguised) is not None, failures, disguised)
+    for fine in ('echo reboot later', 'grep -r shutdown /var/log', 'ls -la /tmp', 'diskutil list'):
+        expect('allow %s' % fine, command_blocked(fine) is None, failures, str(command_blocked(fine)))
+    try:
+        tool_set_config_value({'key': 'blockedCommands', 'value': []})
+        expect('config locked', False, failures, 'blockedCommands was changed')
+    except ToolError:
+        expect('config locked', 'dd' in CONFIG.get('blockedCommands', []), failures, '')
+    try:
+        tool_write_file({'path': config_path(), 'content': '{}'})
+        expect('self protected', False, failures, 'config.json was writable')
+    except ToolError:
+        expect('self protected', True, failures, '')
 
     names = []
     for spec in tool_defs():
@@ -2807,6 +2937,26 @@ def main(argv):
     collect_sysinfo()
     if len(argv) > 1 and argv[1] == '--self-test':
         sys.exit(run_self_test())
+    # Explicit Stop in Tiger Build blocks even newly opened SSH sessions.
+    state = os.path.expanduser('~/Library/Application Support/Tiger Build/commander')
+    if os.path.isfile(os.path.join(state, 'disabled')):
+        log('Commander is stopped. Choose Commander > Start in Tiger Build.')
+        sys.exit(1)
+    if not os.path.isdir(state):
+        os.makedirs(state, 0700)
+    marker = os.path.join(state, 'session-%s' % os.getpid())
+    f = open(marker, 'w'); f.write('session'); f.close()
+    def stopped(sig, frame):
+        shutdown_sessions()
+        try: os.unlink(marker)
+        except OSError: pass
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stopped)
+    import atexit
+    def cleanup_marker():
+        try: os.unlink(marker)
+        except OSError: pass
+    atexit.register(cleanup_marker)
     log('ready pid=%s %s' % (os.getpid(), SYSINFO.get('uname', '')))
     try:
         serve()

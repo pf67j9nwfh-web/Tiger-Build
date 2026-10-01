@@ -2,39 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Set up .env</title>
+  <title>Almost done</title>
 </head>
 <body>
-  <h1>Create the .env file</h1>
-  <p>Tiger Desk is installed at <code>/usr/local/tiger-desk</code>. No API keys were included.</p>
-  <p>The same steps are saved at <code>/usr/local/tiger-desk/ENV-SETUP.txt</code>.</p>
+  <h1>Almost done</h1>
+  <p>Tiger Build Relay 1.2 is installed at <code>/usr/local/tiger-build-relay</code>. No API keys were included.</p>
   <ol>
-    <li>In Terminal, create the file and open it:
-      <pre>sudo cp /usr/local/tiger-desk/.env.example /usr/local/tiger-desk/.env
-sudo chmod 600 /usr/local/tiger-desk/.env
-sudo nano /usr/local/tiger-desk/.env</pre>
-    </li>
-    <li>Paste a key after the name, with no spaces around the equals sign. Leave a line blank when you are not using that service.
-      <ul>
-        <li><code>XAI_API_KEY</code> for Grok</li>
-        <li><code>OPENAI_API_KEY</code> for ChatGPT</li>
-        <li><code>ANTHROPIC_API_KEY</code> for Claude</li>
-        <li><code>ANTHROPIC_WORKSPACE_ID</code> when the Claude key is not tied to one workspace</li>
-        <li><code>MISTRAL_API_KEY</code> for Mistral</li>
-        <li><code>MUSE_API_KEY</code> for Muse</li>
-        <li><code>GEMINI_API_KEY</code> for Gemini</li>
-        <li><code>LOCAL_MODEL_URL</code> for LM Studio on this Mac. The sample value is <code>http://127.0.0.1:1234/v1</code></li>
-        <li><code>LOCAL_API_KEY</code> only if that local server requires a key</li>
-      </ul>
-    </li>
-    <li>Tell the relay which Power Mac to use. The first time you run setup, it writes <code>~/Library/Application Support/TigerDesk/config.sh</code>. Set <code>TIGER_HOST</code> to the Power Mac, <code>TIGER_USER</code> to the account there, and <code>TIGER_KEY</code> and <code>TIGER_KNOWN</code> to an <code>ssh-rsa</code> key that Mac accepts. Leave <code>REMOTE_COMMANDER</code> as <code>$HOME/ppc-commander/ppc_commander.py</code>.</li>
-    <li>As your own user, not with sudo:
-      <pre>/usr/local/tiger-desk/scripts/setup.sh</pre>
-    </li>
-    <li>Check the relay:
-      <pre>curl http://127.0.0.1:8765/health</pre>
-      A working relay answers <code>ok grok-4.7</code>.
-    </li>
+    <li>Make an <code>ssh-rsa</code> key and install it on your Tiger Mac, as described in <code>/usr/local/tiger-build-relay/RELEASE.txt</code>.</li>
+    <li>As your own user, run <code>/usr/local/tiger-build-relay/scripts/setup.sh</code>. The first run writes <code>~/Library/Application Support/Tiger Build Relay/config.sh</code>. Set <code>TIGER_HOST</code> (the Tiger Mac's address) and <code>TIGER_USER</code> (the account on it).</li>
+    <li>Run <code>setup.sh</code> again. It starts the relay and prints the relay's <strong>address</strong>, <strong>port</strong> and <strong>token</strong>. Open <strong>Tiger Build Relay</strong> from the Applications folder.</li>
+    <li>On the Tiger Mac, open Tiger Build, then Preferences. Enter the address, port and token, and click <strong>Test Connection</strong>.</li>
+    <li>Add API keys in the same window or in the Tiger Build Relay app, as many or as few as you use. <em>Workspace ID</em> and <em>Local API key</em> are optional.</li>
   </ol>
+  <p>Keys can also go in <code>/usr/local/tiger-build-relay/.env</code>; see <code>.env.example</code>. These steps are repeated in <code>/usr/local/tiger-build-relay/ENV-SETUP.txt</code>.</p>
 </body>
 </html>

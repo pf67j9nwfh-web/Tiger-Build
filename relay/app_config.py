@@ -6,8 +6,11 @@ the first time the relay starts. Preferences from Tiger Build update it later.
 
 import json
 import os
+import socket
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 FIELDS = (
@@ -22,7 +25,10 @@ FIELDS = (
     ("local_url", "LOCAL_MODEL_URL"),
 )
 
-DEFAULT_LOCAL_URL = "http://127.0.0.1:1234/v1"
+# There is no assumed local server. LM Studio listens on port 1234 by
+# default, which is only a hint shown in the apps.
+DEFAULT_LOCAL_URL = ""
+LOCAL_URL_EXAMPLE = "http://127.0.0.1:1234/v1"
 _local_cache = {"at": 0, "models": []}
 
 
@@ -30,17 +36,15 @@ def config_path():
     override = os.environ.get("TIGER_PROVIDERS_FILE", "").strip()
     if override:
         return override
-    support = os.path.join(
-        os.path.expanduser("~/Library/Application Support"), "TigerDesk"
-    )
-    return os.path.join(support, "providers.json")
+    from paths import support_dir
+    return os.path.join(support_dir(), "providers.json")
 
 
 def _empty_config():
     data = {}
     for name, _env in FIELDS:
         data[name] = ""
-    data["local_url"] = DEFAULT_LOCAL_URL
+    data["local_url"] = ""
     return data
 
 
@@ -62,8 +66,6 @@ def read_config():
             value = parsed.get(name)
             if isinstance(value, str):
                 data[name] = value.strip()
-    if not data["local_url"]:
-        data["local_url"] = DEFAULT_LOCAL_URL
     return data
 
 
@@ -77,8 +79,6 @@ def write_config(data):
         value = data.get(name)
         if isinstance(value, str):
             payload[name] = value.strip()
-    if not payload["local_url"]:
-        payload["local_url"] = DEFAULT_LOCAL_URL
     temporary = path + ".tmp"
     handle = open(temporary, "w")
     try:
@@ -97,29 +97,122 @@ def apply_config(data):
         value = data.get(name) or ""
         if value:
             os.environ[env_name] = value
+        else:
+            os.environ.pop(env_name, None)
 
 
-def ensure_config_file():
-    """Create the config from the environment when it does not exist yet."""
-    path = config_path()
-    if os.path.isfile(path):
+def read_env_file(path):
+    """Parse a KEY=value file. Returns {} when it does not exist."""
+    values = {}
+    if not path:
+        return values
+    try:
+        handle = open(path, "r")
+    except IOError:
+        return values
+    try:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name = name.strip()
+            if name.startswith("export "):
+                name = name[7:].strip()
+            if name:
+                values[name] = value.strip().strip('"').strip("'")
+    finally:
+        handle.close()
+    return values
+
+
+_env_state = {"mtime": None}
+_settings_lock = threading.Lock()
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except (OSError, TypeError):
+        return None
+
+
+def ensure_config_file(env_path=None):
+    """Load provider settings for this request.
+
+    .env seeds providers.json the first time. After that, whichever of the
+    two files was edited last wins: editing .env takes effect on the next
+    request with no restart, and Preferences still writes providers.json.
+    Blank .env lines never erase a saved key. Returns True when providers.json
+    was created.
+    """
+    with _settings_lock:
+        path = config_path()
+        env_mtime = _mtime(env_path)
+        env = {}
+        if env_mtime is not None and env_mtime != _env_state["mtime"]:
+            env = read_env_file(env_path)
+            field_names = set(env_name for _name, env_name in FIELDS)
+            for name, value in env.items():
+                # XAI_MODEL and similar overrides are read from the environment.
+                if name not in field_names and value:
+                    os.environ[name] = value
+        created = False
+        if not os.path.isfile(path):
+            data = _empty_config()
+            if not env:
+                env = read_env_file(env_path)
+            for name, env_name in FIELDS:
+                value = (env.get(env_name) or os.environ.get(env_name, "")).strip()
+                if value:
+                    data[name] = value
+            write_config(data)
+            created = True
+        elif env:
+            first_look = _env_state["mtime"] is None
+            if not first_look or env_mtime > (_mtime(path) or 0):
+                data = read_config()
+                changed = False
+                for name, env_name in FIELDS:
+                    value = (env.get(env_name) or "").strip()
+                    if name == "local_url" and value:
+                        try:
+                            value = normalize_local_url(value)
+                        except RuntimeError:
+                            value = ""
+                    if value and value != data.get(name):
+                        data[name] = value
+                        changed = True
+                if changed:
+                    write_config(data)
+                    _local_cache["at"] = 0
+        _env_state["mtime"] = env_mtime
         apply_config(read_config())
-        return False
-    data = _empty_config()
-    for name, env_name in FIELDS:
-        value = os.environ.get(env_name, "").strip()
-        if value:
-            data[name] = value
-    if not data["local_url"]:
-        data["local_url"] = DEFAULT_LOCAL_URL
-    write_config(data)
-    apply_config(data)
-    return True
+        return created
 
 
 def settings_public():
+    """name=value lines for Tiger Build Preferences. Keys are never sent back,
+    only whether each is saved. local_url is the address in use, or blank
+    when no local server is set up. local_status is unset, ok N, empty, or
+    offline."""
     data = read_config()
-    lines = ["local_url=%s" % data["local_url"]]
+    try:
+        in_use = normalize_local_url(data.get("local_url") or "")
+    except RuntimeError:
+        in_use = ""
+    lines = [
+        "local_url=%s" % in_use,
+        "local_url_set=%s" % ("1" if in_use else "0"),
+    ]
+    if not in_use:
+        lines.append("local_status=unset")
+    else:
+        try:
+            count = len(list_local_models(timeout=2))
+            lines.append("local_status=%s" % ("ok %d" % count if count else "empty"))
+        except Exception:
+            lines.append("local_status=offline")
     for name, _env in FIELDS:
         if name == "local_url":
             continue
@@ -131,6 +224,18 @@ def update_settings(incoming):
     data = read_config()
     if not isinstance(incoming, dict):
         raise RuntimeError("Settings must be an object.")
+    # {"clear": ["xai_api_key", ...]} removes saved values. Blank fields
+    # elsewhere mean "leave as is", so this is the only way to remove one.
+    clear = [name for name, _env in FIELDS] if incoming.get("clear_all") is True else (incoming.get("clear") or [])
+    if not isinstance(clear, list):
+        raise RuntimeError("clear must be a list of setting names.")
+    known = [name for name, _env in FIELDS]
+    for name in clear:
+        if name not in known:
+            raise RuntimeError("Unknown setting %s." % name)
+        data[name] = ""
+        env_name = dict(FIELDS)[name]
+        os.environ.pop(env_name, None)
     for name, _env in FIELDS:
         if name not in incoming:
             continue
@@ -150,10 +255,45 @@ def update_settings(incoming):
     return written
 
 
+def targets_this_relay(url, listen_host, listen_port):
+    """True when a local model URL would call this relay back."""
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").strip("[]").lower()
+    if parsed.port:
+        port = parsed.port
+    elif parsed.scheme == "https":
+        port = 443
+    else:
+        port = 80
+    if port != int(listen_port):
+        return False
+    listen = (listen_host or "").strip("[]").lower()
+    if host in ("127.0.0.1", "localhost", "::1") or host == listen:
+        return True
+    if listen in ("0.0.0.0", "::"):
+        try:
+            own = socket.gethostbyname(socket.gethostname()).lower()
+        except OSError:
+            own = ""
+        if host and host == own:
+            return True
+    return False
+
+
+def _listen_endpoint():
+    try:
+        from mcp_bridge import load_shell_config
+        from security import listen_address
+        config = load_shell_config()
+        return listen_address(config), int(config.get("LISTEN_PORT") or 8765)
+    except Exception:
+        return "", 8765
+
+
 def normalize_local_url(value):
     text = (value or "").strip().rstrip("/")
     if not text:
-        return DEFAULT_LOCAL_URL
+        return ""
     if "://" not in text:
         text = "http://" + text
     lower = text.lower()
@@ -165,6 +305,9 @@ def normalize_local_url(value):
             raise RuntimeError("The local model address is not usable.")
     if not lower.endswith("/v1"):
         text = text + "/v1"
+    host, port = _listen_endpoint()
+    if targets_this_relay(text, host, port):
+        raise RuntimeError("The local model address is this relay. Use the model server's own address.")
     return text
 
 
@@ -172,7 +315,7 @@ def local_base():
     try:
         return normalize_local_url(os.environ.get("LOCAL_MODEL_URL", ""))
     except RuntimeError:
-        return DEFAULT_LOCAL_URL
+        return ""
 
 
 def local_key():
@@ -225,9 +368,9 @@ def clean_title(text):
     return line or "New Chat"
 
 
-def _get_json(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.0"})
-    response = urllib.request.urlopen(request, timeout=8)
+def _get_json(url, timeout=8):
+    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.2"})
+    response = urllib.request.urlopen(request, timeout=timeout)
     try:
         return json.loads(response.read().decode("utf-8", "replace"))
     finally:
@@ -272,20 +415,26 @@ def usable_local_models(v0_items, v1_items):
     return models
 
 
-def list_local_models():
+def local_configured():
+    return bool(local_base())
+
+
+def list_local_models(timeout=8):
     base = local_base()
+    if not base:
+        raise RuntimeError("No local model server is set up.")
     origin = base[:-3] if base.endswith("/v1") else base
     v0_items = []
     v1_items = []
     errors = []
     try:
-        payload = _get_json(origin + "/api/v0/models")
+        payload = _get_json(origin + "/api/v0/models", timeout)
         if isinstance(payload, dict):
             v0_items = payload.get("data") or []
     except Exception as exc:
         errors.append(str(exc))
     try:
-        payload = _get_json(base + "/models")
+        payload = _get_json(base + "/models", timeout)
         if isinstance(payload, dict):
             v1_items = payload.get("data") or []
     except Exception as exc:

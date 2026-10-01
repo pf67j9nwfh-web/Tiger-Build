@@ -1,13 +1,18 @@
 #!/bin/bash
-# SSH to a Power Mac running Mac OS X Tiger (OpenSSH 5.x).
-# Settings come from ~/Library/Application Support/TigerDesk/config.sh
+# SSH to the Tiger Mac (Mac OS X 10.4, OpenSSH 5.x).
+# Settings come from ~/Library/Application Support/Tiger Build Relay/config.sh
 #
 #   ppc-ssh                    interactive shell
 #   ppc-ssh 'remote command'   one command, no tty
 
 set -euo pipefail
 
-CONFIG="${TIGERDESK_CONFIG:-$HOME/Library/Application Support/TigerDesk/config.sh}"
+# Tiger Build Relay settings. The pre-1.6 folder name (TigerDesk) still works.
+RELAY_HOME="${TIGERBUILD_RELAY_HOME:-$HOME/Library/Application Support/Tiger Build Relay}"
+if [ -z "${TIGERBUILD_RELAY_HOME:-}" ] && [ ! -d "$RELAY_HOME" ] && [ -d "$HOME/Library/Application Support/TigerDesk" ]; then
+  RELAY_HOME="$HOME/Library/Application Support/TigerDesk"
+fi
+CONFIG="${TIGERBUILD_RELAY_CONFIG:-${TIGERDESK_CONFIG:-$RELAY_HOME/config.sh}}"
 if [ -f "$CONFIG" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG"
@@ -27,6 +32,10 @@ if [ ! -f "$TIGER_KNOWN" ]; then
   exit 1
 fi
 
+# Tiger's OpenSSH 5.1 only signs with ssh-rsa (SHA-1), so the host key and
+# user key algorithms cannot be newer. Everything else uses the strongest
+# option that server offers: SHA-256 group exchange, AES-CTR, and HMAC-SHA1
+# (it has no SHA-2 MACs). CBC ciphers, 3DES, MD5, and group1 are not allowed.
 SSH=(
   ssh
   -i "$TIGER_KEY"
@@ -37,10 +46,10 @@ SSH=(
   -o PubkeyAuthentication=yes
   -o PubkeyAcceptedAlgorithms=ssh-rsa
   -o HostKeyAlgorithms=ssh-rsa
-  -o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1
-  -o Ciphers=aes128-cbc,3des-cbc,aes256-cbc
-  -o MACs=hmac-sha1,hmac-md5
-  -o RequiredRSASize=512
+  -o KexAlgorithms=diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1
+  -o Ciphers=aes256-ctr,aes128-ctr
+  -o MACs=hmac-sha1
+  -o RequiredRSASize=2048
   -o StrictHostKeyChecking=yes
   -o "UserKnownHostsFile=$TIGER_KNOWN"
   -o UpdateHostKeys=no
@@ -52,5 +61,9 @@ SSH=(
 TARGET="$TIGER_USER@$TIGER_HOST"
 if [ "$#" -eq 0 ]; then
   exec "${SSH[@]}" -t "$TARGET"
+fi
+# PPC_SSH_TTY=1 gives the command a terminal, for prompts such as sudo.
+if [ "${PPC_SSH_TTY:-0}" = "1" ]; then
+  exec "${SSH[@]}" -t "$TARGET" "$@"
 fi
 exec "${SSH[@]}" -T "$TARGET" "$@"

@@ -10,10 +10,13 @@
     NSDictionary *statusAttrs;
     NSMutableArray *movieViews;
     NSMutableArray *moviePaths;
+    NSMutableDictionary *imageCache;
+    NSMutableArray *textViews;
 }
 
 - (void)setMessages:(NSArray *)newMessages;
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible;
 - (void)scrollToEnd;
+- (void)setActivitiesExpanded:(BOOL)expanded;
 
 @end

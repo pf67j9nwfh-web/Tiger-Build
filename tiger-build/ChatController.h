@@ -2,6 +2,7 @@
 
 @interface ChatController : NSObject {
     NSWindow *window;
+    NSPopUpButton *workspacePopup;
     NSView *content;
     NSTableView *table;
     NSScrollView *chatScroll;
@@ -38,6 +39,12 @@
     NSMutableArray *localModels;
     NSMutableDictionary *prefsFields;
     NSWindow *prefsWindow;
+    NSMutableDictionary *contextPending;
+    BOOL storeDirty;
+    NSTextField *relayStatusField;
+    NSTimer *relayTimer;
+    BOOL relayReachable;
+    double lastCatalog;
 }
 
 - (void)setLaunchQuestion:(NSString *)text;

@@ -1,47 +1,38 @@
 #!/bin/bash
-# The Installer window shows these steps on the last page. This copy stays
-# next to the relay so they can be opened again later.
+# The Installer shows these steps on its last page. This copy stays next to
+# the relay so they can be read again later.
 
-cat > /usr/local/tiger-desk/ENV-SETUP.txt << 'EOF'
-Tiger Desk is installed at /usr/local/tiger-desk.
-This package does not contain API keys. Create .env yourself:
+cat > /usr/local/tiger-build-relay/ENV-SETUP.txt << 'EOF'
+Tiger Build Relay 1.2 is installed at /usr/local/tiger-build-relay.
+This package does not contain API keys.
 
-1. In Terminal:
+1. Make an ssh-rsa key and install it on your Tiger Mac. See RELEASE.txt.
 
-   sudo cp /usr/local/tiger-desk/.env.example /usr/local/tiger-desk/.env
-   sudo chmod 600 /usr/local/tiger-desk/.env
-   sudo nano /usr/local/tiger-desk/.env
+2. As your own user, not with sudo, run:
 
-2. Paste a key after the name, with no spaces around the equals sign.
-   Leave a line blank when you are not using that service.
+   /usr/local/tiger-build-relay/scripts/setup.sh
 
-   XAI_API_KEY              Grok
-   OPENAI_API_KEY           ChatGPT
-   ANTHROPIC_API_KEY        Claude
-   ANTHROPIC_WORKSPACE_ID   only if the Claude key is not tied to one workspace
-   MISTRAL_API_KEY          Mistral
-   MUSE_API_KEY             Muse
-   GEMINI_API_KEY           Gemini
-   LOCAL_MODEL_URL          LM Studio on this Mac. The sample is http://127.0.0.1:1234/v1
-   LOCAL_API_KEY            only if that local server requires a key
+   The first run writes
+   ~/Library/Application Support/Tiger Build Relay/config.sh.
+   Set TIGER_HOST (the Tiger Mac's address) and TIGER_USER (the account on
+   it), then run setup.sh again. It starts the relay and prints the address,
+   port and token. Open Tiger Build Relay from /Applications.
 
-3. Tell the relay which Power Mac to use. The first run of setup.sh writes
-   ~/Library/Application Support/TigerDesk/config.sh from the example.
-   Set TIGER_HOST, TIGER_USER, TIGER_KEY, and TIGER_KNOWN.
-   Leave REMOTE_COMMANDER as $HOME/ppc-commander/ppc_commander.py.
+3. On the Tiger Mac, open Tiger Build > Preferences. Enter the relay
+   address, port and token, then click Test Connection.
 
-4. As your own user, not with sudo:
+4. Add API keys in Preferences or in the Tiger Build Relay app. The
+   Workspace ID and Local API key are optional. With no keys at all, a
+   local model server such as LM Studio still works.
 
-   /usr/local/tiger-desk/scripts/setup.sh
+   Keys can instead go in /usr/local/tiger-build-relay/.env
+   (see .env.example).
 
-5. Check the relay:
+5. Check the relay, using the address setup.sh printed:
 
-   curl http://127.0.0.1:8765/health
-
-   A working relay answers: ok grok-4.7
+   curl http://THAT.ADDRESS:8765/health
 EOF
-chmod 644 /usr/local/tiger-desk/ENV-SETUP.txt
-echo "Tiger Desk files are in /usr/local/tiger-desk."
-echo "API keys go in /usr/local/tiger-desk/.env. See ENV-SETUP.txt."
-echo "Then, as your own user, run: /usr/local/tiger-desk/scripts/setup.sh"
+chmod 644 /usr/local/tiger-build-relay/ENV-SETUP.txt
+echo "Tiger Build Relay files are in /usr/local/tiger-build-relay."
+echo "Then, as your own user, run: /usr/local/tiger-build-relay/scripts/setup.sh"
 exit 0

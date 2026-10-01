@@ -31,6 +31,11 @@ install_user() {
   mkdir -p "$home/ppc-commander"
   cp "$SRC" "$home/ppc-commander/ppc_commander.py"
   chmod 755 "$home/ppc-commander/ppc_commander.py"
+  if [ -f "$(dirname "$SRC")/service.py" ]; then
+    cp "$(dirname "$SRC")/service.py" "$home/ppc-commander/service.py"
+    chmod 755 "$home/ppc-commander/service.py"
+    chown "$user" "$home/ppc-commander/service.py" || true
+  fi
   chown "$user" "$home/ppc-commander" "$home/ppc-commander/ppc_commander.py" || true
   echo "Installed ppc-commander for $user at $home/ppc-commander/ppc_commander.py"
 }

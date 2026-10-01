@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LAN relay for Tiger Build.
 
-The Power Mac cannot speak modern HTTPS. This process accepts plain HTTP from
+Mac OS X Tiger cannot speak modern HTTPS. This process accepts plain HTTP from
 Tiger Build, calls the model APIs, and, when the model asks, runs
 ppc-commander tools on that Mac over SSH.
 """
@@ -11,17 +11,29 @@ import os
 import socket
 import ssl
 import sys
+import threading
+import plistlib
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from app_config import cached_local_models
 from app_config import clean_title
 from app_config import context_for
 from app_config import ensure_config_file
 from app_config import local_models_text
 from app_config import settings_public
 from app_config import update_settings
+from security import TOKEN_HEADER
+from security import allowed_clients
+from security import client_allowed
+from security import listen_address
+from security import relay_token
+from security import token_ok
+from security import token_path
+from version import VERSION
 from media import create_media
 from media import media_dir
 from media import media_tools
@@ -33,6 +45,13 @@ from providers import gemini_contents
 from providers import normalize as normalize_provider
 from providers import resolve_model
 from providers import stream_round
+from providers import set_live
+from discovery import Discovery
+from discovery import pretty_title
+from discovery import _transient as transient_error
+from integrations import Connections, read as integrations_config
+from security import support_dir
+from providers import CATALOG
 from mcp_bridge import (
     McpClient,
     McpError,
@@ -47,9 +66,9 @@ MODEL = "grok-4.7"
 API_URL = "https://api.x.ai/v1/responses"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SYSTEM = (
-    "You are an assistant chatting inside Tiger Build on a Power Mac G4 running "
-    "Mac OS X 10.4 Tiger. You have ppc-commander tools that read files, "
-    "edit files, and run shell commands on that Power Mac. Use them when "
+    "You are an assistant chatting inside Tiger Build on {machine} running "
+    "{os}. You have ppc-commander tools that read files, "
+    "edit files, and run shell commands on that Mac. Use them when "
     "the person asks about that computer or wants something done there. "
     "Do not use them for ordinary questions. "
     "Finish the task in this turn. Do not stop halfway, and do not ask the "
@@ -64,53 +83,18 @@ SYSTEM = (
 MAX_TOOL_ROUNDS = 12
 
 
-def load_env_file():
-    candidates = [
-        os.path.join(ROOT, ".env"),
-        os.path.expanduser("~/AquaChat/.env"),
-    ]
-    for path in candidates:
-        try:
-            handle = open(path, "r")
-        except IOError:
-            continue
-        try:
-            for line in handle:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                name, value = line.split("=", 1)
-                name = name.strip()
-                if name and name not in os.environ:
-                    os.environ[name] = value.strip().strip('"').strip("'")
-        finally:
-            handle.close()
+ENV_PATH = os.path.join(ROOT, ".env")
+TOKEN = ""
+ALLOWED = set()
+
+
+def refresh_settings():
+    """Pick up edits to .env or providers.json. Runs at the start of each request."""
+    return ensure_config_file(ENV_PATH)
 
 
 def load_key():
-    key = os.environ.get("XAI_API_KEY", "").strip()
-    if key:
-        return key
-    candidates = [
-        os.path.join(ROOT, ".env"),
-        os.path.expanduser("~/AquaChat/.env"),
-    ]
-    for path in candidates:
-        try:
-            handle = open(path, "r")
-        except IOError:
-            continue
-        try:
-            for line in handle:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                name, value = line.split("=", 1)
-                if name.strip() == "XAI_API_KEY":
-                    return value.strip().strip('"').strip("'")
-        finally:
-            handle.close()
-    return ""
+    return os.environ.get("XAI_API_KEY", "").strip()
 
 
 def ssl_context():
@@ -172,7 +156,23 @@ def api_error_text(detail, code):
             detail = err["message"]
         elif isinstance(err, str):
             detail = err
-    return "The model service returned %s: %s" % (code, detail[:800])
+    text = "The model service returned %s: %s" % (code, detail[:800])
+    if "anthropic-workspace-id" in detail:
+        text += (" Your Anthropic key needs its workspace ID: add it in Tiger Build "
+                 "Preferences under Workspace ID (optional).")
+    return text
+
+
+# Which providers a saved setting affects, so their model checks start over.
+SETTING_PROVIDERS = {
+    "xai_api_key": ("grok",),
+    "openai_api_key": ("chatgpt",),
+    "anthropic_api_key": ("claude",),
+    "anthropic_workspace_id": ("claude",),
+    "mistral_api_key": ("mistral",),
+    "muse_api_key": ("muse",),
+    "gemini_api_key": ("gemini",),
+}
 
 
 def event_error_message(event):
@@ -217,7 +217,7 @@ def open_stream(payload):
     key = load_key()
     if not key:
         raise RuntimeError(
-            "XAI_API_KEY is not set. Add it to .env next to this project and start the relay again."
+            "XAI_API_KEY is not set. Add it in Tiger Build Preferences or the relay .env."
         )
     body_payload = dict(payload)
     body_payload["stream"] = True
@@ -228,7 +228,7 @@ def open_stream(payload):
         headers={
             "Content-Type": "application/json",
             "Authorization": "Bearer " + key,
-            "User-Agent": "TigerBuild-relay/1.0",
+            "User-Agent": "TigerBuild-relay/%s" % VERSION,
         },
         method="POST",
     )
@@ -259,33 +259,164 @@ def iter_response_events(payload):
         response.close()
 
 
+PROBE_SYSTEM = "This is a connection check. Reply with the single word ok."
+PROBE_TOOL = {
+    "type": "function",
+    "name": "ping",
+    "description": "Connection check. Do not call it.",
+    "parameters": {
+        "type": "object",
+        "properties": {"word": {"type": "string", "description": "Any word."}},
+    },
+}
+DISCOVERY = None
+
+
+def probe_model(provider, model, endpoint=None):
+    """Raise unless this model streams a reply to a request that includes a
+    tool, through the same code a Tiger Build chat uses. The stream is closed
+    as soon as the model starts answering, so a check costs a few tokens."""
+    log = [{"role": "user", "content": "ping"}]
+    if provider == "grok":
+        payload = {
+            "model": model,
+            "store": False,
+            "input": [{"role": "system", "content": PROBE_SYSTEM}] + log,
+            "tools": [PROBE_TOOL],
+            "tool_choice": "auto",
+        }
+        events = iter_response_events(payload)
+        try:
+            for event in events:
+                etype = event.get("type") if isinstance(event, dict) else ""
+                if etype in ("error", "response.failed", "response.error"):
+                    raise RuntimeError(event_error_message(event))
+                item = event.get("item") if isinstance(event, dict) else None
+                if text_delta(event) or etype == "response.completed" or (
+                    isinstance(item, dict) and item.get("type") == "function_call"
+                ):
+                    return
+        finally:
+            events.close()
+        raise RuntimeError("The model stream ended early.")
+    stream = stream_round(
+        provider, PROBE_SYSTEM, log, [PROBE_TOOL], {}, ssl_context(), api_error_text,
+        model=model, endpoint=endpoint, probing=True,
+    )
+    try:
+        for _piece in stream:
+            return
+    finally:
+        stream.close()
+
+
+def start_discovery(run=True):
+    global DISCOVERY
+    if DISCOVERY is None:
+        DISCOVERY = Discovery(
+            os.path.join(support_dir(), "models-cache.json"),
+            probe_model, ssl_context, refresh_settings,
+        )
+        set_live(DISCOVERY.allowed, DISCOVERY.default, DISCOVERY.endpoint, DISCOVERY.info)
+    if run:
+        DISCOVERY.start()
+    return DISCOVERY
+
+
+_TOOL_CACHE = {"tools": None, "at": 0.0, "offline": ""}
+_TOOL_LOCK = threading.Lock()
+TOOL_CACHE_SECONDS = 300
+OFFLINE_RETRY_SECONDS = 15
+
+
 class ToolSession(object):
+    """State for one request. Every HTTP request gets its own instance.
+
+    The tool list is shared between requests. A good list is kept for five
+    minutes. An offline result is retried after 15 seconds, so a Tiger Mac
+    that was asleep at the first request does not stay offline until restart.
+    """
+
     def __init__(self):
         self.config = load_shell_config()
         self.tools = None
         self.offline = ""
+        self.extra = Connections()
+        self.client = {}
+
+    def set_client(self, info):
+        """What Tiger Build reports about the Mac it runs on. Plain short
+        strings only; anything else is ignored."""
+        clean = {}
+        if isinstance(info, dict):
+            for key in ("machine", "os", "user", "home"):
+                value = info.get(key)
+                if isinstance(value, str):
+                    value = " ".join(value.split())[:160]
+                    if value:
+                        clean[key] = value
+        self.client = clean
+        return clean
+
+    def machine(self):
+        return self.client.get("machine") or "a PowerPC Mac"
+
+    def os_name(self):
+        return self.client.get("os") or "Mac OS X Tiger"
+
+    def account(self):
+        return (self.config.get("TIGER_USER") or "").strip()
+
+    def home(self):
+        home = (self.config.get("TIGER_HOME") or "").strip()
+        # Tools run as TIGER_USER over SSH. When Tiger Build runs as that
+        # same account, the home folder it reports is the right one.
+        reported = self.client.get("home") or ""
+        if not home and reported.startswith("/") and self.client.get("user") == self.account():
+            home = reported
+        if home:
+            return home.rstrip("/")
+        if self.account():
+            return "/Users/%s" % self.account()
+        return "~"
+
+    def media_root(self):
+        return self.home() + "/Library/Application Support/Tiger Build/media"
 
     def definitions(self):
         if self.tools is not None:
             return self.tools
-        if not self.config.get("TIGER_HOST") or not self.config.get("TIGER_USER"):
-            self.offline = "Power Mac tools are not configured."
+        if not self.config.get("TIGER_HOST") or not self.account():
+            self.offline = "Tiger Mac tools are not configured. Set TIGER_HOST and TIGER_USER in config.sh."
             self.tools = []
             return self.tools
+        with _TOOL_LOCK:
+            cached = _TOOL_CACHE["tools"]
+            age = time.time() - _TOOL_CACHE["at"]
+            if cached is not None:
+                keep = TOOL_CACHE_SECONDS if cached else OFFLINE_RETRY_SECONDS
+                if age < keep:
+                    self.tools = cached
+                    self.offline = _TOOL_CACHE["offline"]
+                    return self.tools
         client = McpClient(ssh_command(self.config))
         try:
             client.start()
-            listed = client.request("tools/list", {})
+            tools = xai_tools_from_mcp(client.request("tools/list", {}, timeout=30))
+            offline = ""
         except Exception as exc:
-            self.offline = "Power Mac tools are offline (%s)." % exc
-            sys.stderr.write("tigerbuild-relay: %s\n" % self.offline)
-            self.tools = []
-            return self.tools
+            tools = []
+            offline = "Tiger Mac tools are offline (%s)." % exc
+            sys.stderr.write("tigerbuild-relay: %s\n" % offline)
         finally:
             client.close()
-        self.tools = xai_tools_from_mcp(listed)
-        self.offline = ""
-        return self.tools
+        with _TOOL_LOCK:
+            _TOOL_CACHE["tools"] = tools
+            _TOOL_CACHE["at"] = time.time()
+            _TOOL_CACHE["offline"] = offline
+        self.tools = tools
+        self.offline = offline
+        return tools
 
     def _cap_command_wait(self, args):
         # A command that never prints and never exits used to block the chat
@@ -324,11 +455,10 @@ class ToolSession(object):
         return "\n\nThe last command stopped with an error:\n" + detail
 
     def _saved_media_text(self, kind, filename):
-        account = self.config.get("TIGER_USER") or "JR"
-        path = "/Users/%s/Library/Application Support/Tiger Build/media/%s" % (account, filename)
+        path = "%s/%s" % (self.media_root(), filename)
         if kind == "video":
-            return "Saved the video on the Power Mac at %s." % path
-        return "Saved the image on the Power Mac at %s." % path
+            return "Saved the video on the Tiger Mac at %s." % path
+        return "Saved the image on the Tiger Mac at %s." % path
 
     def _media_status(self, name):
         if name == "generate_image":
@@ -336,6 +466,14 @@ class ToolSession(object):
         if name == "generate_video":
             return "Generating a video. This can take a minute..."
         return ""
+
+    def _tool_event(self, call, phase, output="", failed=False, elapsed=0):
+        args = self._call_args(call)
+        name = call.get("name") or "tool"
+        detail = args.get("command") or args.get("input") or args.get("query") or json.dumps(args,ensure_ascii=False)
+        return plistlib.dumps({"id":call.get("id") or call.get("call_id") or name,"name":name,"phase":phase,
+            "detail":str(detail)[:20000],"output":str(output)[:100000],
+            "failed":bool(failed),"elapsed":float(elapsed)},fmt=plistlib.FMT_XML).decode()
 
     def _run_one_call(self, provider, call, client_holder):
         name = call.get("name") or ""
@@ -366,6 +504,13 @@ class ToolSession(object):
                 "video %s" % info["filename"],
                 False,
             )
+        if self.extra.handles(name):
+            try:
+                return "Running " + name, self.extra.call(name, args), None, False
+            except Exception as exc:
+                return "Running " + name, "error: %s" % exc, None, True
+        if not self.extra.config['ppc_enabled']:
+            return "PPC Commander disabled", "error: PPC Commander is disabled in relay tool configuration.", None, True
         if client_holder[0] is None:
             client_holder[0] = McpClient(ssh_command(self.config))
             client_holder[0].start()
@@ -384,16 +529,16 @@ class ToolSession(object):
         Reasoning text from the model is never forwarded. Tool rounds use the
         completed response, not the argument deltas. use_tools is per chat.
         """
-        load_env_file()
-        ensure_config_file()
+        refresh_settings()
         if use_tools:
-            tools = self.definitions()
+            tools = self.definitions() if self.extra.config['ppc_enabled'] else []
+            tools = list(tools) + self.extra.definitions(provider)
         else:
             tools = []
         if system_override:
             system = system_override
         else:
-            system = SYSTEM
+            system = SYSTEM.replace("{machine}", self.machine()).replace("{os}", self.os_name())
         if system_override:
             use_tools = False
             tools = []
@@ -401,13 +546,12 @@ class ToolSession(object):
             extra = media_tools(provider)
             if extra:
                 tools = list(tools) + extra
-                account = self.config.get("TIGER_USER") or "JR"
-                media_root = "/Users/%s/Library/Application Support/Tiger Build/media" % account
+                media_root = self.media_root()
                 system += (
                     " If the person asks for a picture, call generate_image. "
                     "If they ask for a video or animation, call generate_video. "
                     "Do not say a file was created unless that tool saved one. "
-                    "Saved pictures and videos are files in %s on the Power Mac. "
+                    "Saved pictures and videos are files in %s on the Tiger Mac. "
                     "If the person asks to put one somewhere else, copy that file "
                     "with the shell. Do not invent a path."
                 ) % media_root
@@ -416,21 +560,24 @@ class ToolSession(object):
         elif not use_tools:
             system += (
                 " ppc-commander is turned off for this chat. Do not claim you "
-                "can read files or run commands on the Power Mac. If asked to, "
+                "can read files or run commands on the Tiger Mac. If asked to, "
                 "say those tools are off for this chat."
             )
         elif not tools:
             system += (
-                " The Power Mac tools are offline right now. If asked to touch "
+                " The Tiger Mac tools are offline right now. If asked to touch "
                 "that computer, say you cannot reach it."
             )
         else:
-            account = self.config.get("TIGER_USER") or "JR"
             system += (
-                " The account on that Mac is %s. Home is /Users/%s and the "
-                "Desktop is /Users/%s/Desktop. Do not look for other users "
+                " The account on that Mac is %s. Home is %s and the "
+                "Desktop is %s/Desktop. Do not look for other users "
                 "or call tools just to discover the home directory."
-            ) % (account, account, account)
+            ) % (self.account(), self.home(), self.home())
+        if not self.extra.config['ppc_enabled']:
+            system += " Built-in PPC Commander is disabled in the relay configuration. Only the other advertised tools may be used."
+        if self.extra.errors:
+            sys.stderr.write("tigerbuild-relay: custom MCP connection failures: %s\n" % "; ".join(self.extra.errors))
         if provider == "grok":
             system = system.replace("You are an assistant", "You are Grok", 1)
         chosen = resolve_model(provider, model)
@@ -439,11 +586,16 @@ class ToolSession(object):
             "store": True,
             "input": [{"role": "system", "content": system}] + messages,
         }
+        if provider == "grok" and not system_override and self.extra.config['grok_native_search']:
+            tools = list(tools) + [{"type": "web_search"}]
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
         if provider != "grok":
-            yield from self._iter_foreign(provider, messages, system, tools, chosen)
+            try:
+                yield from self._iter_foreign(provider, messages, system, tools, chosen)
+            finally:
+                self.extra.close()
             return
         client = None
         round_index = 0
@@ -489,12 +641,14 @@ class ToolSession(object):
                         announced = self._media_status(call.get("name") or "")
                         if announced:
                             yield ("s", announced)
+                        yield ("a", self._tool_event(call,"start"))
+                        started = time.monotonic()
                         summary, output, media, failed = self._run_one_call(
                             provider, call, client_holder
                         )
+                        yield ("a", self._tool_event(call,"result",output,failed,time.monotonic()-started))
                         client = client_holder[0]
-                        if not announced:
-                            yield ("s", summary)
+                        # Activity card already contains this tool summary.
                         if media:
                             yield ("m", media)
                         last_output = output
@@ -558,6 +712,7 @@ class ToolSession(object):
                         raise RuntimeError("The model returned no text.")
                 return
         finally:
+            self.extra.close()
             if client is not None:
                 client.close()
 
@@ -581,6 +736,9 @@ class ToolSession(object):
                     for delta in stream_round(
                         provider, system, log, tools, holder, ssl_context(), api_error_text, model
                     ):
+                        if isinstance(delta, dict) and "thinking" in delta:
+                            yield ("h", delta["thinking"])
+                            continue
                         if delta:
                             saw_text = True
                             any_text = True
@@ -606,16 +764,19 @@ class ToolSession(object):
                     "role": "assistant",
                     "content": "".join(spoken),
                     "calls": calls,
+                    "claude_blocks": holder.get("claude_blocks"),
                 })
                 for call in calls:
                     announced = self._media_status(call.get("name") or "")
                     if announced:
                         yield ("s", announced)
+                    yield ("a", self._tool_event(call,"start"))
+                    started = time.monotonic()
                     summary, output, media, failed = self._run_one_call(
                         provider, call, client_holder
                     )
-                    if not announced:
-                        yield ("s", summary)
+                    yield ("a", self._tool_event(call,"result",output,failed,time.monotonic()-started))
+                    # Activity card already contains this tool summary.
                     if media:
                         yield ("m", media)
                     last_output = output
@@ -660,12 +821,42 @@ class ToolSession(object):
         return text
 
 
-SESSION = ToolSession()
+
+_LAST_SEEN = {"at": 0.0}
+
+
+def note_client(address, info=None):
+    """Keep a small, secret-free record of the last client for the relay app."""
+    now = time.time()
+    record = {}
+    path = os.path.join(support_dir(), "last-client.json")
+    try:
+        with open(path) as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        record = {}
+    changed = record.get("address") != address or bool(info)
+    if not changed and now - _LAST_SEEN["at"] < 30:
+        return
+    record["address"] = address
+    record["seen"] = now
+    for key in ("machine", "os", "user"):
+        if info and info.get(key):
+            record[key] = info[key]
+    _LAST_SEEN["at"] = now
+    temporary = path + ".tmp"
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(record, handle)
+        os.replace(temporary, path)
+    except OSError:
+        pass
 
 
 class Handler(BaseHTTPRequestHandler):
-    # AquaChat on Python 2.3 reads until the connection closes. Chunked
-    # encoding is not reliable there, so this response stays HTTP/1.0.
+    # Tiger's CFNetwork reads until the
+    # connection closes. Chunked encoding is not reliable there, so HTTP/1.0.
     protocol_version = "HTTP/1.0"
 
     def log_message(self, fmt, *args):
@@ -743,12 +934,79 @@ class Handler(BaseHTTPRequestHandler):
             requested = None
         return provider, requested
 
+    def _authorized(self, need_token=True):
+        """Only the Tiger Mac (and this Mac) may connect, and only with the token."""
+        address = self.client_address[0] if self.client_address else ""
+        if not client_allowed(address, ALLOWED):
+            self._send(403, "This address may not use the relay.\n")
+            return False
+        if need_token and not token_ok(self.headers.get(TOKEN_HEADER), TOKEN):
+            self._send(401, "The relay token is missing or wrong. Set it in Tiger Build Preferences.\n")
+            return False
+        if need_token and address not in ("127.0.0.1", "::1"):
+            note_client(address)
+        return True
+
+    def _health(self):
+        """Report whether the relay can actually do its job."""
+        refresh_settings()
+        problems = []
+        keyed = []
+        for provider, env_name in (
+            ("grok", "XAI_API_KEY"), ("chatgpt", "OPENAI_API_KEY"),
+            ("claude", "ANTHROPIC_API_KEY"), ("mistral", "MISTRAL_API_KEY"),
+            ("muse", "MUSE_API_KEY"), ("gemini", "GEMINI_API_KEY"),
+        ):
+            if os.environ.get(env_name, "").strip():
+                keyed.append(provider)
+        local_line = "none"
+        try:
+            local_count = len(cached_local_models())
+        except Exception:
+            local_count = 0
+        if local_count:
+            local_line = "%d models" % local_count
+        if not keyed and not local_count:
+            # One key is enough, and so is a local server with no keys at all.
+            problems.append("no provider API keys are set and the local server has no models")
+        session = ToolSession()
+        tools = session.definitions()
+        if tools:
+            tool_line = "online (%d tools)" % len(tools)
+        else:
+            tool_line = session.offline or "offline"
+            problems.append("Tiger Mac tools are offline")
+        models_line = DISCOVERY.summary() if DISCOVERY else "not loaded"
+        lines = [
+            ("ok " if not problems else "degraded ") + MODEL,
+            "version: %s" % VERSION,
+            "providers with keys: %s" % (", ".join(keyed) or "none"),
+            "working models: %s" % models_line,
+            "local server: %s" % local_line,
+            "tiger mac tools: %s" % tool_line,
+        ]
+        if problems:
+            lines.append("problems: %s" % "; ".join(problems))
+        self._send(200 if not problems else 503, "\n".join(lines) + "\n")
+
     def _post_settings(self):
-        load_env_file()
-        ensure_config_file()
+        refresh_settings()
         try:
             incoming = self._read_json()
             update_settings(incoming)
+            if incoming.get("clear_all") is True:
+                from integrations import write as reset_integrations
+                reset_integrations({})
+            if DISCOVERY and isinstance(incoming, dict):
+                # A changed key means a new model list, and old checks no
+                # longer say anything, so those providers start over.
+                touched = set(SETTING_PROVIDERS[name][0] for name in SETTING_PROVIDERS) if incoming.get("clear_all") is True else set()
+                for name in list(incoming.keys()) + list(incoming.get("clear") or []):
+                    if name in SETTING_PROVIDERS and (name != "clear"):
+                        value = incoming.get(name)
+                        if name in (incoming.get("clear") or []) or (isinstance(value, str) and value.strip()):
+                            touched.update(SETTING_PROVIDERS[name])
+                DISCOVERY.poke(sorted(touched))
         except RuntimeError as exc:
             self._send(400, str(exc) + "\n")
             return
@@ -756,6 +1014,37 @@ class Handler(BaseHTTPRequestHandler):
             self._send(502, str(exc) + "\n")
             return
         self._send(200, settings_public())
+
+    def _history_upload(self):
+        # A single, owner-private snapshot. No caller-supplied paths.
+        from history_store import save_snapshot
+        try:
+            size = int(self.headers.get("Content-Length") or "0")
+            if size < 1 or size > 16 * 1024 * 1024:
+                raise ValueError("History must be between 1 byte and 16 MB.")
+            self.connection.settimeout(30)
+            payload = self.rfile.read(size)
+            if len(payload) != size:
+                raise ValueError("Incomplete history upload.")
+            save_snapshot(payload)
+        except (ValueError, OSError) as exc:
+            self._send(400, str(exc) + "\n")
+            return
+        self._send(200, "History copied to relay host.\n")
+
+    def _history_download(self):
+        from history_store import read_snapshot
+        try:
+            payload = read_snapshot()
+        except OSError:
+            self._send(404, "No history snapshot on this relay yet. Export to Relay Host first.\n")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-plist")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _post_side_task(self, path):
         try:
@@ -777,7 +1066,7 @@ class Handler(BaseHTTPRequestHandler):
                 "Write plain prose."
             )
         try:
-            text = SESSION.plain_complete(provider, requested, system, cleaned)
+            text = ToolSession().plain_complete(provider, requested, system, cleaned)
         except Exception as exc:
             self._send(502, str(exc) + "\n")
             return
@@ -786,11 +1075,31 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, text)
 
     def do_GET(self):
-        load_env_file()
-        ensure_config_file()
         path, _, query = self.path.partition("?")
         if path == "/health":
-            self._send(200, "ok " + MODEL + "\n")
+            # Allowed addresses only; no token so a plain curl can check it.
+            if self._authorized(need_token=False):
+                self._health()
+            return
+        if not self._authorized():
+            return
+        refresh_settings()
+        if path in ("/v1/integrations", "/v1/config-export"):
+            import plistlib
+            from integrations import public
+            from config_backup import export
+            payload = export() if path == "/v1/config-export" else plistlib.dumps(public(), fmt=plistlib.FMT_XML)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-plist")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers(); self.wfile.write(payload)
+            return
+        if path == "/v1/history":
+            self._history_download()
+            return
+        if path == "/v1/models":
+            self._send(200, start_discovery(False).models_text())
             return
         if path.startswith("/v1/media/"):
             name = safe_name(path[len("/v1/media/"):])
@@ -838,12 +1147,39 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError:
                 provider = "grok"
             model = urllib.parse.unquote(fields.get("model") or "")
-            self._send(200, "%s\n" % context_for(provider, model))
+            live = DISCOVERY.context(provider, model) if DISCOVERY else 0
+            self._send(200, "%s\n" % (live or context_for(provider, model)))
             return
         self._send(404, "not found\n")
 
     def do_POST(self):
+        if not self._authorized():
+            return
         path = self.path.split("?", 1)[0]
+        if path in ("/v1/integrations", "/v1/config-import"):
+            import plistlib
+            from integrations import write as write_integrations
+            from config_backup import restore
+            try:
+                size = int(self.headers.get("Content-Length") or "0")
+                if size < 1 or size > 2 * 1024 * 1024: raise ValueError("Configuration limit is 2 MB.")
+                self.connection.settimeout(30)
+                data = self.rfile.read(size)
+                if len(data) != size: raise ValueError("Incomplete configuration upload.")
+                if path == "/v1/integrations":
+                    write_integrations(plistlib.loads(data), preserve_key=True)
+                else:
+                    # Client imports keep the running relay's address/token/SSH
+                    # connection intact, so remote imports cannot lock it out.
+                    restore(data, connection=False)
+                    if DISCOVERY: DISCOVERY.poke(["grok","chatgpt","claude","mistral","muse","gemini"])
+                self._send(200, "Configuration saved. Imported custom MCP servers stay disabled until enabled.\n")
+            except Exception as exc:
+                self._send(400, str(exc) + "\n")
+            return
+        if path == "/v1/history":
+            self._history_upload()
+            return
         if path == "/v1/settings":
             self._post_settings()
             return
@@ -876,10 +1212,14 @@ class Handler(BaseHTTPRequestHandler):
         requested_model = incoming.get("model")
         if not isinstance(requested_model, str):
             requested_model = None
-        streaming = self.headers.get("X-AquaChat-Protocol") == "frames"
+        streaming = self.headers.get("X-TigerBuild-Protocol") == "frames"
+        session = ToolSession()
+        reported = session.set_client(incoming.get("client"))
+        if reported:
+            note_client(self.client_address[0] if self.client_address else "", reported)
         if not streaming:
             try:
-                reply = SESSION.run_turn(cleaned, use_tools, provider, requested_model)
+                reply = session.run_turn(cleaned, use_tools, provider, requested_model)
             except Exception as exc:
                 self._send(502, str(exc))
                 return
@@ -887,8 +1227,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._begin_stream()
         try:
-            for kind, text in SESSION.iter_turn(cleaned, use_tools, provider, requested_model):
-                if kind in ("t", "s", "m"):
+            for kind, text in session.iter_turn(cleaned, use_tools, provider, requested_model):
+                if kind in ("t", "s", "m", "a", "h"):
                     self._frame(kind, text)
             self._frame("d", "")
         except Exception as exc:
@@ -993,14 +1333,14 @@ def self_test():
         raise SystemExit("user transcript was rewritten")
     marked = AnswerStream()
     shown = marked.add_content(
-        "Sure.\n<tool_call>\n<function=list_directory>\n<parameter=path>\n/Users/JR/Desktop\n</parameter>\n</function>\n</tool_call>"
+        "Sure.\n<tool_call>\n<function=list_directory>\n<parameter=path>\n/Users/example/Desktop\n</parameter>\n</function>\n</tool_call>"
     )
     if "".join(shown).strip() != "Sure.":
         raise SystemExit("tool markup was shown")
     parsed = qwen_tool_calls("\n".join(marked.tool_markup))
     if len(parsed) != 1 or parsed[0]["name"] != "list_directory":
         raise SystemExit("qwen tool call was not parsed")
-    if json.loads(parsed[0]["arguments"]).get("path") != "/Users/JR/Desktop":
+    if json.loads(parsed[0]["arguments"]).get("path") != "/Users/example/Desktop":
         raise SystemExit("qwen tool arguments were not parsed")
     if context_for("grok", "grok-4.7") < 1000:
         raise SystemExit("context limit missing")
@@ -1037,26 +1377,115 @@ def self_test():
         raise SystemExit("gemini thought signature was dropped")
     if replay[2]["parts"][0]["functionResponse"].get("id") != "call_1":
         raise SystemExit("gemini tool result id was dropped")
+    discovery_self_test()
     print("proxy self-test ok")
 
 
+def discovery_self_test():
+    import tempfile
+    if pretty_title("chatgpt", "gpt-7-mini") != "7 Mini" or pretty_title("mistral", "mistral-large-latest") != "Mistral Large":
+        raise SystemExit("model title failed")
+    if not transient_error("The model service returned 429: slow down") or transient_error("The model service returned 404: no such model"):
+        raise SystemExit("transient error check failed")
+    folder = tempfile.mkdtemp()
+    calls = []
+
+    def fake_probe(provider, model, endpoint=None):
+        calls.append((provider, model, endpoint))
+        if model == "gpt-broken":
+            raise RuntimeError("The model service returned 400: tools are not supported")
+        if model == "gpt-busy":
+            raise RuntimeError("The model service returned 429: rate limit")
+        if model == "gpt-9-pro" and endpoint != "responses":
+            raise RuntimeError("The model service returned 404: use the Responses API")
+
+    found = Discovery(os.path.join(folder, "cache.json"), fake_probe, lambda: None)
+    old_key = os.environ.get("OPENAI_API_KEY")
+    os.environ["OPENAI_API_KEY"] = "test"
+    try:
+        found.listed["chatgpt"] = {"at": time.time(), "error": "", "models": [
+            {"id": "gpt-5.5", "created": 1}, {"id": "gpt-9", "created": 9},
+            {"id": "gpt-9-pro", "created": 8}, {"id": "gpt-broken", "created": 7},
+            {"id": "gpt-busy", "created": 6},
+        ]}
+        ids = [m["id"] for m in found.usable("chatgpt")]
+        if ids != ["gpt-5.5"]:
+            raise SystemExit("unchecked new models were shown: %s" % ids)
+        for model in ("gpt-5.5", "gpt-9", "gpt-9-pro", "gpt-broken", "gpt-busy"):
+            found._check("chatgpt", model)
+        ids = [m["id"] for m in found.usable("chatgpt")]
+        if ids != ["gpt-9", "gpt-9-pro", "gpt-5.5"]:
+            raise SystemExit("model check filter failed: %s" % ids)
+        if found.endpoint("chatgpt", "gpt-9-pro") != "responses":
+            raise SystemExit("responses endpoint was not remembered")
+        if found.allowed("chatgpt", "../x") or not found.allowed("chatgpt", "gpt-9"):
+            raise SystemExit("live allowlist failed")
+        if "model\tchatgpt\tgpt-9\t9\t0\t0" not in found.models_text():
+            raise SystemExit("models text failed: %r" % found.models_text())
+        found.save()
+        again = Discovery(os.path.join(folder, "cache.json"), fake_probe, lambda: None)
+        if [m["id"] for m in again.usable("chatgpt")] != ids:
+            raise SystemExit("model cache did not reload")
+    finally:
+        if old_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = old_key
+        found.pool.shutdown(wait=False)
+
+
 def main(argv):
+    global TOKEN, ALLOWED
     if len(argv) > 1 and argv[1] == "--self-test":
         self_test()
         return
-    load_env_file()
-    created = ensure_config_file()
+    created = refresh_settings()
+    if len(argv) > 1 and argv[1] == "--models-text":
+        # The list as of the last checks, for the copy built into the app.
+        sys.stdout.write(start_discovery(False).models_text())
+        return
+    config = load_shell_config()
     if len(argv) > 1 and argv[1] == "--write-config":
         if created:
             print("Wrote the provider config.")
         else:
             print("Provider config already exists.")
         return
-    config = load_shell_config()
+    TOKEN = relay_token(config)
+    if len(argv) > 1 and argv[1] == "--print-token":
+        print(TOKEN)
+        return
+    ALLOWED = allowed_clients(config)
     port = int(config.get("LISTEN_PORT") or "8765")
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    sys.stderr.write("tigerbuild-relay listening on 0.0.0.0:%s model %s\n" % (port, MODEL))
-    server.serve_forever()
+    address = listen_address(config)
+    if len(argv) > 1 and argv[1] == "--print-address":
+        print(address)
+        return
+    start_discovery(True)
+    if address not in ("0.0.0.0", "::"):
+        # Let this Mac check its own relay on the address it listens on.
+        ALLOWED.add(address)
+    server = ThreadingHTTPServer((address, port), Handler)
+    server.daemon_threads = True
+    from paths import support_dir as _support
+    pid_path = os.path.join(_support(), "relay.pid")
+    handle = open(pid_path, "w")
+    try:
+        handle.write("%d\n" % os.getpid())
+    finally:
+        handle.close()
+    sys.stderr.write(
+        "tigerbuild-relay listening on %s:%s model %s; clients %s; token in %s\n"
+        % (address, port, MODEL, ", ".join(sorted(ALLOWED)), token_path())
+    )
+    try:
+        server.serve_forever()
+    finally:
+        try:
+            if open(pid_path).read().strip() == str(os.getpid()):
+                os.remove(pid_path)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

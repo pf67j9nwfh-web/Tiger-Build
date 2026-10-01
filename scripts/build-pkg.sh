@@ -4,7 +4,7 @@
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="1.1"
+VERSION="1.2"
 STAGE="$(mktemp -d)"
 DIST="$ROOT/dist"
 mkdir -p "$DIST" "$STAGE"
@@ -13,11 +13,21 @@ rsync -a \
   --exclude '.env' \
   --exclude '.env.*' \
   --exclude 'providers.json' \
+  --exclude 'integrations.json' \
+  --exclude '*-settings.plist' \
+  --exclude 'last-client.json' \
+  --exclude 'docs' \
+  --exclude 'agent-notes.txt' \
   --exclude 'config.sh' \
   --exclude 'dist' \
   --exclude '*.pyc' \
   --exclude '__pycache__' \
   --exclude '.DS_Store' \
+  --exclude '*.orig' \
+  --exclude 'relay-token' \
+  --exclude 'models-cache.json' \
+  --exclude 'TigerBuild.app' \
+  --exclude 'tbtests' \
   --exclude '.ssh' \
   --exclude 'id_rsa' \
   --exclude 'id_rsa.pub' \
@@ -77,15 +87,24 @@ cp "$ROOT/installer/postinstall" "$COMPONENT/scripts/postinstall"
 chmod 755 "$COMPONENT/scripts/postinstall"
 pkgbuild \
   --root "$STAGE" \
-  --identifier local.jr.tigerdesk \
+  --identifier local.tigerbuild.relay.pkg \
   --version "$VERSION" \
-  --install-location /usr/local/tiger-desk \
+  --install-location /usr/local/tiger-build-relay \
   --scripts "$COMPONENT/scripts" \
-  "$COMPONENT/TigerDesk-component.pkg"
+  "$COMPONENT/TigerBuildRelay-component.pkg"
+APP_STAGE="$(mktemp -d)"
+RELAY_GUI_PORTABLE=1 RELAY_GUI_OUTPUT="$APP_STAGE/Tiger Build Relay.app" bash "$ROOT/scripts/build-relay-gui.sh"
+python3 - "$COMPONENT/app-components.plist" << 'PY'
+import plistlib, sys
+row = {"RootRelativeBundlePath": "Tiger Build Relay.app", "BundleIsRelocatable": False,
+       "BundleIsVersionChecked": True, "BundleHasStrictIdentifier": True, "BundleOverwriteAction": "upgrade"}
+open(sys.argv[1], "wb").write(plistlib.dumps([row]))
+PY
+pkgbuild --root "$APP_STAGE" --identifier local.tigerbuild.relaygui.pkg --version "$VERSION" --install-location /Applications --component-plist "$COMPONENT/app-components.plist" "$COMPONENT/TigerBuildRelayApp-component.pkg"
 productbuild \
   --distribution "$ROOT/installer/distribution.xml" \
   --resources "$ROOT/installer/resources" \
   --package-path "$COMPONENT" \
-  "$DIST/TigerDesk-$VERSION.pkg"
-rm -rf "$STAGE" "$COMPONENT"
-echo "Wrote $DIST/TigerDesk-$VERSION.pkg"
+  "$DIST/TigerBuildRelay-$VERSION.pkg"
+rm -rf "$STAGE" "$COMPONENT" "$APP_STAGE"
+echo "Wrote $DIST/TigerBuildRelay-$VERSION.pkg"

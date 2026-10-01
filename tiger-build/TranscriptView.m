@@ -1,6 +1,42 @@
 #import "TranscriptView.h"
 #import <QTKit/QTKit.h>
 
+@interface TranscriptView (Selection)
+- (void)toggleActivityAtView:(NSView *)view;
+- (void)syncTextViews;
+@end
+
+/* One of these sits on each message so the words can be highlighted and copied.
+   A click on an activity card's triangle still expands it. */
+@interface TBSelectText : NSTextView
+{
+    BOOL activity;
+}
+- (void)setActivity:(BOOL)flag;
+@end
+
+@implementation TBSelectText
+
+- (void)setActivity:(BOOL)flag
+{
+    activity = flag;
+}
+
+- (void)mouseDown:(NSEvent *)event
+{
+    NSPoint local;
+    if (activity) {
+        local = [self convertPoint:[event locationInWindow] fromView:nil];
+        if (local.x < 18.0) {
+            [(TranscriptView *)[self superview] toggleActivityAtView:self];
+            return;
+        }
+    }
+    [super mouseDown:event];
+}
+
+@end
+
 @interface SaveMovieView : QTMovieView
 {
     NSString *mediaPath;
@@ -163,6 +199,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     boxes = [[NSMutableArray alloc] init];
     movieViews = [[NSMutableArray alloc] init];
     moviePaths = [[NSMutableArray alloc] init];
+    imageCache = [[NSMutableDictionary alloc] init];
+    textViews = [[NSMutableArray alloc] init];
     style = [[NSMutableParagraphStyle alloc] init];
     [style setLineBreakMode:NSLineBreakByWordWrapping];
     bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -190,10 +228,34 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     [boxes release];
     [movieViews release];
     [moviePaths release];
+    [imageCache release];
+    [textViews release];
     [bodyAttrs release];
     [userAttrs release];
     [statusAttrs release];
     [super dealloc];
+}
+
+/* Pictures used to be read from disk on every layout and every redraw,
+   which made scrolling slow on older Macs. Keep decoded images in memory. */
+- (NSImage *)cachedImage:(NSString *)path
+{
+    NSImage *picture;
+    if (!path)
+        return nil;
+    picture = [imageCache objectForKey:path];
+    if (picture)
+        return picture;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path])
+        return nil;
+    picture = [[NSImage alloc] initWithContentsOfFile:path];
+    if (!picture)
+        return nil;
+    if ([imageCache count] >= 48)
+        [imageCache removeAllObjects];
+    [imageCache setObject:picture forKey:path];
+    [picture release];
+    return picture;
 }
 
 - (BOOL)playingVideo:(NSString *)path
@@ -318,13 +380,23 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             attrs = statusAttrs;
         else
             attrs = [self attrsForUser:fromUser];
-        used = [text boundingRectWithSize:NSMakeSize(status ? layoutWidth - 48 : maxText, 4000)
+        BOOL activity=[message objectForKey:@"activityKind"]!=nil;
+        if(activity) {
+            NSString *prefix=[NSString stringWithFormat:@"%C ", (unichar)([[message objectForKey:@"expanded"] boolValue] ? 0x25bc : 0x25b6)];
+            text=[prefix stringByAppendingString:text];
+            if([[message objectForKey:@"expanded"] boolValue]&&[[message objectForKey:@"detail"] length])
+                text=[text stringByAppendingFormat:@"\n%@",[message objectForKey:@"detail"]];
+            NSMutableDictionary *mono=[NSMutableDictionary dictionaryWithDictionary:statusAttrs];
+            [mono setObject:[NSFont fontWithName:@"Monaco" size:11] forKey:NSFontAttributeName];
+            attrs=mono;
+        }
+        used = [text boundingRectWithSize:NSMakeSize(status ? layoutWidth - (activity ? 64 : 48) : maxText, activity ? 1000000 : 4000)
                                    options:NSStringDrawingUsesLineFragmentOrigin
                                 attributes:attrs];
         if (used.size.width < 12)
             used.size.width = 12;
-        if (!status && imagePath && [[NSFileManager defaultManager] fileExistsAtPath:imagePath]) {
-            NSImage *picture = [[NSImage alloc] initWithContentsOfFile:imagePath];
+        if (!status && imagePath && [self cachedImage:imagePath]) {
+            NSImage *picture = [self cachedImage:imagePath];
             NSSize isize = [picture size];
             imageW = maxText;
             imageH = 160;
@@ -335,7 +407,6 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
                     imageW = isize.width * (220.0 / isize.height);
                 }
             }
-            [picture release];
         }
         if (!status && videoPath && [[NSFileManager defaultManager] fileExistsAtPath:videoPath]) {
             videoW = maxText;
@@ -349,6 +420,9 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             used.size.height = 16;
         box = [NSMutableDictionary dictionary];
         [box setObject:text forKey:@"text"];
+        [box setObject:message forKey:@"message"];
+        [box setObject:attrs forKey:@"attrs"];
+        [box setObject:[NSNumber numberWithBool:activity] forKey:@"activity"];
         [box setObject:[NSNumber numberWithBool:status] forKey:@"status"];
         [box setObject:[NSNumber numberWithBool:fromUser] forKey:@"user"];
         if (imageH > 0) {
@@ -360,8 +434,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             [box setObject:[NSValue valueWithSize:NSMakeSize(videoW, videoH)] forKey:@"videoSize"];
         }
         if (status) {
-            [box setObject:[NSValue valueWithRect:NSMakeRect(24, yFromTop, layoutWidth - 48, used.size.height)] forKey:@"topRect"];
-            yFromTop += used.size.height + 10;
+            [box setObject:[NSValue valueWithRect:NSMakeRect(24, yFromTop, layoutWidth - 48, used.size.height+(activity?18:0))] forKey:@"topRect"];
+            yFromTop += used.size.height + (activity?28:10);
         } else {
             bubble.size.width = used.size.width + 28;
             if (imageW + 28 > bubble.size.width)
@@ -415,9 +489,94 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
                 [box setObject:[NSValue valueWithRect:videoRect] forKey:@"videoRect"];
             }
         }
+        {
+            NSRect textRect;
+            if (status) {
+                textRect = rect;
+                if ([[box objectForKey:@"activity"] boolValue])
+                    textRect = NSInsetRect(rect, 8, 8);
+            } else {
+                NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
+                textRect.size = textSize;
+                textRect.origin.x = NSMinX(rect) + 14;
+                if ([box objectForKey:@"image"] || [box objectForKey:@"video"])
+                    textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
+                else
+                    textRect.origin.y = NSMinY(rect) + (NSHeight(rect) - textSize.height) / 2.0;
+            }
+            [box setObject:[NSValue valueWithRect:textRect] forKey:@"textRect"];
+        }
     }
     [self setFrameSize:NSMakeSize(layoutWidth, contentH)];
     [self placeMovies];
+    [self syncTextViews];
+    [self setNeedsDisplay:YES];
+}
+
+- (NSTextView *)textViewAt:(unsigned)index
+{
+    TBSelectText *view;
+    NSTextContainer *container;
+    if (index < [textViews count])
+        return [textViews objectAtIndex:index];
+    view = [[TBSelectText alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [view setEditable:NO];
+    [view setSelectable:YES];
+    [view setDrawsBackground:NO];
+    [view setRichText:YES];
+    [view setImportsGraphics:NO];
+    [view setFocusRingType:NSFocusRingTypeNone];
+    [view setVerticallyResizable:NO];
+    [view setHorizontallyResizable:NO];
+    [view setAutoresizingMask:NSViewNotSizable];
+    [view setTextContainerInset:NSMakeSize(0, 0)];
+    container = [view textContainer];
+    [container setLineFragmentPadding:0];
+    [container setWidthTracksTextView:YES];
+    [self addSubview:view];
+    [textViews addObject:view];
+    [view release];
+    return view;
+}
+
+- (void)syncTextViews
+{
+    unsigned i;
+    while ([textViews count] > [boxes count]) {
+        NSTextView *extra = [textViews lastObject];
+        [extra removeFromSuperview];
+        [textViews removeLastObject];
+    }
+    for (i = 0; i < [boxes count]; i++) {
+        NSDictionary *box = [boxes objectAtIndex:i];
+        NSString *text = [box objectForKey:@"text"];
+        NSDictionary *attrs = [box objectForKey:@"attrs"];
+        NSRect textRect = [[box objectForKey:@"textRect"] rectValue];
+        NSTextView *view = [self textViewAt:i];
+        NSTextStorage *storage;
+        if (!text)
+            text = @"";
+        [(TBSelectText *)view setActivity:[[box objectForKey:@"activity"] boolValue]];
+        [view setFrame:textRect];
+        [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
+        if (![[view string] isEqualToString:text]) {
+            [view setString:text];
+            storage = [view textStorage];
+            if ([text length] > 0)
+                [storage setAttributes:attrs range:NSMakeRange(0, [text length])];
+        }
+    }
+}
+
+- (void)toggleActivityAtView:(NSView *)view
+{
+    unsigned index = [textViews indexOfObject:view];
+    NSMutableDictionary *message;
+    if (index == NSNotFound || index >= [boxes count])
+        return;
+    message = [[boxes objectAtIndex:index] objectForKey:@"message"];
+    [message setObject:[NSNumber numberWithBool:![[message objectForKey:@"expanded"] boolValue]] forKey:@"expanded"];
+    [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
     [self setNeedsDisplay:YES];
 }
 
@@ -434,8 +593,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)drawRect:(NSRect)dirty
 {
-    float blueTop[3] = {126.0 / 255.0, 198.0 / 255.0, 252.0 / 255.0};
-    float blueBottom[3] = {12.0 / 255.0, 112.0 / 255.0, 222.0 / 255.0};
+    float blueTop[3] = {161.0 / 255.0, 204.0 / 255.0, 242.0 / 255.0};
+    float blueBottom[3] = {51.0 / 255.0, 125.0 / 255.0, 203.0 / 255.0};
     float grayTop[3] = {252.0 / 255.0, 252.0 / 255.0, 254.0 / 255.0};
     float grayBottom[3] = {208.0 / 255.0, 208.0 / 255.0, 216.0 / 255.0};
     unsigned i;
@@ -445,20 +604,20 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     for (i = 0; i < [boxes count]; i++) {
         NSDictionary *box = [boxes objectAtIndex:i];
         NSRect rect = [[box objectForKey:@"rect"] rectValue];
-        NSString *text = [box objectForKey:@"text"];
         BOOL status = [[box objectForKey:@"status"] boolValue];
         BOOL fromUser = [[box objectForKey:@"user"] boolValue];
         if (status) {
-            NSRect textRect = rect;
-            [text drawInRect:textRect withAttributes:statusAttrs];
+            if([[box objectForKey:@"activity"] boolValue]) {
+                NSBezierPath *card=[NSBezierPath bezierPath];appendRoundedRect(card,rect,5);
+                [[NSColor colorWithCalibratedWhite:0.96 alpha:1] set];[card fill];
+                [[NSColor colorWithCalibratedWhite:0.72 alpha:1] set];[card setLineWidth:1];[card stroke];
+            }
             continue;
         }
         {
             NSBezierPath *path = [NSBezierPath bezierPath];
             NSBezierPath *tail = [NSBezierPath bezierPath];
-            NSRect textRect;
-            NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
-            float radius = 16;
+            float radius = 8;
             float *top = fromUser ? blueTop : grayTop;
             float *bottom = fromUser ? blueBottom : grayBottom;
             if (radius > rect.size.height / 2.0)
@@ -479,18 +638,11 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             [tail closePath];
             [[NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1] set];
             [tail fill];
-            textRect.size = textSize;
-            textRect.origin.x = NSMinX(rect) + 14;
-            if ([box objectForKey:@"image"] || [box objectForKey:@"video"])
-                textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
-            else
-                textRect.origin.y = NSMinY(rect) + (NSHeight(rect) - textSize.height) / 2.0;
             if ([box objectForKey:@"imageRect"]) {
-                NSImage *picture = [[NSImage alloc] initWithContentsOfFile:[box objectForKey:@"image"]];
+                NSImage *picture = [self cachedImage:[box objectForKey:@"image"]];
                 NSRect imageRect = [[box objectForKey:@"imageRect"] rectValue];
                 if (picture)
                     [picture drawInRect:imageRect fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
-                [picture release];
             }
             if ([box objectForKey:@"videoRect"] && ![self playingVideo:[box objectForKey:@"video"]]) {
                 NSRect videoRect = [[box objectForKey:@"videoRect"] rectValue];
@@ -498,7 +650,6 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
                 NSRectFill(videoRect);
                 [@"QuickTime could not open this video." drawInRect:videoRect withAttributes:statusAttrs];
             }
-            [text drawInRect:textRect withAttributes:[self attrsForUser:fromUser]];
         }
     }
 }
@@ -533,8 +684,18 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             }
         }
     }
-    if (!path)
+    if (!path) {
+        for(i=0;i<[boxes count];i++) {
+            NSDictionary *box=[boxes objectAtIndex:i];
+            if(!NSPointInRect(point,[[box objectForKey:@"rect"] rectValue]))continue;
+            NSDictionary *message=[box objectForKey:@"message"];
+            NSString *content=[[box objectForKey:@"activity"] boolValue]?[message objectForKey:@"detail"]:[message objectForKey:@"text"];
+            menu=[[[NSMenu alloc] initWithTitle:@"Message"] autorelease];
+            item=[[[NSMenuItem alloc] initWithTitle:@"Copy Text" action:@selector(copyMessageText:) keyEquivalent:@"c"] autorelease];
+            [item setTarget:self];[item setRepresentedObject:content?content:@""];[menu addItem:item];return menu;
+        }
         return [super menuForEvent:event];
+    }
     menu = [[[NSMenu alloc] initWithTitle:@"Media"] autorelease];
     item = [[[NSMenuItem alloc] initWithTitle:@"Save As..."
                                        action:@selector(saveMediaAs:)
@@ -543,6 +704,34 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     [item setRepresentedObject:path];
     [menu addItem:item];
     return menu;
+}
+
+- (void)copyMessageText:(id)sender
+{
+    NSPasteboard *p=[NSPasteboard generalPasteboard];[p declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+    [p setString:[sender representedObject] forType:NSStringPboardType];
+}
+- (void)mouseDown:(NSEvent *)event
+{
+    NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
+    for(i=0;i<[boxes count];i++) {
+        NSDictionary *box=[boxes objectAtIndex:i];
+        if([[box objectForKey:@"activity"] boolValue]&&NSPointInRect(point,[[box objectForKey:@"rect"] rectValue])) {
+            NSMutableDictionary *m=[box objectForKey:@"message"];
+            [m setObject:[NSNumber numberWithBool:![[m objectForKey:@"expanded"] boolValue]] forKey:@"expanded"];
+            [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];[self setNeedsDisplay:YES];return;
+        }
+    }
+    [super mouseDown:event];
+}
+- (void)setActivitiesExpanded:(BOOL)expanded
+{
+    unsigned i;
+    for(i=0;i<[messages count];i++) {
+        NSMutableDictionary *m=[messages objectAtIndex:i];
+        if([m objectForKey:@"activityKind"]) [m setObject:[NSNumber numberWithBool:expanded] forKey:@"expanded"];
+    }
+    [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];[self setNeedsDisplay:YES];
 }
 
 - (void)saveMediaAs:(id)sender

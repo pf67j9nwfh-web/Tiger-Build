@@ -1,9 +1,12 @@
-"""Speak MCP to ppc-commander over the legacy SSH session."""
+"""Speak MCP to ppc-commander on the Tiger Mac over SSH."""
 
 import json
 import os
-import select
+import queue
+import threading
+import shlex
 import subprocess
+import time
 
 
 def load_shell_config():
@@ -15,9 +18,8 @@ def load_shell_config():
         "REMOTE_COMMANDER": "$HOME/ppc-commander/ppc_commander.py",
         "LISTEN_PORT": "8765",
     }
-    path = os.environ.get("TIGERDESK_CONFIG")
-    if not path:
-        path = os.path.expanduser("~/Library/Application Support/TigerDesk/config.sh")
+    from paths import config_sh
+    path = config_sh()
     if os.path.isfile(path):
         handle = open(path, "r")
         try:
@@ -26,7 +28,16 @@ def load_shell_config():
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 name, value = line.split("=", 1)
-                value = value.strip().strip('"').strip("'")
+                # Decode quoted values without executing shell expressions.
+                # Backups render paths with shlex.quote, including apostrophes.
+                tokens = shlex.split(value.strip(), comments=True)
+                if len(tokens) != 1:
+                    if not tokens:
+                        value = ""
+                    else:
+                        raise ValueError("Invalid config value for %s" % name.strip())
+                else:
+                    value = tokens[0]
                 name = name.strip()
                 if name in ("TIGER_KEY", "TIGER_KNOWN"):
                     value = value.replace("$HOME", os.path.expanduser("~"))
@@ -53,10 +64,10 @@ def ssh_command(config):
         "-o", "PubkeyAuthentication=yes",
         "-o", "PubkeyAcceptedAlgorithms=ssh-rsa",
         "-o", "HostKeyAlgorithms=ssh-rsa",
-        "-o", "KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1",
-        "-o", "Ciphers=aes128-cbc,3des-cbc,aes256-cbc",
-        "-o", "MACs=hmac-sha1,hmac-md5",
-        "-o", "RequiredRSASize=512",
+        "-o", "KexAlgorithms=diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1",
+        "-o", "Ciphers=aes256-ctr,aes128-ctr",
+        "-o", "MACs=hmac-sha1",
+        "-o", "RequiredRSASize=2048",
         "-o", "StrictHostKeyChecking=yes",
         "-o", "UserKnownHostsFile=" + config["TIGER_KNOWN"],
         "-o", "UpdateHostKeys=no",
@@ -70,11 +81,22 @@ class McpError(Exception):
     pass
 
 
+MAX_REPLY_BYTES = 32 * 1024 * 1024
+
+
 class McpClient(object):
+    """Newline-delimited JSON-RPC over the ssh child's stdin and stdout.
+
+    Replies are read with os.read into a buffer, so select() always reflects
+    what is really waiting. The old readline() version could block past its
+    timeout on a partial line, and recursed once per blank line.
+    """
+
     def __init__(self, command):
         self.command = command
         self.proc = None
         self.next_id = 1
+        self.buffer = b""
 
     def start(self):
         self.proc = subprocess.Popen(
@@ -82,12 +104,19 @@ class McpClient(object):
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            env=getattr(self, "env", None),
+            bufsize=0,
         )
+        self.buffer = b""
+        self._chunks = queue.Queue()
+        self._reader = threading.Thread(target=self._pump)
+        self._reader.daemon = True
+        self._reader.start()
         self.request("initialize", {
             "protocolVersion": "2025-06-18",
             "capabilities": {},
-            "clientInfo": {"name": "tigerbuild", "version": "1.0"},
-        })
+            "clientInfo": {"name": "tigerbuild", "version": "1.2"},
+        }, timeout=45)
         self.notify("notifications/initialized", {})
 
     def close(self):
@@ -98,50 +127,76 @@ class McpClient(object):
         except Exception:
             pass
         try:
-            self.proc.kill()
+            self.proc.wait(timeout=2)
         except Exception:
-            pass
+            try:
+                self.proc.kill()
+                self.proc.wait(timeout=2)
+            except Exception:
+                pass
         self.proc = None
 
-    def _read_message(self, timeout):
-        ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
-        if not ready:
-            raise McpError("the Power Mac did not answer")
-        line = self.proc.stdout.readline()
-        if not line:
-            raise McpError("the Power Mac closed the connection")
-        line = line.strip()
-        if not line:
-            return self._read_message(timeout)
-        return json.loads(line.decode("utf-8"))
+
+    def _pump(self):
+        try:
+            while True:
+                chunk = self.proc.stdout.read(65536)
+                if not chunk:
+                    self._chunks.put(b"")
+                    return
+                self._chunks.put(chunk)
+        except Exception:
+            self._chunks.put(b"")
+
+    def _read_message(self, deadline):
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                line = self.buffer[:newline].strip()
+                self.buffer = self.buffer[newline + 1:]
+                if not line:
+                    continue
+                try:
+                    return json.loads(line.decode("utf-8", "replace"))
+                except ValueError:
+                    # A login banner or stray print is not protocol; skip it.
+                    continue
+            if len(self.buffer) > MAX_REPLY_BYTES:
+                raise McpError("the Tiger Mac sent a reply that is too large")
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise McpError("the Tiger Mac did not answer")
+            try:
+                chunk = self._chunks.get(timeout=remaining)
+            except queue.Empty:
+                raise McpError("the Tiger Mac did not answer")
+            if not chunk:
+                raise McpError("the Tiger Mac closed the connection")
+            self.buffer += chunk
+
+    def _write(self, payload):
+        try:
+            self.proc.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            raise McpError("the Tiger Mac closed the connection")
 
     def notify(self, method, params):
-        body = json.dumps({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        }) + "\n"
-        self.proc.stdin.write(body.encode("utf-8"))
-        self.proc.stdin.flush()
+        self._write({"jsonrpc": "2.0", "method": method, "params": params})
 
     def request(self, method, params, timeout=120):
         mid = self.next_id
         self.next_id += 1
-        body = json.dumps({
-            "jsonrpc": "2.0",
-            "id": mid,
-            "method": method,
-            "params": params,
-        }) + "\n"
-        self.proc.stdin.write(body.encode("utf-8"))
-        self.proc.stdin.flush()
+        self._write({"jsonrpc": "2.0", "id": mid, "method": method, "params": params})
+        deadline = time.time() + timeout
         while True:
-            message = self._read_message(timeout)
-            if message.get("id") == mid:
-                if "error" in message and message["error"]:
-                    err = message["error"]
-                    raise McpError(err.get("message") if isinstance(err, dict) else str(err))
-                return message.get("result") or {}
+            message = self._read_message(deadline)
+            if not isinstance(message, dict) or message.get("id") != mid:
+                continue
+            if message.get("error"):
+                err = message["error"]
+                raise McpError(err.get("message") if isinstance(err, dict) else str(err))
+            return message.get("result") or {}
 
 
 def tool_summary(name, arguments):

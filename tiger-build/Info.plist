@@ -9,7 +9,7 @@
 	<key>CFBundleIconFile</key>
 	<string>TigerBuild.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.jr.tigerbuild</string>
+	<string>local.tigerbuild.TigerBuild</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -17,13 +17,13 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Version 1.1, licensed under the MIT License.</string>
+	<string>Version 1.2, licensed under the MIT License.</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1</string>
+	<string>1.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.1</string>
+	<string>1.2</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Licensed under the MIT License.</string>
 	<key>LSMinimumSystemVersion</key>
