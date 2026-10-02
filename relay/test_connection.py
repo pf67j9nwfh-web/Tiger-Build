@@ -61,6 +61,54 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(security.client_allowed("10.0.1.99", allowed))
 
 
+class PerClientTests(SettingsTests):
+    """Commander runs on the Mac that is chatting, never on another one."""
+
+    def test_registered_client_uses_its_own_account(self):
+        connection.update_config({"TIGER_HOST": "10.0.1.23", "TIGER_USER": "jr"})
+        connection.register_client("10.0.1.129", "alice", "/Users/alice")
+        base = connection.load_shell_config()
+        mine = connection.target_config(base, "10.0.1.129")
+        self.assertEqual((mine["TIGER_HOST"], mine["TIGER_USER"], mine["TIGER_HOME"]), ("10.0.1.129", "alice", "/Users/alice"))
+        default = connection.target_config(base, "10.0.1.23")
+        self.assertEqual((default["TIGER_HOST"], default["TIGER_USER"]), ("10.0.1.23", "jr"))
+
+    def test_unconnected_client_gets_nothing(self):
+        connection.update_config({"TIGER_HOST": "10.0.1.23", "TIGER_USER": "jr"})
+        self.assertIsNone(connection.target_config(connection.load_shell_config(), "10.0.1.77"))
+
+    def test_relay_computer_itself_uses_the_default(self):
+        connection.update_config({"TIGER_HOST": "10.0.1.23", "TIGER_USER": "jr"})
+        self.assertEqual(connection.target_config(connection.load_shell_config(), "127.0.0.1")["TIGER_HOST"], "10.0.1.23")
+
+    def test_client_can_aim_its_tools_at_another_host(self):
+        connection.register_client("10.0.1.129", "alice", "", host="10.0.1.200")
+        self.assertEqual(connection.target_config(connection.load_shell_config(), "10.0.1.129")["TIGER_HOST"], "10.0.1.200")
+
+    def test_bad_registration_rejected(self):
+        with self.assertRaises(ValueError):
+            connection.register_client("10.0.1.129", "bad user")
+        with self.assertRaises(ValueError):
+            connection.register_client("", "alice")
+
+    def test_session_for_unconnected_client_is_offline_and_never_runs_tools(self):
+        import chat_proxy as C
+        connection.update_config({"TIGER_HOST": "10.0.1.23", "TIGER_USER": "jr"})
+        calls = []
+        with patch.object(C, "McpClient", lambda command: calls.append(command)):
+            session = C.ToolSession(None, None, "10.0.1.77")
+            self.assertEqual(session.definitions(), [])
+            self.assertEqual(session.offline_code, "unlinked")
+            self.assertIn("Connect Commander over SSH", session.offline)
+        self.assertEqual(calls, [])
+
+    def test_connected_clients_stay_allowed(self):
+        import chat_proxy as C
+        connection.update_config({"TIGER_HOST": "10.0.1.23", "TIGER_USER": "jr"})
+        connection.register_client("10.0.1.129", "alice")
+        self.assertIn("10.0.1.129", C.reload_allowed(connection.load_shell_config()))
+
+
 class DiagnoseTests(unittest.TestCase):
     CONFIG = {"TIGER_HOST": "h", "TIGER_USER": "u", "REMOTE_COMMANDER": "x"}
 

@@ -31,6 +31,7 @@
 | Stop button | Yes, tested |
 | Guidance messages, only on supported models, button shows running | Yes (Grok, ChatGPT, Claude, Gemini, Mistral); tested |
 | Configuration panel fits; tidy MCP list with edit panel; tabs | Yes, tested with real servers |
+| Commander runs on the Mac that is chatting (several Macs, one relay) | Yes, tested with two Macs at once |
 | Auto-create and install shared SSH keys | Relay makes the key; Tiger Build installs it with no password; `setup.sh` can install it from a terminal. Tested |
 | Active thinking at the bottom of the chat | Yes, tested |
 | SSH error reporting | Yes: classified messages with the fix, shown on the chat |
@@ -47,6 +48,7 @@
 - Live, against real models: Claude, Grok and Gemini replies with usage and cost frames; guidance delivered between steps; Stop ending a 15 s command in under 4 s; approval allow/deny; screenshot seen by Claude; model consult (Claude asked Gemini and the cost was counted); mid-run trimming; output-limit note; price list fetched and tiered rates applied.
 - On Tiger (screenshots over SSH, driven with AppleScript and synthetic clicks): all windows and tabs, Stop, Guide, Edit Last, Tools menu, workspace restriction blocking `cat /etc/hosts`, Commander connect flow restoring a removed SSH key, commander auto-update 0.3.0 to 0.3.1.
 - On Snow Leopard: x86_64 and i386 slices launch and chat; menu bar, workspaces create/delete, history export/clear/import across workspaces, approval dialog, thinking strip, SSH error line.
+- Commander per client: Power Mac G4 and MacBook Pro chatted at the same time through one relay and each ran its own `uname`; a computer that was never connected got a clear refusal. (Found after a model on the MacBook described the G4: the relay had one global Commander target.)
 - Menu bar: `TigerBuild --list-shortcuts` lists every item; all have unique shortcuts on Tiger and Snow Leopard.
 - Custom MCP servers: three example servers (`mcp-examples/`) plus the official filesystem, reference ("everything") and time servers, 41 tools, run through the relay, the Tools menu, per-server approval and Stop.
 - Linux (Ubuntu 26.04 ARM64) and Windows 11 ARM64 relays installed from the packages, connected to Tiger over SSH, and ran a tool turn with a local model.

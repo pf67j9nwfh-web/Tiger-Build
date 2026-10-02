@@ -270,7 +270,7 @@ static int compareVersions(NSString *a, NSString *b)
     if (offeredSSH || ![commanderCode length])
         return;
     if (![commanderCode isEqualToString:@"auth"] && ![commanderCode isEqualToString:@"unset"]
-        && ![commanderCode isEqualToString:@"key_missing"])
+        && ![commanderCode isEqualToString:@"unlinked"] && ![commanderCode isEqualToString:@"key_missing"])
         return;
     offeredSSH = YES;
     [RelayRequest send:@"GET" path:@"/v1/ssh" body:nil timeout:12 target:self action:@selector(sshStateForOffer:) context:nil];
@@ -291,9 +291,9 @@ static int compareVersions(NSString *a, NSString *b)
     }
     if ([host length] > 0 && ![mine containsObject:host])
         return;
-    if (NSRunAlertPanel(@"Commander cannot sign in", @"The relay cannot run Commander on this Mac because SSH is not set up. "
-        @"Set it up now? This adds the relay's key to ~/.ssh/authorized_keys. You can also do it later from Configuration, "
-        @"Connect Commander over SSH.", @"Set Up", @"Not Now", nil) == NSAlertDefaultReturn)
+    if (NSRunAlertPanel(@"Commander is not set up for this Mac", @"The relay runs Commander's tools on the Mac you chat from, "
+        @"and it cannot reach this one yet because SSH is not set up. Set it up now? This adds the relay's key to ~/.ssh/authorized_keys. "
+        @"You can also do it later from Configuration, Connect Commander over SSH.", @"Set Up", @"Not Now", nil) == NSAlertDefaultReturn)
         [self connectCommanderSSH:nil];
 }
 

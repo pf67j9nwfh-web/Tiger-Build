@@ -167,6 +167,9 @@ def forget_host_key(config=None):
 
 # What each ssh failure means and what to do. Matched in order.
 DIAGNOSES = (
+    ("unlinked", ("This Mac has not been connected",),
+     "This Mac is not connected to the relay for Commander yet. In Tiger Build choose Configuration, "
+     "Connect Commander over SSH."),
     ("stopped", ("Commander is stopped",),
      "Commander is stopped on the Tiger Mac. In Tiger Build there, choose Commander, Start."),
     ("host_key_changed", ("REMOTE HOST IDENTIFICATION HAS CHANGED", "Host key verification failed"),
@@ -269,6 +272,81 @@ def install_key_interactive(config=None):
     ]
     result = subprocess.run(command, input=(public + "\n").encode(), timeout=300)
     return result.returncode == 0
+
+
+# ---- one link per Tiger Build computer ----
+#
+# Commander runs on the Mac that is chatting. The relay remembers, for each
+# computer that has connected, which account to sign in as; a computer that has
+# not connected gets no Commander rather than someone else's.
+
+def clients_path():
+    from paths import support_dir
+    return os.path.join(support_dir(), "ssh-clients.json")
+
+
+def _plain(address):
+    address = (address or "").strip()
+    return address[7:] if address.startswith("::ffff:") else address
+
+
+def load_clients():
+    import json
+    try:
+        with open(clients_path()) as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def register_client(address, user, home="", host=""):
+    """Remember how to reach the Mac at this address. host defaults to the
+    address itself; a different host sends this computer's tools elsewhere."""
+    import json
+    address = _plain(address)
+    user = validate("TIGER_USER", user)
+    home = validate("TIGER_HOME", home) if home else ""
+    host = validate("TIGER_HOST", host) if host else address
+    if not address or not user:
+        raise ValueError("A client address and user name are needed.")
+    with _LOCK:
+        data = load_clients()
+        data[address] = {"host": host, "user": user, "home": home}
+        path = clients_path()
+        temporary = path + ".tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(data, handle, indent=2)
+        os.replace(temporary, path)
+    return data[address]
+
+
+def target_config(config, address):
+    """The settings for running Commander for the computer at address, or None
+    when that computer has not been connected."""
+    address = _plain(address)
+    cfg = dict(config)
+    entry = load_clients().get(address)
+    if entry:
+        cfg["TIGER_HOST"] = entry.get("host") or address
+        cfg["TIGER_USER"] = entry.get("user") or ""
+        cfg["TIGER_HOME"] = entry.get("home") or ""
+        return cfg
+    if address in ("", "127.0.0.1", "::1"):
+        return cfg  # the relay computer itself: tests and health checks
+    default = (config.get("TIGER_HOST") or "").strip()
+    if default and (default == address or _resolves_to(default, address)):
+        return cfg
+    return None
+
+
+def _resolves_to(name, address):
+    import socket
+    try:
+        return socket.gethostbyname(name) == address
+    except OSError:
+        return False
 
 
 def describe(config=None):

@@ -100,6 +100,9 @@ def reload_allowed(config=None):
     """The addresses that may connect, after the Tiger Mac's address changed."""
     config = config or load_shell_config()
     allowed = allowed_clients(config)
+    if "private" not in allowed and not (config.get("ALLOWED_CLIENTS") or "").strip():
+        # Computers that have connected for Commander may keep using the relay.
+        allowed.update(connection.load_clients().keys())
     address = listen_address(config)
     if address not in ("0.0.0.0", "::"):
         allowed.add(address)
@@ -346,7 +349,7 @@ def start_discovery(run=True):
     return DISCOVERY
 
 
-_TOOL_CACHE = {"tools": None, "at": 0.0, "offline": "", "code": "", "detail": ""}
+_TOOL_CACHE = {}  # host -> {"tools", "at", "offline", "code", "detail"}
 _TOOL_LOCK = threading.Lock()
 TOOL_CACHE_SECONDS = 300
 OFFLINE_RETRY_SECONDS = 15
@@ -363,12 +366,26 @@ STEP_NOTE = (
 COMPACT_AT = 0.80  # share of the context window that starts trimming a long run
 
 
-def invalidate_tools():
-    """Forget the cached tool list, so the next request looks again. Called
-    after the Tiger Mac's address, user or key changes."""
+def invalidate_tools(host=None):
+    """Forget the cached tool list (one Mac's, or all), so the next request
+    looks again. Called after an address, user or key changes."""
     with _TOOL_LOCK:
-        _TOOL_CACHE["tools"] = None
-        _TOOL_CACHE["at"] = 0.0
+        if host is None:
+            _TOOL_CACHE.clear()
+        else:
+            _TOOL_CACHE.pop(host, None)
+
+
+def cached_status(config):
+    """(known, code, problem) for the Mac config points at, without connecting."""
+    if not config:
+        code, message = connection.diagnose("This Mac has not been connected", None, {"TIGER_HOST": "x", "TIGER_USER": "x"})
+        return False, code, message
+    with _TOOL_LOCK:
+        entry = _TOOL_CACHE.get(config.get("TIGER_HOST") or "")
+    if entry is None:
+        return False, "", ""
+    return entry["tools"] is not None, entry["code"], entry["detail"] or entry["offline"]
 
 
 def clean_options(incoming):
@@ -419,8 +436,13 @@ class ToolSession(object):
     that was asleep at the first request does not stay offline until restart.
     """
 
-    def __init__(self, run=None, options=None):
+    def __init__(self, run=None, options=None, address=None):
         self.config = load_shell_config()
+        # Commander runs on the Mac that is chatting. None means that Mac has
+        # not been connected; a health check or test passes no address.
+        self.linked = address is None or connection.target_config(self.config, address) is not None
+        if address is not None and self.linked:
+            self.config = connection.target_config(self.config, address)
         self.tools = None
         self.offline = ""
         self.offline_code = ""
@@ -504,42 +526,46 @@ class ToolSession(object):
     def definitions(self):
         if self.tools is not None:
             return self.tools
+        if not self.linked:
+            code, message = connection.diagnose("This Mac has not been connected", None, {"TIGER_HOST": "x", "TIGER_USER": "x"})
+            self.offline = "Tiger Mac tools are offline. %s" % message
+            self.offline_code = code
+            self.tools = []
+            return self.tools
         if not self.config.get("TIGER_HOST") or not self.account():
             code, message = connection.diagnose("", None, self.config)
             self.offline = message
             self.offline_code = code
             self.tools = []
             return self.tools
+        host = self.config["TIGER_HOST"]
         with _TOOL_LOCK:
-            cached = _TOOL_CACHE["tools"]
-            age = time.time() - _TOOL_CACHE["at"]
-            if cached is not None:
-                keep = TOOL_CACHE_SECONDS if cached else OFFLINE_RETRY_SECONDS
+            entry = _TOOL_CACHE.get(host)
+            if entry is not None:
+                age = time.time() - entry["at"]
+                keep = TOOL_CACHE_SECONDS if entry["tools"] else OFFLINE_RETRY_SECONDS
                 if age < keep:
-                    self.tools = cached
-                    self.offline = _TOOL_CACHE["offline"]
-                    self.offline_code = _TOOL_CACHE["code"]
+                    self.tools = entry["tools"]
+                    self.offline = entry["offline"]
+                    self.offline_code = entry["code"]
                     return self.tools
         client = McpClient(ssh_command(self.config))
         code = ""
+        message = ""
         try:
             client.start()
             tools = xai_tools_from_mcp(client.request("tools/list", {}, timeout=30))
             offline = ""
         except Exception as exc:
             tools = []
-            message = ""
             code, message = connection.diagnose(client.stderr_text(), exc, self.config)
             offline = "Tiger Mac tools are offline. %s" % (message or str(exc))
             sys.stderr.write("tigerbuild-relay: %s (%s)\n" % (offline, exc))
         finally:
             client.close()
         with _TOOL_LOCK:
-            _TOOL_CACHE["tools"] = tools
-            _TOOL_CACHE["at"] = time.time()
-            _TOOL_CACHE["offline"] = offline
-            _TOOL_CACHE["code"] = code
-            _TOOL_CACHE["detail"] = (message or "") if offline else ""
+            _TOOL_CACHE[host] = {"tools": tools, "at": time.time(), "offline": offline, "code": code,
+                                 "detail": (message or "") if offline else ""}
         self.tools = tools
         self.offline = offline
         self.offline_code = code
@@ -739,7 +765,7 @@ class ToolSession(object):
                 output = "error: Commander could not run (%s). %s" % (exc, message)
             failed = True
             # The next request should look at the link again.
-            invalidate_tools()
+            invalidate_tools(self.config.get("TIGER_HOST"))
         return tool_summary(name, args), output, None, failed, images
 
     def _gate(self, call):
@@ -1502,9 +1528,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/tools":
             from integrations import catalogue
-            with _TOOL_LOCK:
-                offline = _TOOL_CACHE["detail"] or _TOOL_CACHE["offline"]
-                code = _TOOL_CACHE["code"]
+            target, _address = self._client_target()
+            _known, code, offline = cached_status(target)
             payload = plistlib.dumps({"tools": catalogue(), "commander_problem": offline,
                                       "commander_code": code}, fmt=plistlib.FMT_XML)
             self.send_response(200)
@@ -1644,7 +1669,7 @@ class Handler(BaseHTTPRequestHandler):
             requested_model = None
         streaming = self.headers.get("X-TigerBuild-Protocol") == "frames"
         run = runs.start(incoming.get("run"))
-        session = ToolSession(run, clean_options(incoming))
+        session = ToolSession(run, clean_options(incoming), self.client_address[0] if self.client_address else "")
         reported = session.set_client(incoming.get("client"))
         if reported:
             note_client(self.client_address[0] if self.client_address else "", reported)
@@ -1721,13 +1746,18 @@ class Handler(BaseHTTPRequestHandler):
     def _lines(self, rows):
         self._send(200, "".join("%s=%s\n" % (key, str(value).replace("\n", " ")) for key, value in rows))
 
-    def _ssh_state(self):
+    def _client_target(self):
+        """(config, is_relay_itself): the Commander settings for whoever is asking."""
         config = load_shell_config()
-        info = connection.describe(config)
-        with _TOOL_LOCK:
-            offline = _TOOL_CACHE["detail"] or _TOOL_CACHE["offline"]
-            code = _TOOL_CACHE["code"]
-            known = _TOOL_CACHE["tools"] is not None
+        address = self.client_address[0] if self.client_address else ""
+        return connection.target_config(config, address), address
+
+    def _ssh_state(self):
+        target, address = self._client_target()
+        known, code, offline = cached_status(target)
+        info = connection.describe(target) if target else {
+            "host": "", "user": "", "home": "", "key_exists": os.path.isfile(load_shell_config()["TIGER_KEY"]),
+            "host_key_saved": False}
         rows = [
             ("host", info["host"]), ("user", info["user"]), ("home", info["home"]),
             ("key_exists", "1" if info["key_exists"] else "0"),
@@ -1744,40 +1774,66 @@ class Handler(BaseHTTPRequestHandler):
         except RuntimeError as exc:
             self._send(400, str(exc) + "\n")
             return
-        address = self.client_address[0] if self.client_address else ""
+        address = (self.client_address[0] if self.client_address else "")
+        if address.startswith("::ffff:"):
+            address = address[7:]
+        relay_itself = address in ("", "127.0.0.1", "::1")
         try:
-            if path == "/v1/ssh/connect":
-                # Tiger Build on the Tiger Mac asks to be reached. The address
-                # is the one the request came from, never one it names.
-                changes = {"TIGER_USER": incoming.get("user")}
-                if address not in ("127.0.0.1", "::1"):
-                    changes["TIGER_HOST"] = address[7:] if address.startswith("::ffff:") else address
-                elif incoming.get("host"):
-                    changes["TIGER_HOST"] = incoming.get("host")
-                home = incoming.get("home")
-                if isinstance(home, str) and home.startswith("/"):
-                    changes["TIGER_HOME"] = home
-                config = connection.update_config(changes)
-                connection.ensure_key(config)
-                connection.remember_host_key(config)
-            elif path == "/v1/ssh/settings":
-                changes = {}
-                for field, name in (("host", "TIGER_HOST"), ("user", "TIGER_USER"), ("home", "TIGER_HOME")):
-                    if field in incoming:
-                        changes[name] = incoming.get(field) or ""
-                config = connection.update_config(changes)
-                if incoming.get("remember_host_key") and config.get("TIGER_HOST"):
-                    connection.ensure_key(config)
-                    connection.remember_host_key(config)
-            elif path == "/v1/ssh/forget":
-                connection.forget_host_key()
-                config = load_shell_config()
-                connection.remember_host_key(config) if incoming.get("relearn") else None
+            base = load_shell_config()
+            if relay_itself:
+                # From the relay computer: the default Mac in config.sh.
+                if path == "/v1/ssh/connect":
+                    changes = {"TIGER_USER": incoming.get("user")}
+                    if incoming.get("host"):
+                        changes["TIGER_HOST"] = incoming.get("host")
+                    home = incoming.get("home")
+                    if isinstance(home, str) and home.startswith("/"):
+                        changes["TIGER_HOME"] = home
+                    base = connection.update_config(changes)
+                    connection.ensure_key(base)
+                    connection.remember_host_key(base)
+                elif path == "/v1/ssh/settings":
+                    changes = {}
+                    for field, name in (("host", "TIGER_HOST"), ("user", "TIGER_USER"), ("home", "TIGER_HOME")):
+                        if field in incoming:
+                            changes[name] = incoming.get(field) or ""
+                    base = connection.update_config(changes)
+                    if incoming.get("remember_host_key") and base.get("TIGER_HOST"):
+                        connection.ensure_key(base)
+                        connection.remember_host_key(base)
+                elif path == "/v1/ssh/forget":
+                    connection.forget_host_key(base)
+                    if incoming.get("relearn"):
+                        connection.remember_host_key(base)
+                target = base
             else:
-                config = load_shell_config()
-            ALLOWED = reload_allowed(config)
-            invalidate_tools()
-            result = connection.test(load_shell_config())
+                # From a Tiger Build computer: its own link, by the address it
+                # connects from. It cannot point the relay at someone else's
+                # address, only at a different host for its own tools.
+                previous = connection.load_clients().get(address) or {}
+                if path in ("/v1/ssh/connect", "/v1/ssh/settings"):
+                    user = incoming.get("user") or previous.get("user") or ""
+                    home = incoming.get("home") if "home" in incoming else previous.get("home", "")
+                    host = incoming.get("host") if path == "/v1/ssh/settings" and incoming.get("host") else (previous.get("host") or "")
+                    if path == "/v1/ssh/connect":
+                        host = ""
+                    connection.register_client(address, user, home if isinstance(home, str) and home.startswith("/") else "", host)
+                    # The first computer to connect becomes the default in config.sh.
+                    if not base.get("TIGER_HOST"):
+                        connection.update_config({"TIGER_HOST": address, "TIGER_USER": user})
+                target = connection.target_config(load_shell_config(), address)
+                if target is None:
+                    raise ValueError("This Mac is not connected yet. Choose Connect Commander over SSH.")
+                if path in ("/v1/ssh/connect", "/v1/ssh/settings"):
+                    connection.ensure_key(target)
+                    connection.remember_host_key(target)
+                elif path == "/v1/ssh/forget":
+                    connection.forget_host_key(target)
+                    if incoming.get("relearn"):
+                        connection.remember_host_key(target)
+            ALLOWED = reload_allowed(load_shell_config())
+            invalidate_tools(target.get("TIGER_HOST") if target else None)
+            result = connection.test(target)
         except (ValueError, RuntimeError) as exc:
             self._send(400, str(exc) + "\n")
             return

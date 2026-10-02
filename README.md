@@ -137,6 +137,7 @@ The settings folder is **`~/Library/Application Support/Tiger Build Relay/`** on
 | `integrations.json` | Tool switches, Brave/Tavily keys and choice, Claude thinking, custom MCP servers (mode 600) |
 | `relay-token` | The shared token Tiger Build must send (mode 600) |
 | `models-cache.json` | Results of the model tests |
+| `ssh-clients.json` | Which account the relay signs in as for each Tiger Build computer that has connected |
 | `last-client.json` | The last Tiger Mac seen: address, model, OS, user |
 | `relay.log` | Relay log |
 | `history/TigerBuild-history.plist` | History snapshot copied from Tiger Build |
@@ -175,6 +176,7 @@ Elsewhere on the Tiger Mac: `~/Library/Preferences/local.tigerbuild.TigerBuild.p
 - **Cost and context.** The line above the chat shows the context in use and a running **estimated cost** of the chat, summed over every model it used (hover it for the breakdown). Rates come from a public price list the relay fetches, including the higher rates some services charge for very large prompts. Local models show N/A. It is an estimate, not an invoice. When a chat's context fills, it is summarized (also Chat, Compact Chat Now), and long tool runs trim old output to stay inside the window. A reply that hits the model's output limit ends with a note instead of an error.
 - **Screenshots.** Commander has a `take_screenshot` tool; a model that can see pictures uses it to look at the Mac's screen (someone must be logged in at its console).
 - **Ask other models.** When switched on for a chat, the model can ask any other working model for a second opinion with `consult_model`. The other model's usage is counted in the chat's cost.
+- **Commander runs on the Mac you chat from.** The relay keeps one SSH link per Tiger Build computer (`ssh-clients.json`), so a MacBook and a Power Mac using the same relay each get their own files, shell and screenshots. A computer that has not chosen Configuration, Connect Commander over SSH gets no Commander, and says so, rather than silently using another Mac. Tiger Build offers to connect when it sees this.
 - **Relay and Commander status.** A red line at the top of the chat says when the relay cannot be reached, rejects the token, or does not accept this Mac's address. An orange one says why Commander cannot run, for example that SSH cannot sign in, Remote Login is off, or the host key changed, with the fix. During a long run the relay sends heartbeats, so a slow command never looks like a lost connection.
 - **Commander menu.** Start, Stop and Start at Login for ppc-commander as a standalone service, and this Mac's model, OS and IP addresses. The status line shows On or Off.
 - **History menu.** Export, import and clear the history of **all workspaces at once**, or copy it to and from the relay Mac. Files from 1.2 (one workspace) still import, into the current workspace.
