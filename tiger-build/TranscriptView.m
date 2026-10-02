@@ -128,9 +128,15 @@ static void appendRoundedRect(NSBezierPath *path, NSRect rect, float radius)
     [path closePath];
 }
 
+/* The iOS 6 Messages bubble: a flat body, a bright rim along the top, a lighter
+   glow along the bottom, a thin dark outline, and a pointed tail that is part
+   of the outline. Sent bubbles are sky blue, received ones light gray. */
 typedef struct {
-    CGFloat top[3];
-    CGFloat bottom[3];
+    CGFloat top[3];     /* rim at the top edge */
+    CGFloat body[3];    /* the flat middle */
+    CGFloat low[3];     /* glow at the bottom edge */
+    CGFloat topEnd;     /* where the rim has faded into the body (0..1 from the top) */
+    CGFloat lowStart;   /* where the glow begins */
 } ShadeInfo;
 
 /* CGFloat is a double in 64-bit builds, so the callback must say so. */
@@ -138,15 +144,16 @@ static void shadeEvaluate(void *info, const CGFloat *in, CGFloat *out)
 {
     ShadeInfo *shade = (ShadeInfo *)info;
     CGFloat t = in[0];
-    CGFloat gloss = 0.0;
     int i;
-    /* The upper half is lighter than the lower, with a soft edge between them,
-       like the glass look of iChat and iOS 6 Messages. */
-    if (t < 0.5)
-        gloss = 0.11 + 0.17 * (0.5 - t) / 0.5;
     for (i = 0; i < 3; i++) {
-        CGFloat c = shade->top[i] + (shade->bottom[i] - shade->top[i]) * t;
-        c = c + (1.0 - c) * gloss;
+        CGFloat c = shade->body[i];
+        if (t < shade->topEnd) {
+            CGFloat k = t / shade->topEnd;
+            c = shade->top[i] + (shade->body[i] - shade->top[i]) * k;
+        } else if (t > shade->lowStart) {
+            CGFloat k = (t - shade->lowStart) / (1.0 - shade->lowStart);
+            c = shade->body[i] + (shade->low[i] - shade->body[i]) * k;
+        }
         out[i] = c;
     }
     out[3] = 1.0;
@@ -157,7 +164,66 @@ static void shadeRelease(void *info)
     (void)info;
 }
 
-static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *bottom)
+static const float sentTop[3] = {203.0 / 255.0, 222.0 / 255.0, 252.0 / 255.0};
+static const float sentBody[3] = {130.0 / 255.0, 180.0 / 255.0, 249.0 / 255.0};
+static const float sentLow[3] = {178.0 / 255.0, 230.0 / 255.0, 255.0 / 255.0};
+static const float sentLine[3] = {58.0 / 255.0, 76.0 / 255.0, 112.0 / 255.0};
+static const float gotTop[3] = {248.0 / 255.0, 247.0 / 255.0, 247.0 / 255.0};
+static const float gotBody[3] = {203.0 / 255.0, 203.0 / 255.0, 203.0 / 255.0};
+static const float gotLow[3] = {219.0 / 255.0, 219.0 / 255.0, 219.0 / 255.0};
+static const float gotLine[3] = {78.0 / 255.0, 82.0 / 255.0, 94.0 / 255.0};
+
+/* The bubble's outline: a rounded rectangle whose lower corner on the speaker's
+   side sweeps out into a pointed tail. */
+static void appendBubble(NSBezierPath *path, NSRect r, float radius, BOOL tailRight)
+{
+    float left = NSMinX(r);
+    float right = NSMaxX(r);
+    float bottom = NSMinY(r);
+    float top = NSMaxY(r);
+    if (radius > (top - bottom) / 2.0)
+        radius = (top - bottom) / 2.0;
+    if (tailRight) {
+        [path moveToPoint:NSMakePoint(left + radius, top)];
+        [path lineToPoint:NSMakePoint(right - radius, top)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(right - radius, top - radius)
+                                         radius:radius startAngle:90 endAngle:0 clockwise:YES];
+        [path lineToPoint:NSMakePoint(right, bottom + 15)];
+        [path curveToPoint:NSMakePoint(right + 8, bottom - 3)
+             controlPoint1:NSMakePoint(right, bottom + 8)
+             controlPoint2:NSMakePoint(right + 3, bottom + 1)];
+        [path curveToPoint:NSMakePoint(right - 10, bottom)
+             controlPoint1:NSMakePoint(right + 3, bottom - 2)
+             controlPoint2:NSMakePoint(right - 3, bottom - 0.5)];
+        [path lineToPoint:NSMakePoint(left + radius, bottom)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(left + radius, bottom + radius)
+                                         radius:radius startAngle:270 endAngle:180 clockwise:YES];
+        [path lineToPoint:NSMakePoint(left, top - radius)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(left + radius, top - radius)
+                                         radius:radius startAngle:180 endAngle:90 clockwise:YES];
+    } else {
+        [path moveToPoint:NSMakePoint(left + radius, top)];
+        [path lineToPoint:NSMakePoint(right - radius, top)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(right - radius, top - radius)
+                                         radius:radius startAngle:90 endAngle:0 clockwise:YES];
+        [path lineToPoint:NSMakePoint(right, bottom + radius)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(right - radius, bottom + radius)
+                                         radius:radius startAngle:0 endAngle:270 clockwise:YES];
+        [path lineToPoint:NSMakePoint(left + 10, bottom)];
+        [path curveToPoint:NSMakePoint(left - 8, bottom - 3)
+             controlPoint1:NSMakePoint(left + 3, bottom - 0.5)
+             controlPoint2:NSMakePoint(left - 3, bottom - 2)];
+        [path curveToPoint:NSMakePoint(left, bottom + 15)
+             controlPoint1:NSMakePoint(left - 3, bottom + 1)
+             controlPoint2:NSMakePoint(left, bottom + 8)];
+        [path lineToPoint:NSMakePoint(left, top - radius)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(left + radius, top - radius)
+                                         radius:radius startAngle:180 endAngle:90 clockwise:YES];
+    }
+    [path closePath];
+}
+
+static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 {
     ShadeInfo shade;
     CGFunctionCallbacks callbacks;
@@ -168,12 +234,20 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     CGShadingRef shading;
     CGPoint start;
     CGPoint end;
+    const float *top = sent ? sentTop : gotTop;
+    const float *body = sent ? sentBody : gotBody;
+    const float *low = sent ? sentLow : gotLow;
+    float height = NSHeight(rect);
     int i;
 
     for (i = 0; i < 3; i++) {
         shade.top[i] = top[i];
-        shade.bottom[i] = bottom[i];
+        shade.body[i] = body[i];
+        shade.low[i] = low[i];
     }
+    /* The rim is about 12 pixels deep and the glow 16, however tall the bubble. */
+    shade.topEnd = height > 0 ? fminf(12.0f, height * 0.4f) / height : 0.3;
+    shade.lowStart = height > 0 ? 1.0 - fminf(16.0f, height * 0.45f) / height : 0.6;
     callbacks.version = 0;
     callbacks.evaluate = shadeEvaluate;
     callbacks.releaseInfo = shadeRelease;
@@ -186,7 +260,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     space = CGColorSpaceCreateDeviceRGB();
     start = CGPointMake(NSMidX(rect), NSMaxY(rect));
     end = CGPointMake(NSMidX(rect), NSMinY(rect));
-    shading = CGShadingCreateAxial(space, start, end, function, 0, 0);
+    /* Extended, so the tail below the bubble's bottom edge is painted too. */
+    shading = CGShadingCreateAxial(space, start, end, function, 1, 1);
     [NSGraphicsContext saveGraphicsState];
     [path addClip];
     CGContextDrawShading((CGContextRef)[[NSGraphicsContext currentContext] graphicsPort], shading);
@@ -240,7 +315,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         nil];
     userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
         [NSFont systemFontOfSize:14], NSFontAttributeName,
-        [NSColor whiteColor], NSForegroundColorAttributeName,
+        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
         style, NSParagraphStyleAttributeName,
         nil];
     statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -653,12 +728,6 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)drawRect:(NSRect)dirty
 {
-    float blueTop[3] = {112.0 / 255.0, 184.0 / 255.0, 246.0 / 255.0};
-    float blueBottom[3] = {26.0 / 255.0, 110.0 / 255.0, 226.0 / 255.0};
-    float blueLine[3] = {30.0 / 255.0, 88.0 / 255.0, 170.0 / 255.0};
-    float grayTop[3] = {252.0 / 255.0, 252.0 / 255.0, 253.0 / 255.0};
-    float grayBottom[3] = {214.0 / 255.0, 217.0 / 255.0, 224.0 / 255.0};
-    float grayLine[3] = {160.0 / 255.0, 163.0 / 255.0, 172.0 / 255.0};
     unsigned i;
 
     [[TranscriptView backgroundColor] set];
@@ -678,72 +747,22 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         }
         {
             NSBezierPath *path = [NSBezierPath bezierPath];
-            NSBezierPath *tail = [NSBezierPath bezierPath];
-            NSBezierPath *edge = [NSBezierPath bezierPath];
-            float radius = 18;
-            float *top = fromUser ? blueTop : grayTop;
-            float *bottom = fromUser ? blueBottom : grayBottom;
-            float *line = fromUser ? blueLine : grayLine;
-            NSColor *bottomColor = [NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1];
-            NSColor *lineColor = [NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1];
-            NSShadow *shadow;
-            if (radius > rect.size.height / 2.0)
-                radius = rect.size.height / 2.0;
-            appendRoundedRect(path, rect, radius);
-            appendRoundedRect(edge, NSInsetRect(rect, 0.5, 0.5), radius - 0.5);
-            /* A curved fin at the lower corner, pointing out and down, as on iOS 6. */
-            if (fromUser) {
-                [tail moveToPoint:NSMakePoint(NSMaxX(rect) - 28, NSMinY(rect) + 1)];
-                [tail curveToPoint:NSMakePoint(NSMaxX(rect) + 9, NSMinY(rect) - 3)
-                     controlPoint1:NSMakePoint(NSMaxX(rect) - 12, NSMinY(rect) + 1)
-                     controlPoint2:NSMakePoint(NSMaxX(rect) + 0, NSMinY(rect) + 0)];
-                [tail curveToPoint:NSMakePoint(NSMaxX(rect) - 7, NSMinY(rect) + 14)
-                     controlPoint1:NSMakePoint(NSMaxX(rect) + 4, NSMinY(rect) + 2)
-                     controlPoint2:NSMakePoint(NSMaxX(rect) - 1, NSMinY(rect) + 9)];
-            } else {
-                [tail moveToPoint:NSMakePoint(NSMinX(rect) + 28, NSMinY(rect) + 1)];
-                [tail curveToPoint:NSMakePoint(NSMinX(rect) - 9, NSMinY(rect) - 3)
-                     controlPoint1:NSMakePoint(NSMinX(rect) + 12, NSMinY(rect) + 1)
-                     controlPoint2:NSMakePoint(NSMinX(rect) - 0, NSMinY(rect) + 0)];
-                [tail curveToPoint:NSMakePoint(NSMinX(rect) + 7, NSMinY(rect) + 14)
-                     controlPoint1:NSMakePoint(NSMinX(rect) - 4, NSMinY(rect) + 2)
-                     controlPoint2:NSMakePoint(NSMinX(rect) + 1, NSMinY(rect) + 9)];
-            }
-            [tail closePath];
-            /* Body and tail share one soft shadow, then the tail gets its
-               outline; the body is painted over its inner end. */
+            NSBezierPath *light = [NSBezierPath bezierPath];
+            const float *line = fromUser ? sentLine : gotLine;
+            float radius = 16;
+            appendBubble(path, rect, radius, fromUser);
+            fillBubble(path, rect, fromUser);
+            /* A faint bright line just inside the outline, as on the glass bubbles. */
+            appendRoundedRect(light, NSInsetRect(rect, 1.5, 1.5), radius - 1.5);
             [NSGraphicsContext saveGraphicsState];
-            shadow = [[[NSShadow alloc] init] autorelease];
-            [shadow setShadowOffset:NSMakeSize(0, -1)];
-            [shadow setShadowBlurRadius:3];
-            [shadow setShadowColor:[NSColor colorWithCalibratedWhite:0 alpha:0.32]];
-            [shadow set];
-            [bottomColor set];
-            [path fill];
-            [tail fill];
+            [path addClip];
+            [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.30 : 0.55] set];
+            [light setLineWidth:1];
+            [light stroke];
             [NSGraphicsContext restoreGraphicsState];
-            [bottomColor set];
-            [tail fill];
-            [lineColor set];
-            [tail setLineWidth:1];
-            [tail stroke];
-            [bottomColor set];
-            [path fill];
-            fillBubble(path, rect, top, bottom);
-            /* A faint light line just inside the top edge. */
-            {
-                NSBezierPath *light = [NSBezierPath bezierPath];
-                appendRoundedRect(light, NSInsetRect(rect, 1.5, 1.5), radius - 1.5);
-                [NSGraphicsContext saveGraphicsState];
-                [path addClip];
-                [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.35 : 0.8] set];
-                [light setLineWidth:1];
-                [light stroke];
-                [NSGraphicsContext restoreGraphicsState];
-            }
-            [lineColor set];
-            [edge setLineWidth:1];
-            [edge stroke];
+            [[NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1] set];
+            [path setLineWidth:1.2];
+            [path stroke];
             if ([box objectForKey:@"imageRect"]) {
                 NSImage *picture = [self cachedImage:[box objectForKey:@"image"]];
                 NSRect imageRect = [[box objectForKey:@"imageRect"] rectValue];

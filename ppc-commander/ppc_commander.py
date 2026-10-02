@@ -37,7 +37,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.3.0'
+VERSION = '0.3.1'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
