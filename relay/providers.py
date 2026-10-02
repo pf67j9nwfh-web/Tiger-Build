@@ -1162,7 +1162,6 @@ def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error
             if blocks[index].get("type")=="tool_use" and (blocks[index].get("cut") or index not in complete):
                 for later in [i for i in blocks if i>=index]:blocks.pop(later,None)
                 break
-        yield CLAUDE_CUT_NOTE
         holder["claude_blocks"]=[];holder["calls"]=[]
         return
     ordered=[];calls=[]
