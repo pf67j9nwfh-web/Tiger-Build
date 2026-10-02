@@ -67,7 +67,13 @@ def call(name, **args):
 class TurnTests(unittest.TestCase):
     def setUp(self):
         FakeClient.calls = []
+        # Never read the real relay's tool settings: a developer machine may
+        # have custom MCP servers configured.
+        import tempfile
+        home = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, home, True)
         self.patches = [
+            patch.dict(os.environ, {"TIGERBUILD_RELAY_HOME": home}),
             patch.object(C, "McpClient", FakeClient),
             patch.object(C, "refresh_settings", lambda: None),
             patch.object(C, "resolve_model", lambda provider, model: model or "m"),

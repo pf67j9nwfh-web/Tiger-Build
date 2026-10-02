@@ -104,8 +104,9 @@ def copy_app(support):
     app = tempfile.mkdtemp(prefix="app-new-", dir=support)
     backup = None
     try:
-        for name in ("relay", "ppc-commander"):
-            shutil.copytree(os.path.join(ROOT, name), os.path.join(app, name), ignore=_ignore)
+        for name in ("relay", "ppc-commander", "mcp-examples"):
+            if os.path.isdir(os.path.join(ROOT, name)):
+                shutil.copytree(os.path.join(ROOT, name), os.path.join(app, name), ignore=_ignore)
         for extra in ("config.example.sh", ".env.example", "RELEASE.txt", "README.md", "LICENSE"):
             src = os.path.join(ROOT, extra)
             if os.path.isfile(src):
