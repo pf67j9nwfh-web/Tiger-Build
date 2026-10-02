@@ -280,3 +280,55 @@ class RunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HttpTests(unittest.TestCase):
+    """The new HTTP routes, through a real server."""
+
+    def setUp(self):
+        import http.client
+        from http.server import ThreadingHTTPServer
+        self.http = http.client
+        C.TOKEN = "tok"
+        C.ALLOWED = {"127.0.0.1"}
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), C.Handler)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.shutdown)
+        self.patch = patch.object(C, "refresh_settings", lambda: None)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+
+    def call(self, method, path, body=None):
+        conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+        conn.request(method, path, json.dumps(body) if body is not None else None, {"X-TigerBuild-Token": "tok"})
+        response = conn.getresponse()
+        return response.status, response.read()
+
+    def test_tools_catalogue(self):
+        status, data = self.call("GET", "/v1/tools")
+        self.assertEqual(status, 200)
+        info = plistlib.loads(data)
+        self.assertTrue(any(row["id"] == "commander" for row in info["tools"]))
+
+    def test_run_unknown_is_404(self):
+        status, _data = self.call("POST", "/v1/run", {"id": "nosuchrun1", "action": "stop"})
+        self.assertEqual(status, 404)
+
+    def test_run_stop_and_guide(self):
+        run = runs.start("httprun0001")
+        self.addCleanup(lambda: runs.finish(run))
+        self.assertEqual(self.call("POST", "/v1/run", {"id": "httprun0001", "action": "guide", "text": "hi"})[0], 200)
+        self.assertEqual(run.take_guidance(), ["hi"])
+        self.assertEqual(self.call("POST", "/v1/run", {"id": "httprun0001", "action": "stop"})[0], 200)
+        self.assertTrue(run.cancelled.is_set())
+
+    def test_ssh_state(self):
+        status, data = self.call("GET", "/v1/ssh")
+        self.assertEqual(status, 200)
+        self.assertIn(b"host=", data)
+
+    def test_auth_required(self):
+        conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+        conn.request("GET", "/v1/tools")
+        self.assertEqual(conn.getresponse().status, 401)

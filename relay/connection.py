@@ -245,6 +245,32 @@ def test(config=None):
     return {"ok": False, "code": code, "message": message or "SSH failed."}
 
 
+def install_key_interactive(config=None):
+    """Put the relay's public key on the Tiger Mac with one ssh login. ssh asks
+    for that account's password on the person's own terminal; nothing here sees
+    it. Only for a terminal: Tiger Build can do the same without a password."""
+    config = config or load_shell_config()
+    public = ensure_key(config)
+    if not config.get("TIGER_HOST") or not config.get("TIGER_USER"):
+        raise RuntimeError("Set the Tiger Mac's address and user first.")
+    os.makedirs(os.path.dirname(config["TIGER_KNOWN"]), mode=0o700, exist_ok=True)
+    command = [
+        "ssh",
+        "-o", "HostKeyAlgorithms=ssh-rsa",
+        "-o", "PubkeyAcceptedAlgorithms=ssh-rsa",
+        "-o", "KexAlgorithms=diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1",
+        "-o", "Ciphers=aes256-ctr,aes128-ctr",
+        "-o", "MACs=hmac-sha1",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "UserKnownHostsFile=" + config["TIGER_KNOWN"],
+        "-o", "ConnectTimeout=15",
+        "%s@%s" % (config["TIGER_USER"], config["TIGER_HOST"]),
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys",
+    ]
+    result = subprocess.run(command, input=(public + "\n").encode(), timeout=300)
+    return result.returncode == 0
+
+
 def describe(config=None):
     """Settings and key state for the apps. No secrets."""
     config = config or load_shell_config()

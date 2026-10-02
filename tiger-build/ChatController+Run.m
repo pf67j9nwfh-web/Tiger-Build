@@ -374,8 +374,18 @@ static NSString *newRunId(void)
             timeout:8 target:self action:@selector(runCommandDone:) context:nil];
     }
     chat = [self chatWithId:streamingId];
-    if (chat)
+    if (chat) {
+        /* Tool cards that were still running stop with the turn. */
+        NSArray *messages = [chat objectForKey:@"messages"];
+        unsigned i;
+        for (i = 0; i < [messages count]; i++) {
+            NSMutableDictionary *message = [messages objectAtIndex:i];
+            NSString *text = [message objectForKey:@"text"];
+            if ([message objectForKey:@"activityKind"] && [text hasSuffix:@" - Running"])
+                [message setObject:[[text substringToIndex:[text length] - 7] stringByAppendingString:@"Stopped"] forKey:@"text"];
+        }
         [self addStatus:@"Stopped." toChat:chat];
+    }
     if (bodyStream)
         [self finishStream];
     else
@@ -431,7 +441,7 @@ static NSString *newRunId(void)
 
 - (void)guidanceDelivered:(NSString *)text chat:(NSMutableDictionary *)chat
 {
-    unsigned i = [queuedGuidance indexOfObject:text];
+    NSUInteger i = [queuedGuidance indexOfObject:text];
     if (i != NSNotFound)
         [queuedGuidance removeObjectAtIndex:i];
     [self addStatus:[NSString stringWithFormat:@"%@ delivered: %@", TBGuidanceMark, text] toChat:chat];

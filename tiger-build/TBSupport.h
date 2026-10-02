@@ -28,7 +28,7 @@ typedef struct {
 #define TB_FIELD_MAX 112.0f
 #define TB_STATUS_MAX 64.0f
 #define TB_THINKING_MAX 54.0f
-#define TB_ACTIONS_WIDTH 168.0f
+#define TB_ACTIONS_WIDTH 188.0f
 
 TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wantedFieldHeight, float statusHeight, float thinkingHeight);
 

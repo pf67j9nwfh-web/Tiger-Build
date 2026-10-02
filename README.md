@@ -1,8 +1,8 @@
 # Tiger Build
 
-**A native AI chat app for Mac OS X 10.4 Tiger on PowerPC that can also work on the Mac it runs on.**
+**A native AI chat app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard, on PowerPC and Intel, that can also work on the Mac it runs on.**
 
-Tiger Build is a Cocoa chat window for Tiger. Each chat picks its own service and model: Grok, ChatGPT, Claude, Mistral, Muse, Gemini, or a model on your own local server such as LM Studio. Turn on **ppc-commander** for a chat and the model can list folders, read and edit files, and run shell commands on that Mac, much like Desktop Commander does on modern systems. Tiger Build reads the Mac's model and OS version from the system, so it works on any PowerPC Mac running Tiger.
+Tiger Build is a Cocoa chat window for old Macs. Each chat picks its own service and model: Grok, ChatGPT, Claude, Mistral, Muse, Gemini, or a model on your own local server such as LM Studio. Turn on **Commander** (ppc-commander) for a chat and the model can list folders, read and edit files, run shell commands, and take screenshots on that Mac, much like Desktop Commander does on modern systems. Tiger Build reads the Mac's model and OS version from the system, so it works on any Mac it supports. It keeps its brushed-metal look on Tiger and uses the same layout on Leopard and Snow Leopard, and everything fits a 1024x768 screen (iMac G3 and up).
 
 > [!WARNING]
 > USE THIS AT YOUR OWN RISK. MAC OS X TIGER IS A 20+ YEAR OLD OPERATING SYSTEM AND IS VERY INSECURE. I AM NOT LIABLE FOR ANY SECURITY VULNERABILITIES ABLE TO BE EXPLOITED FROM USING THIS APPLICATION ON TIGER. YOU HAVE BEEN WARNED.
@@ -51,7 +51,7 @@ Chats stay on the Tiger Mac. API keys stay on the relay computer; Tiger Build is
 
 | Where | What |
 | --- | --- |
-| Tiger Mac | Any PowerPC Mac running Mac OS X 10.4 with its built-in Python 2.3, Xcode 2.5 (for `/Developer/SDKs/MacOSX10.4u.sdk`), and Remote Login on (System Preferences → Sharing) |
+| Client Mac | Any Mac running Mac OS X 10.4 Tiger, 10.5 Leopard or 10.6 Snow Leopard, PowerPC or Intel, with its built-in Python (2.3, 2.5 or 2.6), and Remote Login on (System Preferences → Sharing). To build the app yourself: Xcode 2.5 on Tiger (32-bit `ppc` and `i386` from the 10.4 SDK), or Xcode 3.1/3.2 on Leopard and Snow Leopard, which also build 64-bit `ppc64` and `x86_64` from the 10.5 SDK. The app is one universal binary; a G5 on Tiger, which has no 64-bit Cocoa, uses its 32-bit part |
 | Relay computer | A Mac, Windows PC, or Linux computer that meets the minimums in [Relay system requirements](#relay-system-requirements) |
 | Network | The Tiger Mac and the relay computer on the same network, and the Tiger Mac able to reach the relay directly |
 | Optional | API keys for any of xAI, OpenAI, Anthropic, Mistral, Muse and Google, a Brave or Tavily key for web search, and/or a local OpenAI-compatible server. One key is enough; none is fine with only a local server |
@@ -73,6 +73,9 @@ You need two pieces of information: the **Tiger Mac's IP address** (System Prefe
 ## Setup
 
 All commands run on the **relay Mac**, from a checkout of this repository. Replace `TIGERUSER` and `TIGER.MAC.ADDRESS` with your own values.
+
+> [!TIP]
+> In 1.3 you can skip steps 1–3. Run `./scripts/setup.sh` (step 4) and then, on the Tiger Mac, open Tiger Build and choose **Configuration → Connect Commander over SSH**. It adds the relay's key to that Mac and tells the relay its address and user name; no password is typed. The steps below remain the manual way, and `setup.sh` run from a terminal can also install the key for you if you set `TIGER_HOST` and `TIGER_USER` first.
 
 **1. Make an SSH key Tiger accepts.** Tiger's OpenSSH 5.1 only understands `ssh-rsa`. Leave the passphrase empty so the relay can start at login.
 
@@ -128,7 +131,8 @@ The settings folder is **`~/Library/Application Support/Tiger Build Relay/`** on
 
 | File | Contents |
 | --- | --- |
-| `config.sh` | Tiger Mac address and user, SSH key paths, relay port, optional `LISTEN_ADDR`, `ALLOWED_CLIENTS`, `RELAY_TOKEN`, `TIGER_HOME` (override path: `TIGERBUILD_RELAY_CONFIG`) |
+| `config.sh` | Tiger Mac address and user (also editable in the relay app's Tiger Mac settings or in Tiger Build's Preferences, Commander), SSH key paths, relay port, optional `LISTEN_ADDR`, `ALLOWED_CLIENTS`, `RELAY_TOKEN`, `TIGER_HOME` (override path: `TIGERBUILD_RELAY_CONFIG`) |
+| `pricing-cache.json` | Model prices used for the cost estimate, fetched when the relay starts and then daily; the last copy is kept so costs work offline |
 | `providers.json` | API keys, Anthropic workspace ID, local server address and key (mode 600) |
 | `integrations.json` | Tool switches, Brave/Tavily keys and choice, Claude thinking, custom MCP servers (mode 600) |
 | `relay-token` | The shared token Tiger Build must send (mode 600) |
@@ -151,8 +155,8 @@ The settings folder is **`~/Library/Application Support/Tiger Build/`**.
 | --- | --- |
 | `server.txt` | Relay address and port |
 | `token.txt` | Relay token (mode 600) |
-| `chats.plist` | Chats in the Default workspace |
-| `workspaces/<name>.plist` | Chats in each other workspace |
+| `chats.plist` | Chats in the Default workspace, with that workspace's settings (folder limit, last-used model and tools) |
+| `workspaces/<name>.plist` | The same for each other workspace |
 | `models.txt` | The model list last received from the relay |
 | `media/` | Downloaded images and videos |
 | `history-before-import-*.plist` | Backups made before a history import |
@@ -162,14 +166,19 @@ Elsewhere on the Tiger Mac: `~/Library/Preferences/local.tigerbuild.TigerBuild.p
 
 ## Using Tiger Build
 
-- **Chats and workspaces.** The popup at the top of the sidebar picks a workspace (project); each has its own chats. Workspace → New Workspace (⌘⇧N) makes one. API keys and tools are shared.
-- **Models.** The popups under the chat list pick the service and model. Services with no key or no working models are dimmed with the reason. If nothing at all is set up, a red line says so.
-- **Tools.** The Commander button (⌘T) turns tools on for a chat. Each tool call shows as a card; click it to see the command and its output.
-- **Thinking.** "Show model thinking" is on by default (Settings, Tools). Returned reasoning appears in its own card, separate from the answer: Claude (thinking is turned on), ChatGPT Responses models (reasoning summary), Gemini (thought summaries), Mistral reasoning models such as Magistral (asked with `reasoning_effort` high), and local models (reasoning fields or <think> text). ChatGPT chat-completions models and Grok return no readable reasoning, so nothing is shown for them. If a service rejects the request, the relay retries once without it.
-- **Relay status.** A red line at the top of the chat says when the relay cannot be reached, rejects the token, or does not accept this Mac's address.
-- **Command Standalone menu.** Start, Stop and Start at Login for ppc-commander, and this Mac's model, OS and IP addresses. The status line shows On or Off.
-- **History menu.** Export, import and clear the current workspace's history, or copy it to and from the relay Mac.
-- **Configuration menu.** MCP servers and agent tools, and export/import of all settings.
+- **Chats and workspaces.** The popup at the top of the sidebar picks a workspace (project); each has its own chats. Workspace → New Workspace (⌘⇧N) makes one, Delete Workspace removes one (deleting the last one starts a new empty Default), and Workspace Settings can limit Commander to one folder. API keys and tools are shared. Clear All History in the History menu deletes every chat and every workspace.
+- **Models.** The popups under the chat list pick the service and model. A new chat starts with the model, tool switches and approval choices of the chat used last in that workspace, or with one fixed model if you choose that in Preferences, New Chats. Services with no key or no working models are dimmed with the reason.
+- **Tools.** The **Tools** button under the chat list switches each tool on or off for the chat: Commander, the agent toolbox, web search, other models (see below) and every custom MCP server. **Ask Before Running** makes the model wait for your answer before it runs a tool, for all tools or for chosen ones, and "Always Allow" in the question turns it off for that tool in that chat. The choices are remembered per chat. Each tool call shows as a card; click it to see the command and its output.
+- **Stop and guidance.** **Stop** (⌘.) ends a running reply at once, even in the middle of a long command. While a model works with tools, **Send** becomes **Guide** (its dot blinks while the model runs): a note typed then is delivered to the model between steps, never in the middle of a command. If the reply ends first, the note goes back into the message box. Guidance is offered for Grok, ChatGPT, Claude, Gemini and Mistral.
+- **Edit and retry.** **Retry** sends your last message again and replaces the reply. **Edit Last** takes the last message back into the message box to change; Cancel Edit (or Escape) puts everything back.
+- **Thinking.** "Show model thinking" is on by default (Tools settings). Returned reasoning appears in its own card, and the latest of it stays visible just above the message box while the model runs, so it does not scroll away. Claude, ChatGPT Responses models, Gemini, Mistral reasoning models and local models return readable reasoning; ChatGPT chat-completions models and Grok do not.
+- **Cost and context.** The line above the chat shows the context in use and a running **estimated cost** of the chat, summed over every model it used (hover it for the breakdown). Rates come from a public price list the relay fetches, including the higher rates some services charge for very large prompts. Local models show N/A. It is an estimate, not an invoice. When a chat's context fills, it is summarized (also Chat, Compact Chat Now), and long tool runs trim old output to stay inside the window. A reply that hits the model's output limit ends with a note instead of an error.
+- **Screenshots.** Commander has a `take_screenshot` tool; a model that can see pictures uses it to look at the Mac's screen (someone must be logged in at its console).
+- **Ask other models.** When switched on for a chat, the model can ask any other working model for a second opinion with `consult_model`. The other model's usage is counted in the chat's cost.
+- **Relay and Commander status.** A red line at the top of the chat says when the relay cannot be reached, rejects the token, or does not accept this Mac's address. An orange one says why Commander cannot run, for example that SSH cannot sign in, Remote Login is off, or the host key changed, with the fix. During a long run the relay sends heartbeats, so a slow command never looks like a lost connection.
+- **Commander menu.** Start, Stop and Start at Login for ppc-commander as a standalone service, and this Mac's model, OS and IP addresses. The status line shows On or Off.
+- **History menu.** Export, import and clear the history of **all workspaces at once**, or copy it to and from the relay Mac. Files from 1.2 (one workspace) still import, into the current workspace.
+- **Configuration menu.** MCP servers and agent tools, Connect Commander over SSH, and export/import of all settings.
 
 Every menu command has a keyboard shortcut, shown in the menu.
 
@@ -190,7 +199,7 @@ From Terminal, without opening a window:
 
 - **Live model list.** At start and every six hours the relay asks each service that has a key for its models, drops non-chat models, and sends each a tiny test request with a tool. Only models that pass are offered. Changing a key retests that service.
 - **Local server.** None is assumed. The address is as seen from the relay computer, and it is not the relay's own address. LM Studio on the relay computer is usually `http://127.0.0.1:1234/v1`. LM Studio on another computer is that computer's address, for example `http://10.0.1.105:1234/v1`.
-- **Custom MCP servers.** Add stdio servers (absolute program path and arguments) in the tools panel of either app. They run on the relay Mac and start disabled; enable only programs you trust. `relay/http_mcp.py` bridges Streamable HTTP servers.
+- **Custom MCP servers.** Add stdio servers (absolute program path, arguments, environment) in the MCP Servers tab of the tools panel of either app; double-click a server to edit it. Each can be switched on, and set to ask first. They run on the relay Mac and start disabled; enable only programs you trust. `relay/http_mcp.py` bridges Streamable HTTP servers.
 - **Agent toolbox.** Optional UTC time and scratch-note tools.
 - **Web search.** Grok uses its own native search. Other services can use Brave or Tavily with your own key.
 - **Claude thinking.** Optional. Signed thinking blocks are passed back unchanged during tool use, as Anthropic requires; signatures are never shown.
@@ -210,7 +219,7 @@ From Terminal, without opening a window:
 | "Cannot reach the relay" | Check the address and port in Preferences; on the relay Mac run `curl http://ADDRESS:PORT/health`; allow Python in the macOS firewall |
 | "The relay rejected the token" | Copy the token from the relay app into Preferences, or run `install-tiger.sh` again |
 | "does not accept this Mac's address" | Add the Tiger Mac's address to `ALLOWED_CLIENTS` in `config.sh`, then run `setup.sh` |
-| "tiger mac tools: offline" in `/health` | `ppc-commander/bin/ppc-ssh 'echo ok'` must print `ok`; check Remote Login, `TIGER_HOST` and `TIGER_USER` |
+| "tiger mac tools: offline" in `/health`, or the orange Commander line | The message says why. Usually: on the Tiger Mac choose Configuration → Connect Commander over SSH in Tiger Build; turn on Remote Login; or check the address and user in the relay app. `ppc-commander/bin/ppc-ssh 'echo ok'` must print `ok` |
 | A service is dimmed | Add its key, or wait for its models to finish testing |
 | Claude asks for `anthropic-workspace-id` | Enter the Workspace ID |
 
@@ -223,7 +232,7 @@ ppc-commander/bin/ppc-ssh 'cd ~/TigerBuild-build/native && make test'
 ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-test'
 ```
 
-`scripts/build-pkg.sh` makes `dist/TigerBuildRelay-1.2.pkg` (macOS, `/usr/local/tiger-build-relay`). `scripts/build-deb.sh` makes `dist/tiger-build-relay_1.2_all.deb` (Linux, `/opt/tiger-build-relay`). `scripts/build-windows.ps1`, or `python3 scripts/build-windows-zip.py` on a Mac, makes `dist/tiger-build-relay-payload.zip` and `Install-TigerBuildRelay.cmd` (Windows; not an exe installer). `scripts/build-tiger-pkg.sh` makes `dist/TigerBuild-1.2.pkg` for Tiger. `scripts/build-relay-gui.sh` rebuilds the Mac relay app. `/health` reports `version: 1.2`.
+`scripts/build-pkg.sh` makes `dist/TigerBuildRelay-1.3.pkg` (macOS, `/usr/local/tiger-build-relay`). `scripts/build-deb.sh` makes `dist/tiger-build-relay_1.3_all.deb` (Linux, `/opt/tiger-build-relay`). `scripts/build-windows.ps1`, or `python3 scripts/build-windows-zip.py` on a Mac, makes `dist/tiger-build-relay-payload.zip` and `Install-TigerBuildRelay.cmd` (Windows; not an exe installer). `scripts/build-tiger-pkg.sh` makes `dist/TigerBuild-1.3.pkg` for Tiger. `scripts/build-relay-gui.sh` rebuilds the Mac relay app. `/health` reports `version: 1.3`.
 
 The macOS package includes a universal Intel/Apple Silicon settings app. The Windows zip and Linux `Architecture: all` package are source-based and work with the platform's own Python (3.8+), Tk, and OpenSSH; they do not bundle a CPU-specific Python. ARM64 has been runtime-tested; x64 support has been checked in the source and package contents, but not yet tested on an x64 machine. Run setup as your own user, not as administrator/root. The Windows `.cmd` unpacks the files; then run the setup command it displays to create the Start menu shortcut.
 

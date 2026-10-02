@@ -1,5 +1,7 @@
 #import "TranscriptView.h"
+#if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
+#endif
 
 @interface TranscriptView (Selection)
 - (void)toggleActivityAtView:(NSView *)view;
@@ -37,6 +39,7 @@
 
 @end
 
+#if TB_INLINE_VIDEO
 @interface SaveMovieView : QTMovieView
 {
     NSString *mediaPath;
@@ -102,6 +105,8 @@
 
 @end
 
+#endif
+
 static void appendRoundedRect(NSBezierPath *path, NSRect rect, float radius)
 {
     float x = NSMinX(rect);
@@ -123,20 +128,21 @@ static void appendRoundedRect(NSBezierPath *path, NSRect rect, float radius)
 }
 
 typedef struct {
-    float top[3];
-    float bottom[3];
+    CGFloat top[3];
+    CGFloat bottom[3];
 } ShadeInfo;
 
-static void shadeEvaluate(void *info, const float *in, float *out)
+/* CGFloat is a double in 64-bit builds, so the callback must say so. */
+static void shadeEvaluate(void *info, const CGFloat *in, CGFloat *out)
 {
     ShadeInfo *shade = (ShadeInfo *)info;
-    float t = in[0];
-    float gloss = 0.0;
+    CGFloat t = in[0];
+    CGFloat gloss = 0.0;
     int i;
     if (t < 0.28)
         gloss = (0.28 - t) / 0.28 * 0.62;
     for (i = 0; i < 3; i++) {
-        float c = shade->top[i] + (shade->bottom[i] - shade->top[i]) * t;
+        CGFloat c = shade->top[i] + (shade->bottom[i] - shade->top[i]) * t;
         c = c + (1.0 - c) * gloss;
         out[i] = c;
     }
@@ -152,8 +158,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 {
     ShadeInfo shade;
     CGFunctionCallbacks callbacks;
-    float domain[2];
-    float range[8];
+    CGFloat domain[2];
+    CGFloat range[8];
     CGFunctionRef function;
     CGColorSpaceRef space;
     CGShadingRef shading;
@@ -200,6 +206,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     movieViews = [[NSMutableArray alloc] init];
     moviePaths = [[NSMutableArray alloc] init];
     imageCache = [[NSMutableDictionary alloc] init];
+    sizeCache = [[NSMutableDictionary alloc] init];
     textViews = [[NSMutableArray alloc] init];
     style = [[NSMutableParagraphStyle alloc] init];
     [style setLineBreakMode:NSLineBreakByWordWrapping];
@@ -229,6 +236,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     [movieViews release];
     [moviePaths release];
     [imageCache release];
+    [sizeCache release];
     [textViews release];
     [bodyAttrs release];
     [userAttrs release];
@@ -270,6 +278,10 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)placeMovies
 {
+#if !TB_INLINE_VIDEO
+    /* 64-bit builds have no QuickTime player view; videos open in the default player. */
+    return;
+#else
     NSMutableArray *paths;
     NSMutableArray *rects;
     unsigned i;
@@ -322,12 +334,16 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         [movieViews addObject:view];
         [view release];
     }
+#endif
 }
 
 - (void)setMessages:(NSArray *)newMessages
 {
+    if (newMessages != messages)
+        [sizeCache removeAllObjects];
+    [newMessages retain];
     [messages release];
-    messages = [newMessages retain];
+    messages = newMessages;
     [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
 }
 
@@ -336,6 +352,25 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     if (fromUser)
         return userAttrs;
     return bodyAttrs;
+}
+
+/* Measuring wraps every message's text, which is the slow part of laying out
+   a chat. A message that did not change since the last layout keeps its size,
+   so a streaming reply only re-measures itself. */
+- (NSRect)measureText:(NSString *)text attrs:(NSDictionary *)attrs width:(float)width height:(float)height forMessage:(id)message
+{
+    NSValue *key = [NSValue valueWithPointer:message];
+    NSString *signature = [NSString stringWithFormat:@"%lu|%.0f|%.0f|%@", (unsigned long)[text length], width, height,
+        attrs == statusAttrs ? @"s" : (attrs == userAttrs ? @"u" : (attrs == bodyAttrs ? @"b" : @"m"))];
+    NSArray *hit = [sizeCache objectForKey:key];
+    NSRect used;
+    if (hit && [[hit objectAtIndex:0] isEqualToString:signature])
+        return [[hit objectAtIndex:1] rectValue];
+    used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
+    if ([sizeCache count] > 4000)
+        [sizeCache removeAllObjects];
+    [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], nil] forKey:key];
+    return used;
 }
 
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible
@@ -390,9 +425,9 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             [mono setObject:[NSFont fontWithName:@"Monaco" size:11] forKey:NSFontAttributeName];
             attrs=mono;
         }
-        used = [text boundingRectWithSize:NSMakeSize(status ? layoutWidth - (activity ? 64 : 48) : maxText, activity ? 1000000 : 4000)
-                                   options:NSStringDrawingUsesLineFragmentOrigin
-                                attributes:attrs];
+        used = [self measureText:text attrs:attrs
+                           width:(status ? layoutWidth - (activity ? 64 : 48) : maxText)
+                          height:(activity ? 1000000 : 4000) forMessage:message];
         if (used.size.width < 12)
             used.size.width = 12;
         if (!status && imagePath && [self cachedImage:imagePath]) {
@@ -557,8 +592,10 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         if (!text)
             text = @"";
         [(TBSelectText *)view setActivity:[[box objectForKey:@"activity"] boolValue]];
-        [view setFrame:textRect];
-        [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
+        if (!NSEqualRects([view frame], textRect))
+            [view setFrame:textRect];
+        if (fabsf([[view textContainer] containerSize].width - NSWidth(textRect)) > 0.5f)
+            [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
         if (![[view string] isEqualToString:text]) {
             [view setString:text];
             storage = [view textStorage];
@@ -570,7 +607,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)toggleActivityAtView:(NSView *)view
 {
-    unsigned index = [textViews indexOfObject:view];
+    NSUInteger index = [textViews indexOfObject:view];
     NSMutableDictionary *message;
     if (index == NSNotFound || index >= [boxes count])
         return;
@@ -648,7 +685,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
                 NSRect videoRect = [[box objectForKey:@"videoRect"] rectValue];
                 [[NSColor colorWithCalibratedWhite:0.15 alpha:1] set];
                 NSRectFill(videoRect);
-                [@"QuickTime could not open this video." drawInRect:videoRect withAttributes:statusAttrs];
+                [(TB_INLINE_VIDEO ? @"QuickTime could not open this video." : @"Double-click to play this video.")
+                    drawInRect:videoRect withAttributes:statusAttrs];
             }
         }
     }
@@ -714,6 +752,14 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
+    if([event clickCount]>1) {
+        for(i=0;i<[boxes count];i++) {
+            NSDictionary *box=[boxes objectAtIndex:i];
+            if([box objectForKey:@"videoRect"]&&NSPointInRect(point,[[box objectForKey:@"videoRect"] rectValue])&&![self playingVideo:[box objectForKey:@"video"]]) {
+                [[NSWorkspace sharedWorkspace] openFile:[box objectForKey:@"video"]];return;
+            }
+        }
+    }
     for(i=0;i<[boxes count];i++) {
         NSDictionary *box=[boxes objectAtIndex:i];
         if([[box objectForKey:@"activity"] boolValue]&&NSPointInRect(point,[[box objectForKey:@"rect"] rectValue])) {

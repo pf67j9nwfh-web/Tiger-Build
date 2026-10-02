@@ -159,7 +159,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         put(token, in: connection, 16, 30, 570, 20); token.isSelectable = true
         token.font = .monospacedSystemFont(ofSize: 11, weight: .regular); token.lineBreakMode = .byTruncatingTail
         put(button("Copy Token", 0, 0, 100, "copyToken:"), in: connection, 606, 24, 100, 30)
-        put(tigerMac, in: connection, 16, 6, 690, 18); tigerMac.font = .systemFont(ofSize: 11)
+        put(button("Tiger Mac…", 0, 0, 100, "tigerMacPanel:"), in: connection, 606, 0, 100, 28)
+        put(tigerMac, in: connection, 16, 6, 580, 18); tigerMac.font = .systemFont(ofSize: 11)
         tigerMac.textColor = .secondaryLabelColor; tigerMac.lineBreakMode = .byTruncatingTail
 
         let keys = section("AI services and local server", NSRect(x: 20, y: 82, width: 740, height: 382))
@@ -235,7 +236,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if let error = result["error"] as? String { self.message.stringValue = error; return }
                 self.last = result
                 let pid = result["pid"] as? Int ?? 0
-                let ver = result["version"] as? String ?? "1.2"
+                let ver = result["version"] as? String ?? "1.3"
                 self.window.title = "Tiger Build Relay \(ver)"
                 self.status.stringValue = pid > 0 ? "Version \(ver), running in background (PID \(pid))" : "Version \(ver), stopped"
                 self.status.textColor = pid > 0 ? .systemGreen : .secondaryLabelColor
@@ -243,7 +244,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 self.token.stringValue = "Token: \(result["token"] as? String ?? "")"
                 self.folder.stringValue = "Settings: \(result["support"] as? String ?? support.path)"
                 let host = result["tiger_host"] as? String ?? "", user = result["tiger_user"] as? String ?? ""
-                var line = host.isEmpty ? "Tiger Mac: not set — edit config.sh in the settings folder" : "Tiger Mac: \(user.isEmpty ? "?" : user)@\(host)"
+                var line = host.isEmpty ? "Tiger Mac: not set — choose Tiger Mac…" : "Tiger Mac: \(user.isEmpty ? "?" : user)@\(host)"
                 if let seen = result["last_client"] as? [String: Any], let machine = seen["machine"] as? String {
                     line += "   ·   last connected: \(machine)"
                     if let os = seen["os"] as? String { line += ", \(os)" }
@@ -265,7 +266,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                     for (_,key,_) in self.rows where key != "local_url" { self.fields[key]?.stringValue = "" }
                     self.initialized = true
                 }
-                if action != "status" { self.message.stringValue = "Saved. The relay keeps running when this window is closed." }
+                if let r = result["ssh_result"] as? [String: Any] { self.message.stringValue = r["message"] as? String ?? "" }
+                else if action != "status" { self.message.stringValue = "Saved. The relay keeps running when this window is closed." }
                 if let path = snapshotPath, action == "status" {
                     self.message.stringValue = ""
                     if snapshotTools {
@@ -291,6 +293,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         var input: [String: Any] = ["port": n]
         for (key,field) in fields where !field.stringValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { input[key] = field.stringValue.trimmingCharacters(in:.whitespacesAndNewlines) }
         perform("save", input)
+    }
+    // The Tiger Mac Commander signs in to: address, account and home folder.
+    @objc func tigerMacPanel(_ sender: Any?) {
+        let alert = NSAlert(); alert.messageText = "Tiger Mac for Commander"
+        alert.informativeText = "Commander runs a Tiger Mac's tools over SSH. Tiger Build on that Mac can also set this up itself (Configuration, Connect Commander over SSH)."
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 92))
+        let names = ["Address", "Account", "Home folder"]
+        let values = [last["tiger_host"] as? String ?? "", last["tiger_user"] as? String ?? "", last["tiger_home"] as? String ?? ""]
+        var edits: [NSTextField] = []
+        for (i, name) in names.enumerated() {
+            let y = CGFloat(64 - i * 30)
+            let l = NSTextField(labelWithString: name); l.alignment = .right; l.frame = NSRect(x: 0, y: y + 2, width: 96, height: 20); box.addSubview(l)
+            let f = NSTextField(string: values[i]); f.frame = NSRect(x: 104, y: y, width: 250, height: 24); box.addSubview(f); edits.append(f)
+        }
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Save and Test"); alert.addButton(withTitle: "Forget Saved Host Key"); alert.addButton(withTitle: "Cancel")
+        let answer = alert.runModal()
+        if answer == .alertFirstButtonReturn {
+            perform("ssh-save", ["host": edits[0].stringValue, "user": edits[1].stringValue, "home": edits[2].stringValue])
+        } else if answer == .alertSecondButtonReturn { perform("ssh-forget") }
     }
     @objc func deleteField(_ sender: NSButton) {
         guard let key = sender.identifier?.rawValue else { return }
@@ -393,9 +415,12 @@ final class IntegrationPanel: NSObject {
         window = NSWindow(contentRect:NSRect(x:0,y:0,width:760,height:870),styleMask:[.titled,.closable],backing:.buffered,defer:false)
         window.title = "MCP Servers & Agent Tools"; window.center(); window.isReleasedWhenClosed = false
         func add(_ v:NSView,_ x:CGFloat,_ y:CGFloat,_ w:CGFloat,_ h:CGFloat){v.frame=NSRect(x:x,y:y,width:w,height:h);window.contentView!.addSubview(v)}
-        var y:CGFloat=825
-        for (title,name) in [("PPC Commander (built in)","ppc_enabled"),("Agent toolbox: UTC time and persistent scratch notes","toolbox_enabled"),("Web search for other providers (Brave or Tavily)","search_enabled"),("Grok native web search (uses xAI)","grok_native_search"),("Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)","claude_thinking")] {
-            let b=NSButton(checkboxWithTitle:title,target:nil,action:nil);add(b,20,y,720,24);toggles[name]=b;y-=30
+        let y:CGFloat=825
+        var index=0
+        for (title,name) in [("Commander (built in)","ppc_enabled"),("Ask first before Commander runs a tool","ppc_approval"),("Let models ask other models for advice","consult_enabled"),("Agent toolbox (UTC time, scratch notes)","toolbox_enabled"),("Web search for other providers","search_enabled"),("Grok native web search","grok_native_search"),("Show model thinking","claude_thinking")] {
+            let b=NSButton(checkboxWithTitle:title,target:nil,action:nil)
+            add(b,index<4 ? 20 : 390,y-CGFloat(index<4 ? index : index-4)*30,350,24);toggles[name]=b
+            index+=1
         }
         add(NSTextField(labelWithString:"Brave API key (blank keeps saved):"),20,665,265,24);add(key,290,665,435,24)
         add(clearKey,290,638,425,24)

@@ -265,7 +265,7 @@ def write_linux_desktop(gui):
     desktop = os.path.join(apps, "tiger-build-relay.desktop")
     lines = [
         "[Desktop Entry]",
-        "Version=1.2",
+        "Version=1.3",
         "Type=Application",
         "Name=Tiger Build Relay",
         "GenericName=Relay settings",
@@ -305,6 +305,50 @@ def install_launcher(app):
     return ""
 
 
+def connect_tiger_mac(shell):
+    """Make the relay's SSH key and, from a terminal, install it on the Tiger
+    Mac. Without a Tiger Mac in config.sh (or without a terminal) nothing is
+    asked: Tiger Build on that Mac sets this up itself (Configuration,
+    Connect Commander over SSH), with no password."""
+    import connection
+    shell = load_shell_config_again()
+    try:
+        connection.ensure_key(shell)
+    except Exception as exc:
+        print("Could not make the SSH key (%s). Tiger Build can still connect for you." % exc)
+        return
+    if not shell.get("TIGER_HOST") or not shell.get("TIGER_USER"):
+        print("")
+        print("No Tiger Mac is set yet. Open Tiger Build on it and choose Configuration, Connect Commander over SSH,")
+        print("or set the address and user in the Tiger Build Relay app.")
+        return
+    try:
+        connection.remember_host_key(shell)
+    except RuntimeError as exc:
+        print("")
+        print("Commander: %s" % exc)
+        return
+    result = connection.test(shell)
+    if result["ok"]:
+        print("Commander: %s" % result["message"])
+        return
+    print("")
+    print("Commander: %s" % result["message"])
+    if result["code"] in ("auth", "key_missing") and sys.stdin.isatty():
+        answer = input("Install the relay's key on %s@%s now? You will be asked for that account's password. [y/N] "
+                       % (shell["TIGER_USER"], shell["TIGER_HOST"]))
+        if answer.strip().lower().startswith("y"):
+            if connection.install_key_interactive(shell):
+                print("Commander: %s" % connection.test(shell)["message"])
+            else:
+                print("The key was not installed. Tiger Build can do it without a password: Configuration, Connect Commander over SSH.")
+
+
+def load_shell_config_again():
+    from mcp_bridge import load_shell_config
+    return load_shell_config()
+
+
 def main():
     ensure_real_python()
     sys.path.insert(0, os.path.join(ROOT, "relay"))
@@ -324,13 +368,8 @@ def main():
         except OSError:
             pass
         print("Wrote %s" % config)
-        print("Set TIGER_HOST and TIGER_USER there, then run setup again.")
-        return 0
     from mcp_bridge import load_shell_config
     shell = load_shell_config()
-    if not shell.get("TIGER_HOST") or not shell.get("TIGER_USER"):
-        sys.stderr.write("Set TIGER_HOST and TIGER_USER in %s, then run setup again.\n" % config)
-        return 1
     warn_old_ssh()
     # Stop the copy that is running before replacing its files. Windows
     # cannot delete a program that is still open.
@@ -364,6 +403,7 @@ def main():
         ).decode().strip()
         print("  Token:           %s" % token)
     print("Enter the address, port and token in Tiger Build > Preferences.")
+    connect_tiger_mac(shell)
     if launcher:
         print("  Open:            %s" % launcher)
     return 0

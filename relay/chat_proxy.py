@@ -1486,7 +1486,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         refresh_settings()
         if path in ("/v1/integrations", "/v1/config-export"):
-            import plistlib
             from integrations import public
             from config_backup import export
             payload = export() if path == "/v1/config-export" else plistlib.dumps(public(), fmt=plistlib.FMT_XML)
@@ -1581,7 +1580,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = self.path.split("?", 1)[0]
         if path in ("/v1/integrations", "/v1/config-import"):
-            import plistlib
             from integrations import write as write_integrations
             from config_backup import restore
             try:

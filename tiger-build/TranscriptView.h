@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import "TBCompat.h"
 
 @interface TranscriptView : NSView {
     NSArray *messages;
@@ -12,6 +13,7 @@
     NSMutableArray *moviePaths;
     NSMutableDictionary *imageCache;
     NSMutableArray *textViews;
+    NSMutableDictionary *sizeCache;
 }
 
 - (void)setMessages:(NSArray *)newMessages;

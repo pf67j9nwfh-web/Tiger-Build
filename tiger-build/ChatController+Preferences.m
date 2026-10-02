@@ -35,6 +35,10 @@ static NSString *splitBase(NSString *base, NSString **port)
 }
 
 @interface ChatController (PreferencesPrivate)
+- (void)requestSSHState;
+- (void)setSSHStatus:(NSString *)text;
+- (void)saveSSHFields;
+- (void)fillNewChatModelPopup;
 - (void)requestSettings;
 - (BOOL)saveRelayFields;
 - (void)refreshAfterPreferences;
@@ -71,6 +75,10 @@ static NSString *splitBase(NSString *base, NSString **port)
             [[prefsFields objectForKey:name] setEnabled:NO];
     }
     [self setRelayTestText:@""];
+    [self fillNewChatModelPopup];
+    [self setSSHStatus:@""];
+    [prefsFields removeObjectForKey:@"ssh.loaded"];
+    [self requestSSHState];
     [self requestSettings];
 }
 
@@ -306,6 +314,12 @@ static NSString *splitBase(NSString *base, NSString **port)
     (void)sender;
     if (![self saveRelayFields])
         return;
+    {
+        NSString *choice = [[[prefsFields objectForKey:@"new_chat_model"] selectedItem] representedObject];
+        if (choice)
+            [[NSUserDefaults standardUserDefaults] setObject:choice forKey:@"TigerBuildNewChatModel"];
+    }
+    [self saveSSHFields];
     keys = [NSArray arrayWithObjects:
         @"xai_api_key", @"openai_api_key", @"anthropic_api_key",
         @"anthropic_workspace_id", @"mistral_api_key", @"muse_api_key",
@@ -398,7 +412,7 @@ static NSString *splitBase(NSString *base, NSString **port)
    in a panel. Tooltips on Tiger only appear after a pause, so both. */
 - (void)preferencesHelp:(NSString *)help y:(float)y inView:(NSView *)view
 {
-    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(190, y, 21, 23)];
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(176, y, 21, 23)];
     [button setBezelStyle:NSHelpButtonBezelStyle];
     [button setTitle:@""];
     [button setToolTip:help];
@@ -417,13 +431,13 @@ static NSString *splitBase(NSString *base, NSString **port)
 {
     NSTextField *field;
     NSButton *remove;
-    [self preferencesLabel:title frame:NSMakeRect(16, y + 2, 172, 18) inView:view];
+    [self preferencesLabel:title frame:NSMakeRect(16, y + 2, 158, 18) inView:view];
     if (help)
         [self preferencesHelp:help y:y inView:view];
     if (secure)
-        field = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(216, y, width, 22)];
+        field = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(200, y, width, 22)];
     else
-        field = [[NSTextField alloc] initWithFrame:NSMakeRect(216, y, width, 22)];
+        field = [[NSTextField alloc] initWithFrame:NSMakeRect(200, y, width, 22)];
     [field setEditable:YES];
     [field setSelectable:YES];
     [field setBezeled:YES];
@@ -433,10 +447,10 @@ static NSString *splitBase(NSString *base, NSString **port)
     [view addSubview:field];
     [prefsFields setObject:field forKey:key];
     [field release];
-    [prefsFields setObject:[self preferencesLabel:@"" frame:NSMakeRect(454, y + 2, 50, 18) inView:view]
+    [prefsFields setObject:[self preferencesLabel:@"" frame:NSMakeRect(200 + width + 4, y + 2, 44, 18) inView:view]
                     forKey:[key stringByAppendingString:@".note"]];
     if (removeTitle) {
-        remove = [self preferencesButton:removeTitle frame:NSMakeRect(506, y - 3, 92, 28)
+        remove = [self preferencesButton:removeTitle frame:NSMakeRect(200 + width + 44, y - 3, 92, 28)
                                   action:@selector(removeSetting:) inView:view];
         [[remove cell] setControlSize:NSSmallControlSize];
         [remove setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
@@ -446,16 +460,72 @@ static NSString *splitBase(NSString *base, NSString **port)
     return field;
 }
 
+/* A tab holding one group of settings. */
+- (NSView *)preferencesTab:(NSString *)label in:(NSTabView *)tabs
+{
+    NSTabViewItem *item = [[[NSTabViewItem alloc] initWithIdentifier:label] autorelease];
+    NSView *view = [[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 556, 330)] autorelease];
+    [item setLabel:label];
+    [item setView:view];
+    [tabs addTabViewItem:item];
+    return view;
+}
+
+- (NSTextField *)preferencesNote:(NSString *)text frame:(NSRect)frame inView:(NSView *)view
+{
+    NSTextField *note = [self preferencesLabel:text frame:frame inView:view];
+    [note setFont:[NSFont systemFontOfSize:11]];
+    [[note cell] setWraps:YES];
+    [[note cell] setLineBreakMode:NSLineBreakByWordWrapping];
+    return note;
+}
+
+/* The model a new chat starts with: the last one used, or one fixed choice. */
+- (void)fillNewChatModelPopup
+{
+    NSPopUpButton *popup = [prefsFields objectForKey:@"new_chat_model"];
+    NSArray *providers = [[ModelCatalog shared] providers];
+    NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildNewChatModel"];
+    unsigned i;
+    unsigned j;
+    if (!popup)
+        return;
+    [popup removeAllItems];
+    [popup addItemWithTitle:@"The model last used (default)"];
+    [[popup lastItem] setRepresentedObject:@"last"];
+    for (i = 0; i < [providers count]; i++) {
+        NSString *pid = [[providers objectAtIndex:i] objectForKey:@"id"];
+        NSArray *models = [pid isEqualToString:@"local"] ? localModels : [[ModelCatalog shared] modelsForProvider:pid];
+        if (![self providerUsable:pid])
+            continue;
+        for (j = 0; j < [models count]; j++) {
+            NSDictionary *model = [models objectAtIndex:j];
+            [popup addItemWithTitle:[NSString stringWithFormat:@"%@: %@", [[ModelCatalog shared] titleForProvider:pid], [model objectForKey:@"title"]]];
+            [[popup lastItem] setRepresentedObject:[NSString stringWithFormat:@"%@|%@", pid, [model objectForKey:@"id"]]];
+        }
+    }
+    if ([saved length] == 0)
+        saved = @"last";
+    for (i = 0; i < (unsigned)[popup numberOfItems]; i++) {
+        if ([[[popup itemAtIndex:i] representedObject] isEqualToString:saved]) {
+            [popup selectItemAtIndex:i];
+            break;
+        }
+    }
+}
+
 - (void)buildPreferencesWindow
 {
     NSView *view;
+    NSView *tab;
+    NSTabView *tabs;
     NSTextField *field;
     NSTextField *note;
     NSButton *button;
     NSArray *keys;
     unsigned i;
     float y;
-    prefsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 614, 640)
+    prefsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 600, 470)
                                                styleMask:NSTitledWindowMask | NSClosableWindowMask
                                                  backing:NSBackingStoreBuffered
                                                    defer:NO];
@@ -463,45 +533,55 @@ static NSString *splitBase(NSString *base, NSString **port)
     [prefsWindow setReleasedWhenClosed:NO];
     [prefsWindow center];
     view = [prefsWindow contentView];
-    y = 604;
+    tabs = [[[NSTabView alloc] initWithFrame:NSMakeRect(12, 56, 576, 404)] autorelease];
+    [tabs setFont:[NSFont systemFontOfSize:12]];
+    [view addSubview:tabs];
 
-    [self preferencesHeading:@"Relay" y:y inView:view];
-    y -= 32;
+    /* ---- Relay ---- */
+    tab = [self preferencesTab:@"Relay" in:tabs];
+    y = 284;
     field = [self preferencesRow:@"Relay address" key:@"relay_host" y:y secure:NO width:148
         help:@"The IP address or name of the Mac running the relay, such as 192.168.1.10. The relay app shows it under Reachable address. "
              @"Put the port in the Port box; the relay uses 8765 unless its config.sh says otherwise."
-        removable:nil inView:view];
+        removable:nil inView:tab];
     [[field cell] setPlaceholderString:@"relay Mac address"];
-    [self preferencesLabel:@"Port" frame:NSMakeRect(370, y + 2, 32, 18) inView:view];
-    field = [[NSTextField alloc] initWithFrame:NSMakeRect(402, y, 50, 22)];
+    [self preferencesLabel:@"Port" frame:NSMakeRect(356, y + 2, 32, 18) inView:tab];
+    field = [[NSTextField alloc] initWithFrame:NSMakeRect(388, y, 56, 22)];
     [field setEditable:YES];
     [field setBezeled:YES];
     [field setFont:[NSFont systemFontOfSize:12]];
     [[field cell] setPlaceholderString:@"8765"];
     [field setToolTip:@"The relay's port. 8765 unless LISTEN_PORT was changed in the relay's config.sh."];
-    [view addSubview:field];
+    [tab addSubview:field];
     [prefsFields setObject:field forKey:@"relay_port"];
     [field release];
     y -= 32;
-    [self preferencesRow:@"Relay token" key:@"relay_token" y:y secure:YES width:236
+    [self preferencesRow:@"Relay token" key:@"relay_token" y:y secure:YES width:280
         help:@"The shared secret that lets this Mac use the relay. It is in relay-token on the relay Mac; "
              @"setup.sh prints it and install-tiger.sh fills it in. Leave blank to keep the saved one."
-        removable:nil inView:view];
+        removable:nil inView:tab];
     y -= 36;
     [self preferencesButton:@"Test Connection" frame:NSMakeRect(210, y, 130, 28)
-                     action:@selector(testConnection:) inView:view];
-    note = [self preferencesLabel:@"" frame:NSMakeRect(346, y + 6, 252, 18) inView:view];
+                     action:@selector(testConnection:) inView:tab];
+    note = [self preferencesLabel:@"" frame:NSMakeRect(346, y + 6, 200, 18) inView:tab];
     [note setFont:[NSFont systemFontOfSize:11]];
     [prefsFields setObject:note forKey:@"relay.status"];
+    y -= 56;
+    [self preferencesHeading:@"Settings backup" y:y inView:tab];
+    y -= 36;
+    [self preferencesButton:@"Export Settings..." frame:NSMakeRect(16, y, 150, 28) action:@selector(exportAllSettings:) inView:tab];
+    [self preferencesButton:@"Import Settings..." frame:NSMakeRect(172, y, 150, 28) action:@selector(importAllSettings:) inView:tab];
+    [self preferencesButton:@"Clear All Settings..." frame:NSMakeRect(328, y, 170, 28) action:@selector(clearAllSettings:) inView:tab];
+    y -= 22;
+    [self preferencesNote:@"Backups include API keys and the relay token in plain text. Keep them private."
+        frame:NSMakeRect(16, y - 10, 520, 28) inView:tab];
 
+    /* ---- API keys ---- */
+    tab = [self preferencesTab:@"API Keys" in:tabs];
+    y = 304;
+    [self preferencesNote:@"Add a key for each service you use. One is enough, and none is fine if you only use a local server."
+        frame:NSMakeRect(16, y - 14, 520, 30) inView:tab];
     y -= 40;
-    [self preferencesHeading:@"Provider API keys" y:y inView:view];
-    y -= 18;
-    note = [self preferencesLabel:@"Add a key for each service you use. One is enough, and none is fine if you only use a local server."
-                            frame:NSMakeRect(16, y, 582, 16) inView:view];
-    [note setFont:[NSFont systemFontOfSize:11]];
-    y -= 30;
-    /* title, key, secure ("1"), help or "" */
     keys = [NSArray arrayWithObjects:
         [NSArray arrayWithObjects:@"xAI (Grok)", @"xai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"OpenAI (ChatGPT)", @"openai_api_key", @"1", @"", nil],
@@ -517,43 +597,185 @@ static NSString *splitBase(NSString *base, NSString **port)
         NSArray *row = [keys objectAtIndex:i];
         NSString *help = [row objectAtIndex:3];
         [self preferencesRow:[row objectAtIndex:0] key:[row objectAtIndex:1] y:y
-            secure:[[row objectAtIndex:2] isEqualToString:@"1"] width:236
-            help:([help length] ? help : nil) removable:@"Remove" inView:view];
-        y -= 30;
+            secure:[[row objectAtIndex:2] isEqualToString:@"1"] width:190
+            help:([help length] ? help : nil) removable:@"Remove" inView:tab];
+        y -= 34;
     }
 
-    y -= 10;
-    [self preferencesHeading:@"Local server" y:y inView:view];
-    y -= 32;
-    field = [self preferencesRow:@"Local server address" key:@"local_url" y:y secure:NO width:236
+    /* ---- Local server ---- */
+    tab = [self preferencesTab:@"Local Server" in:tabs];
+    y = 284;
+    field = [self preferencesRow:@"Local server address" key:@"local_url" y:y secure:NO width:190
         help:@"An OpenAI-compatible server such as LM Studio, as this computer sees it. "
              @"It can be another computer. It is not the relay address. "
              @"Example on the relay computer: http://127.0.0.1:1234/v1. "
              @"Example on another computer: http://192.168.1.50:1234/v1. Reset removes it."
-        removable:@"Reset" inView:view];
+        removable:@"Reset" inView:tab];
     [[field cell] setPlaceholderString:@"not set (e.g. " TB_LOCAL_EXAMPLE ")"];
-    y -= 22;
-    note = [self preferencesLabel:@"" frame:NSMakeRect(216, y, 382, 16) inView:view];
+    y -= 24;
+    note = [self preferencesLabel:@"" frame:NSMakeRect(200, y, 340, 16) inView:tab];
     [note setFont:[NSFont systemFontOfSize:11]];
     [prefsFields setObject:note forKey:@"local.inuse"];
-    y -= 30;
-    [self preferencesRow:@"Local API key (optional)" key:@"local_api_key" y:y secure:YES width:236
+    y -= 34;
+    [self preferencesRow:@"Local API key (optional)" key:@"local_api_key" y:y secure:YES width:190
         help:@"Optional. Only needed if your local server was set up to require a key. "
              @"LM Studio does not require one unless you turn that on."
-        removable:@"Remove" inView:view];
+        removable:@"Remove" inView:tab];
+
+    /* ---- New chats ---- */
+    tab = [self preferencesTab:@"New Chats" in:tabs];
+    y = 284;
+    [self preferencesLabel:@"New chats start with" frame:NSMakeRect(16, y + 2, 150, 18) inView:tab];
+    {
+        NSPopUpButton *popup = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(170, y - 2, 366, 26) pullsDown:NO] autorelease];
+        [popup setFont:[NSFont systemFontOfSize:12]];
+        [tab addSubview:popup];
+        [prefsFields setObject:popup forKey:@"new_chat_model"];
+    }
+    y -= 34;
+    [self preferencesNote:@"\"The model last used\" gives a new chat the model, the tool switches and the approval choices of the chat "
+        @"you used most recently in the same workspace. Or pick one model to use every time."
+        frame:NSMakeRect(16, y - 24, 520, 44) inView:tab];
+
+    /* ---- Commander ---- */
+    tab = [self preferencesTab:@"Commander" in:tabs];
+    y = 292;
+    [self preferencesNote:@"The relay runs Commander's tools on a Mac over SSH. These say which Mac and which account. "
+        @"Connect adds the relay's key to this Mac so no password is needed."
+        frame:NSMakeRect(16, y - 14, 520, 32) inView:tab];
+    y -= 56;
+    [self preferencesRow:@"Mac's address" key:@"ssh_host" y:y secure:NO width:190
+        help:@"The IP address or name of the Mac whose files and shell the model uses, as the relay sees it. For this Mac, choose Connect below."
+        removable:nil inView:tab];
+    y -= 32;
+    [self preferencesRow:@"Account (short name)" key:@"ssh_user" y:y secure:NO width:190
+        help:@"The short user name Commander signs in as, such as jr."
+        removable:nil inView:tab];
+    y -= 32;
+    [self preferencesRow:@"Home folder (optional)" key:@"ssh_home" y:y secure:NO width:190
+        help:@"Only needed if the account's home folder is not /Users/NAME."
+        removable:nil inView:tab];
+    y -= 40;
+    [self preferencesButton:@"Connect This Mac" frame:NSMakeRect(16, y, 150, 28) action:@selector(connectCommanderSSH:) inView:tab];
+    [self preferencesButton:@"Test" frame:NSMakeRect(172, y, 80, 28) action:@selector(testSSH:) inView:tab];
+    [self preferencesButton:@"Forget Host Key" frame:NSMakeRect(258, y, 130, 28) action:@selector(forgetSSHHostKey:) inView:tab];
+    y -= 56;
+    note = [self preferencesNote:@"" frame:NSMakeRect(16, y, 520, 54) inView:tab];
+    [prefsFields setObject:note forKey:@"ssh.status"];
 
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 360, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
-    [self preferencesButton:@"Clear All Settings..." frame:NSMakeRect(16, 48, 165, 28)
-        action:@selector(clearAllSettings:) inView:view];
-    [self preferencesButton:@"Export Settings..." frame:NSMakeRect(185,48,143,28) action:@selector(exportAllSettings:) inView:view];
-    [self preferencesButton:@"Import Settings..." frame:NSMakeRect(330,48,143,28) action:@selector(importAllSettings:) inView:view];
-    button = [self preferencesButton:@"Save" frame:NSMakeRect(410, 14, 94, 30)
+    button = [self preferencesButton:@"Save" frame:NSMakeRect(396, 16, 94, 30)
                               action:@selector(savePreferences:) inView:view];
     [button setKeyEquivalent:@"\r"];
-    button = [self preferencesButton:@"Cancel" frame:NSMakeRect(506, 14, 94, 30)
+    button = [self preferencesButton:@"Cancel" frame:NSMakeRect(494, 16, 94, 30)
                               action:@selector(cancelPreferences:) inView:view];
     [button setKeyEquivalent:@"\033"];
+}
+
+/* ---- Commander connection settings (kept by the relay) ---- */
+
+- (void)setSSHStatus:(NSString *)text
+{
+    [[prefsFields objectForKey:@"ssh.status"] setStringValue:text ? text : @""];
+}
+
+- (void)requestSSHState
+{
+    if ([[RelayRequest serverBase] length] == 0)
+        return;
+    [RelayRequest send:@"GET" path:@"/v1/ssh" body:nil timeout:10 target:self action:@selector(sshStateArrived:) context:nil];
+}
+
+- (void)sshStateArrived:(RelayRequest *)request
+{
+    NSMutableDictionary *values = [NSMutableDictionary dictionary];
+    NSArray *lines;
+    unsigned i;
+    if (![request ok])
+        return;
+    lines = [[request text] componentsSeparatedByString:@"\n"];
+    for (i = 0; i < [lines count]; i++) {
+        NSString *line = [lines objectAtIndex:i];
+        NSRange eq = [line rangeOfString:@"="];
+        if (eq.location != NSNotFound)
+            [values setObject:[line substringFromIndex:eq.location + 1] forKey:[line substringToIndex:eq.location]];
+    }
+    [[prefsFields objectForKey:@"ssh_host"] setStringValue:[values objectForKey:@"host"] ? [values objectForKey:@"host"] : @""];
+    [[prefsFields objectForKey:@"ssh_user"] setStringValue:[values objectForKey:@"user"] ? [values objectForKey:@"user"] : @""];
+    [[prefsFields objectForKey:@"ssh_home"] setStringValue:[values objectForKey:@"home"] ? [values objectForKey:@"home"] : @""];
+    [prefsFields setObject:[NSString stringWithFormat:@"%@\n%@\n%@", [[prefsFields objectForKey:@"ssh_host"] stringValue],
+        [[prefsFields objectForKey:@"ssh_user"] stringValue], [[prefsFields objectForKey:@"ssh_home"] stringValue]] forKey:@"ssh.loaded"];
+    if ([[values objectForKey:@"problem"] length])
+        [self setSSHStatus:[values objectForKey:@"problem"]];
+    else if ([[values objectForKey:@"commander"] isEqualToString:@"online"])
+        [self setSSHStatus:@"Commander is working."];
+    else
+        [self setSSHStatus:@""];
+}
+
+- (void)sshResultArrived:(RelayRequest *)request
+{
+    NSMutableDictionary *values = [NSMutableDictionary dictionary];
+    NSArray *lines;
+    unsigned i;
+    if (![request ok]) {
+        NSString *why = [[request text] length] ? [request text] : [self relayProblemForRequest:request];
+        [self setSSHStatus:why];
+        return;
+    }
+    lines = [[request text] componentsSeparatedByString:@"\n"];
+    for (i = 0; i < [lines count]; i++) {
+        NSString *line = [lines objectAtIndex:i];
+        NSRange eq = [line rangeOfString:@"="];
+        if (eq.location != NSNotFound)
+            [values setObject:[line substringFromIndex:eq.location + 1] forKey:[line substringToIndex:eq.location]];
+    }
+    [self setSSHStatus:[values objectForKey:@"message"]];
+    [self refreshToolCatalog];
+}
+
+- (void)testSSH:(id)sender
+{
+    (void)sender;
+    [self setSSHStatus:@"Testing..."];
+    [RelayRequest send:@"POST" path:@"/v1/ssh/test" body:@"{}" timeout:40 target:self action:@selector(sshResultArrived:) context:nil];
+}
+
+- (void)forgetSSHHostKey:(id)sender
+{
+    (void)sender;
+    if (NSRunAlertPanel(@"Forget the saved host key?", @"Use this when the Mac was reinstalled or replaced. The relay learns its key again "
+        @"the next time it connects.", @"Forget", @"Cancel", nil) != NSAlertDefaultReturn)
+        return;
+    [self setSSHStatus:@"Working..."];
+    [RelayRequest send:@"POST" path:@"/v1/ssh/forget" body:@"{\"relearn\":true}" timeout:40 target:self
+        action:@selector(sshResultArrived:) context:nil];
+}
+
+/* Send changed Commander connection fields to the relay. */
+- (void)saveSSHFields
+{
+    NSString *now = [NSString stringWithFormat:@"%@\n%@\n%@", trimmedValue([prefsFields objectForKey:@"ssh_host"]),
+        trimmedValue([prefsFields objectForKey:@"ssh_user"]), trimmedValue([prefsFields objectForKey:@"ssh_home"])];
+    NSString *body;
+    if (![prefsFields objectForKey:@"ssh.loaded"] || [now isEqualToString:[prefsFields objectForKey:@"ssh.loaded"]])
+        return;
+    body = [NSString stringWithFormat:@"{\"host\":\"%@\",\"user\":\"%@\",\"home\":\"%@\",\"remember_host_key\":true}",
+        TBJSONEscape(trimmedValue([prefsFields objectForKey:@"ssh_host"])), TBJSONEscape(trimmedValue([prefsFields objectForKey:@"ssh_user"])),
+        TBJSONEscape(trimmedValue([prefsFields objectForKey:@"ssh_home"]))];
+    [prefsFields setObject:now forKey:@"ssh.loaded"];
+    [RelayRequest send:@"POST" path:@"/v1/ssh/settings" body:body timeout:60 target:self action:@selector(sshSavedFromPrefs:) context:nil];
+}
+
+- (void)sshSavedFromPrefs:(RelayRequest *)request
+{
+    NSString *text = [request text];
+    if (![request ok]) {
+        NSRunAlertPanel(@"Preferences", @"The relay did not save the Commander settings. %@", @"OK", nil, nil, [text length] ? text : @"");
+        return;
+    }
+    [self refreshToolCatalog];
 }
 
 - (void)showPreferences:(id)sender

@@ -1934,7 +1934,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [note setObject:text ? text : @"" forKey:@"text"];
     [note setObject:[NSNumber numberWithBool:YES] forKey:@"status"];
     if (open && [[open objectForKey:@"text"] length] == 0) {
-        unsigned index = [messages indexOfObject:open];
+        NSUInteger index = [messages indexOfObject:open];
         [messages insertObject:note atIndex:index];
     } else {
         if (open && [[open objectForKey:@"text"] length] > 0)

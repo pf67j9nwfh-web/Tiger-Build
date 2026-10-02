@@ -3,36 +3,55 @@
 # the relay so they can be read again later.
 
 cat > /usr/local/tiger-build-relay/ENV-SETUP.txt << 'EOF'
-Tiger Build Relay 1.2 is installed at /usr/local/tiger-build-relay.
+Tiger Build Relay 1.3 is installed at /usr/local/tiger-build-relay.
 This package does not contain API keys.
 
-1. Make an ssh-rsa key and install it on your Tiger Mac. See RELEASE.txt.
-
-2. As your own user, not with sudo, run:
+The installer also ran setup for the account that was logged in, so the relay
+should already be running (SETUP-RESULT.txt in this folder says what happened).
+If it did not, as your own user, not with sudo, run:
 
    /usr/local/tiger-build-relay/scripts/setup.sh
 
-   The first run writes
-   ~/Library/Application Support/Tiger Build Relay/config.sh.
-   Set TIGER_HOST (the Tiger Mac's address) and TIGER_USER (the account on
-   it), then run setup.sh again. It starts the relay and prints the address,
-   port and token. Open Tiger Build Relay from /Applications.
+It starts the relay, makes its SSH key, and prints the address, port and token.
+Open Tiger Build Relay from /Applications.
 
-3. On the Tiger Mac, open Tiger Build > Preferences. Enter the relay
-   address, port and token, then click Test Connection.
+Connecting the Tiger Mac (Commander):
+   On the Tiger Mac, open Tiger Build and choose Configuration, Connect
+   Commander over SSH. It adds the relay's key to that Mac and tells the relay
+   its address and user name. No password is typed. Or set the address and
+   user in the Tiger Build Relay app (Tiger Mac...), or in config.sh.
 
-4. Add API keys in Preferences or in the Tiger Build Relay app. The
-   Workspace ID and Local API key are optional. With no keys at all, a
-   local model server such as LM Studio still works.
+Then, on the Tiger Mac, open Tiger Build > Preferences. Enter the relay
+address, port and token, then click Test Connection.
 
-   Keys can instead go in /usr/local/tiger-build-relay/.env
-   (see .env.example).
+Add API keys in Preferences or in the Tiger Build Relay app. With no keys at
+all, a local model server such as LM Studio still works. Keys can instead go
+in /usr/local/tiger-build-relay/.env (see .env.example).
 
-5. Check the relay, using the address setup.sh printed:
+Check the relay, using the address setup.sh printed:
 
    curl http://THAT.ADDRESS:8765/health
 EOF
 chmod 644 /usr/local/tiger-build-relay/ENV-SETUP.txt
+
+# Run setup for the person at the console, as that person (never as root), so
+# the relay is installed, its SSH key exists and it is running when this
+# installer finishes. setup.sh needs python3; if it is missing the person is
+# told what to do, and the installation still succeeds.
+RESULT=/usr/local/tiger-build-relay/SETUP-RESULT.txt
+CONSOLE=""
+if [ -x /usr/bin/stat ]; then
+  CONSOLE=$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)
+fi
+if [ -n "$CONSOLE" ] && [ "$CONSOLE" != "root" ] && [ "$CONSOLE" != "loginwindow" ]; then
+  if /usr/bin/su - "$CONSOLE" -c 'TIGERBUILD_SETUP_QUIET=1 /usr/local/tiger-build-relay/scripts/setup.sh' > "$RESULT" 2>&1; then
+    echo "Tiger Build Relay was set up for $CONSOLE and is running."
+  else
+    echo "Setup did not finish for $CONSOLE. See $RESULT, then run setup.sh yourself."
+  fi
+  chmod 644 "$RESULT" 2>/dev/null || true
+else
+  echo "No one is logged in, so setup was not run. Run setup.sh as your own user."
+fi
 echo "Tiger Build Relay files are in /usr/local/tiger-build-relay."
-echo "Then, as your own user, run: /usr/local/tiger-build-relay/scripts/setup.sh"
 exit 0

@@ -2,7 +2,8 @@
 """Local GUI/CLI service controller. Never exposed by the HTTP relay.
 Usage: control.py status|start|stop|save|autostart|clear-all|clear|config
        integrations|integrations-save|settings-export|settings-import|history-import
-save/autostart/clear read JSON on stdin. No passwords in process arguments.
+       ssh-test|ssh-save|ssh-forget
+save/autostart/clear/ssh-save read JSON on stdin. No passwords in process arguments.
 
 macOS uses launchd. Linux uses a systemd user service when a user session
 exists, otherwise the same supervisor Windows uses. Windows uses a logon
@@ -414,6 +415,7 @@ def status():
             'token': relay_token(config), 'log': str(SUPPORT / 'relay.log'),
             'support': str(SUPPORT), 'config': str(CONFIG),
             'tiger_host': config.get('TIGER_HOST') or '', 'tiger_user': config.get('TIGER_USER') or '',
+            'tiger_home': config.get('TIGER_HOME') or '',
             'last_client': last_client(), 'version': VERSION,
             'history': str(SUPPORT / 'history/TigerBuild-history.plist'),
             'has_history': (SUPPORT / 'history/TigerBuild-history.plist').is_file()}
@@ -422,9 +424,44 @@ def status():
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
     ensure_config_file(str(ROOT / '.env'))
-    if cmd in ('save', 'autostart', 'clear', 'history-import', 'integrations-save', 'settings-import'):
+    if cmd in ('save', 'autostart', 'clear', 'history-import', 'integrations-save', 'settings-import', 'ssh-save'):
         incoming = json.load(sys.stdin)
-    if cmd == 'integrations-save':
+    if cmd in ('ssh-test', 'ssh-save', 'ssh-forget'):
+        import connection
+        changed = False
+        if cmd == 'ssh-save':
+            before = load_shell_config()
+            changes = {}
+            for field, name in (('host', 'TIGER_HOST'), ('user', 'TIGER_USER'), ('home', 'TIGER_HOME')):
+                if field in incoming:
+                    changes[name] = incoming.get(field) or ''
+            config = connection.update_config(changes)
+            changed = config.get('TIGER_HOST') != before.get('TIGER_HOST')
+            if config.get('TIGER_HOST') and config.get('TIGER_USER'):
+                connection.ensure_key(config)
+                try:
+                    connection.remember_host_key(config)
+                except RuntimeError as exc:
+                    out = status()
+                    out['ssh_result'] = {'ok': False, 'code': 'hostkey', 'message': str(exc)}
+                    print(json.dumps(out))
+                    return
+        elif cmd == 'ssh-forget':
+            connection.forget_host_key()
+            config = load_shell_config()
+            if config.get('TIGER_HOST'):
+                try:
+                    connection.remember_host_key(config)
+                except RuntimeError:
+                    pass
+        if changed and running():
+            stop()
+            start()
+        out = status()
+        out['ssh_result'] = connection.test(load_shell_config())
+        print(json.dumps(out))
+        return
+    elif cmd == 'integrations-save':
         from integrations import write
         write(incoming, preserve_key=True)
     elif cmd == 'settings-import':

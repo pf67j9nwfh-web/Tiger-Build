@@ -225,7 +225,7 @@
 }
 - (void)workspaceNext:(id)sender
 {
-    (void)sender;NSArray *names=[self workspaceNames];unsigned index=[names indexOfObject:[self workspaceName]];
+    (void)sender;NSArray *names=[self workspaceNames];NSUInteger index=[names indexOfObject:[self workspaceName]];
     if(index==NSNotFound)index=0;
     [self switchWorkspace:[names objectAtIndex:(index+1)%[names count]]];
 }

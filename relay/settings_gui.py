@@ -25,7 +25,9 @@ ROWS = (
     ("Local API key (optional)", "local_api_key", True),
 )
 TOGGLES = (
-    ("ppc_enabled", "ppc-commander tools"),
+    ("ppc_enabled", "Commander tools (files and shell on the Tiger Mac)"),
+    ("ppc_approval", "Ask first before Commander runs a tool"),
+    ("consult_enabled", "Let models ask other models for advice"),
     ("toolbox_enabled", "Agent toolbox"),
     ("search_enabled", "Web search (Brave or Tavily)"),
     ("grok_native_search", "Grok native search"),
@@ -169,8 +171,24 @@ def main():
     ttk.Button(top, text="Copy Token", command=lambda: copy(last.get("token", ""))).grid(row=5, column=4)
     ttk.Label(top, textvariable=tiger, wraplength=700).grid(row=6, column=0, columnspan=5, sticky="w", pady=(4, 10))
 
-    keys = ttk.LabelFrame(top, text="AI services and local server", padding=8)
-    keys.grid(row=7, column=0, columnspan=5, sticky="ew")
+    book = ttk.Notebook(top)
+    book.grid(row=7, column=0, columnspan=5, sticky="ew")
+    keys = ttk.Frame(book, padding=8)
+    book.add(keys, text="AI services and local server")
+    mac = ttk.Frame(book, padding=8)
+    book.add(mac, text="Tiger Mac (Commander)")
+    mac_host = tk.StringVar()
+    mac_user = tk.StringVar()
+    mac_home = tk.StringVar()
+    mac_note = tk.StringVar()
+    ttk.Label(mac, text="Commander runs a Tiger Mac's tools over SSH. Tiger Build on that Mac can also set this up itself "
+              "(Configuration, Connect Commander over SSH).", wraplength=680, justify="left").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+    for index, (title, var) in enumerate((("Tiger Mac address", mac_host), ("Account (short name)", mac_user), ("Home folder (optional)", mac_home)), start=1):
+        ttk.Label(mac, text=title, width=24, anchor="e").grid(row=index, column=0, sticky="e", pady=3)
+        ttk.Entry(mac, textvariable=var, width=40).grid(row=index, column=1, sticky="w")
+    macbar = ttk.Frame(mac)
+    macbar.grid(row=4, column=0, columnspan=3, sticky="w", pady=8)
+    ttk.Label(mac, textvariable=mac_note, wraplength=680, justify="left").grid(row=5, column=0, columnspan=3, sticky="w")
     ttk.Label(keys, text="One API key is enough, or use only a local model server. Blank fields keep what is saved.").grid(row=0, column=0, columnspan=4, sticky="w")
     for index, (title, key, secret) in enumerate(ROWS, start=1):
         ttk.Label(keys, text=title, width=28, anchor="e").grid(row=index, column=0, sticky="e", pady=2)
@@ -204,7 +222,7 @@ def main():
         last.clear()
         last.update(result)
         pid = int(result.get("pid") or 0)
-        version = result.get("version") or "1.2"
+        version = result.get("version") or "1.3"
         root.title("Tiger Build Relay %s" % version)
         status.set("Version %s, running in background (PID %s)" % (version, pid) if pid else "Version %s, stopped" % version)
         address.set("Reachable address: %s" % (result.get("url") or "unknown"))
@@ -212,13 +230,17 @@ def main():
         folder.set("Settings: %s" % (result.get("support") or support_home()))
         host = result.get("tiger_host") or ""
         user = result.get("tiger_user") or ""
-        line = "Tiger Mac: not set — edit config.sh in the settings folder" if not host else "Tiger Mac: %s@%s" % (user or "?", host)
+        line = "Tiger Mac: not set — see the Tiger Mac tab" if not host else "Tiger Mac: %s@%s" % (user or "?", host)
         seen = result.get("last_client") if isinstance(result.get("last_client"), dict) else {}
         if seen.get("machine"):
             line += "    ·    last connected: %s" % seen.get("machine")
         else:
             line += "    ·    no Tiger Build connection seen yet"
         tiger.set(line)
+        if not mac_host.get() and not mac_user.get() or action != "status":
+            mac_host.set(host)
+            mac_user.set(user)
+            mac_home.set(result.get("tiger_home") or "")
         auto.set(bool(result.get("autostart")))
         flags = result.get("saved") if isinstance(result.get("saved"), dict) else {}
         for key, mark in saved.items():
@@ -242,6 +264,33 @@ def main():
             note.set("Working…")
 
         submit(lambda: command(script, action, payload), lambda result: apply_result(result, action))
+
+    def mac_apply(result):
+        busy["on"] = False
+        if result.get("error"):
+            mac_note.set(str(result["error"]))
+            return
+        apply_result(result, "status")
+        outcome = result.get("ssh_result") or {}
+        mac_note.set(outcome.get("message") or "")
+
+    def mac_run(action, payload=None):
+        if busy["on"]:
+            return
+        busy["on"] = True
+        mac_note.set("Working…")
+        submit(lambda: command(script, action, payload), mac_apply)
+
+    def mac_save():
+        mac_run("ssh-save", {"host": mac_host.get().strip(), "user": mac_user.get().strip(), "home": mac_home.get().strip()})
+
+    def mac_forget():
+        if messagebox.askokcancel("Forget the saved host key?", "Use this when the Tiger Mac was reinstalled or replaced. The relay learns its key again."):
+            mac_run("ssh-forget", {})
+
+    ttk.Button(macbar, text="Save and Test", command=mac_save).pack(side="left")
+    ttk.Button(macbar, text="Test", command=lambda: mac_run("ssh-test")).pack(side="left", padx=6)
+    ttk.Button(macbar, text="Forget Saved Host Key", command=mac_forget).pack(side="left")
 
     def save():
         try:
