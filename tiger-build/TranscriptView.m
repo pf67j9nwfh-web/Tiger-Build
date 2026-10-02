@@ -462,12 +462,14 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
         attrs == statusAttrs ? @"s" : (attrs == userAttrs ? @"u" : (attrs == bodyAttrs ? @"b" : @"m"))];
     NSArray *hit = [sizeCache objectForKey:key];
     NSRect used;
-    if (hit && [[hit objectAtIndex:0] isEqualToString:signature])
+    /* The text itself is compared too: a reply that grows from "..." to "OK."
+       has the same length, and must not keep the old, narrower size. */
+    if (hit && [[hit objectAtIndex:0] isEqualToString:signature] && [[hit objectAtIndex:2] isEqualToString:text])
         return [[hit objectAtIndex:1] rectValue];
     used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
     if ([sizeCache count] > 4000)
         [sizeCache removeAllObjects];
-    [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], nil] forKey:key];
+    [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], [[text copy] autorelease], nil] forKey:key];
     return used;
 }
 
