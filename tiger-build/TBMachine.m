@@ -1,11 +1,31 @@
 #import "TBSupport.h"
 #import <sys/types.h>
 #import <sys/sysctl.h>
+#import <stdlib.h>
 
 /* What kind of Mac this is, read from the system rather than assumed.
    sysctl hw.model gives the model code at once ("PowerMac3,1"). Then
    system_profiler, which takes about a second on a slow Mac, supplies the
    marketing name ("Power Mac G4 (AGP graphics)") in the background. */
+
+int TBSystemMinor(void)
+{
+    static int minor = 0;
+    char buffer[32];
+    size_t size = sizeof(buffer);
+    int major;
+    if (minor)
+        return minor;
+    /* Darwin 8 is Tiger (10.4), 9 Leopard (10.5), 10 Snow Leopard (10.6). */
+    if (sysctlbyname("kern.osrelease", buffer, &size, NULL, 0) == 0) {
+        buffer[sizeof(buffer) - 1] = 0;
+        major = atoi(buffer);
+        minor = major >= 4 ? major - 4 : 4;
+    } else {
+        minor = 4;
+    }
+    return minor;
+}
 
 static NSString *machineName = nil;
 static NSString *machineDetail = nil;

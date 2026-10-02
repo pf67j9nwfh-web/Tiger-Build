@@ -93,8 +93,6 @@ class TurnTests(unittest.TestCase):
             return list(session.iter_turn([{"role": "user", "content": "go"}], True, provider, "m"))
 
     def test_usage_frame_has_cost(self):
-        pricing.install({"claude-x": {"input_cost_per_token": 1e-6, "output_cost_per_token": 5e-6}})
-        rows = pricing._STATE["rates"]
         with patch.object(C.pricing, "cost", lambda p, m, u: u["input"] * 1e-6 + u["output"] * 5e-6):
             frames = self.frames(self.session(), [{"text": ["hi"], "usage": {"input": 1000, "cached": 0, "written": 0, "output": 200}}])
         usage = [plistlib.loads(t.encode()) for k, t in frames if k == "u"]
@@ -221,6 +219,9 @@ class TurnTests(unittest.TestCase):
 class PricingTests(unittest.TestCase):
     def setUp(self):
         self.saved = dict(pricing._STATE)
+        saver = patch.object(pricing, "_save_cache", lambda rates, stamp: None)
+        saver.start()
+        self.addCleanup(saver.stop)
         pricing._STATE["rates"] = pricing._compact({
             "gem": {"input_cost_per_token": 1e-6, "output_cost_per_token": 4e-6,
                     "input_cost_per_token_above_200k_tokens": 2e-6, "output_cost_per_token_above_200k_tokens": 8e-6,

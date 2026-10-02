@@ -125,7 +125,8 @@ def start(context=None):
         while True:
             with _LOCK:
                 age = time.time() - _STATE["at"]
-            if age >= REFRESH_SECONDS:
+                small = len(_STATE["rates"]) < 100
+            if age >= REFRESH_SECONDS or small:
                 try:
                     refresh(context)
                 except Exception:

@@ -1,4 +1,7 @@
 #import <Cocoa/Cocoa.h>
+#import "TBCompat.h"
+
+@class RelayRequest;
 
 @interface ChatController : NSObject {
     NSWindow *window;
@@ -9,7 +12,30 @@
     NSScrollView *transcriptScroll;
     NSButton *newButton;
     NSButton *deleteButton;
-    NSButton *toolsButton;
+    NSPopUpButton *toolsPopup;
+    NSButton *stopButton;
+    NSButton *editButton;
+    NSButton *retryButton;
+    NSTextField *thinkingField;
+    NSString *runId;
+    NSMutableDictionary *workspaceSettings;
+    NSArray *toolCatalog;
+    NSString *commanderProblem;
+    NSString *commanderCode;
+    NSString *thinkingText;
+    NSMutableArray *queuedGuidance;
+    NSArray *editBackup;
+    NSString *editedText;
+    double lastFrame;
+    double lastPaintRequest;
+    BOOL stopping;
+    BOOL paintScheduled;
+    BOOL offeredSSH;
+    int pulse;
+    NSTimer *pulseTimer;
+    RelayRequest *sideRequest;
+    NSDictionary *commanderCache;
+    BOOL commanderStatusPending;
     NSPopUpButton *modelPopup;
     NSPopUpButton *variantPopup;
     NSButton *sendButton;

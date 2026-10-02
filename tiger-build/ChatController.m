@@ -37,7 +37,15 @@ static NSMutableArray *extraWindows = nil;
 - (NSMenu *)modelMenu;
 - (NSString *)providerForChat:(NSDictionary *)chat;
 - (NSString *)defaultModelForProvider:(NSString *)provider;
+- (float)thinkingHeightForWidth:(float)width;
+- (int)contextTokensForChat:(NSDictionary *)chat;
+- (void)applyNewChatDefaults:(NSMutableDictionary *)chat;
+- (void)rememberLastUsed;
 @end
+
+/* Set for "Compact Chat Now": summarize without sending a new message. */
+static BOOL compactForced = NO;
+static BOOL compactOnly = NO;
 
 static int streamDepth = 0;
 static int streamEndDeferred = 0;
@@ -114,6 +122,8 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     localModels = [[NSMutableArray alloc] init];
     prefsFields = [[NSMutableDictionary alloc] init];
     contextPending = [[NSMutableDictionary alloc] init];
+    workspaceSettings = [[NSMutableDictionary alloc] init];
+    queuedGuidance = [[NSMutableArray alloc] init];
     nextNumber = 1;
     renameRow = -1;
     sidebarWidth = [[NSUserDefaults standardUserDefaults] floatForKey:@"TigerBuildSidebarWidth"];
@@ -139,7 +149,22 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [transcript release];
     [newButton release];
     [deleteButton release];
-    [toolsButton release];
+    [toolsPopup release];
+    [stopButton release];
+    [editButton release];
+    [retryButton release];
+    [thinkingField release];
+    [runId release];
+    [workspaceSettings release];
+    [toolCatalog release];
+    [commanderProblem release];
+    [commanderCode release];
+    [thinkingText release];
+    [queuedGuidance release];
+    [editBackup release];
+    [editedText release];
+    [commanderCache release];
+    [self stopPulse];
     [modelPopup release];
     [variantPopup release];
     [sendButton release];
@@ -245,6 +270,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [chat setObject:[self firstUsableProvider] forKey:@"provider"];
     [chat setObject:[self defaultModelForProvider:[chat objectForKey:@"provider"]] forKey:@"model"];
     [chat setObject:messages forKey:@"messages"];
+    [self applyNewChatDefaults:chat];
     return chat;
 }
 
@@ -278,7 +304,12 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
                 }
             }
             highest = [[root objectForKey:@"next"] intValue];
+            [workspaceSettings removeAllObjects];
+            if ([[root objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
+                [workspaceSettings addEntriesFromDictionary:[root objectForKey:@"settings"]];
         }
+    } else {
+        [workspaceSettings removeAllObjects];
     }
     if (highest < 1) {
         for (i = 0; i < [chats count]; i++) {
@@ -314,6 +345,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     root = [NSMutableDictionary dictionary];
     [root setObject:chats forKey:@"chats"];
     [root setObject:[NSNumber numberWithInt:nextNumber] forKey:@"next"];
+    [root setObject:workspaceSettings forKey:@"settings"];
     /* Binary plists are about half the size of XML and much faster to write.
        loadStore reads either format. */
     data = [NSPropertyListSerialization dataFromPropertyList:root
@@ -346,18 +378,18 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
 
 - (void)syncToolsButton
 {
-    if ([self toolsEnabled:current])
-        [toolsButton setTitle:@"Commander Chat Access: On"];
-    else
-        [toolsButton setTitle:@"Commander Chat Access: Off"];
+    [self rebuildToolsMenu];
 }
 
 - (void)showChatAtIndex:(int)index
 {
     if (index < 0 || index >= (int)[chats count])
         return;
+    if (editBackup && current != [chats objectAtIndex:index])
+        [self cancelEdit:nil];
     current = [chats objectAtIndex:index];
     [self syncToolsButton];
+    [self syncRunButtons];
     [self syncModelMenu];
     [transcript setMessages:[current objectForKey:@"messages"]];
     [transcript scrollToEnd];
@@ -474,13 +506,11 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [chatScroll setDocumentView:table];
     [sidePane addSubview:chatScroll];
 
-    toolsButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
-    [toolsButton setTitle:@"Commander Chat Access: On"];
-    [toolsButton setBezelStyle:NSRoundedBezelStyle];
-    [toolsButton setFont:[NSFont systemFontOfSize:11]];
-    [toolsButton setTarget:self];
-    [toolsButton setAction:@selector(toggleTools:)];
-    [sidePane addSubview:toolsButton];
+    toolsPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10) pullsDown:YES];
+    [toolsPopup setFont:[NSFont systemFontOfSize:12]];
+    [toolsPopup setToolTip:@"Tools this chat may use. Each can be switched off here, and the model can be made to ask before it runs one."];
+    [sidePane addSubview:toolsPopup];
+    [self rebuildToolsMenu];
 
     modelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10) pullsDown:NO];
     [modelPopup setTarget:self];
@@ -526,6 +556,47 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [sendButton setAction:@selector(send:)];
     [chatPane addSubview:sendButton];
 
+    stopButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [stopButton setTitle:@"Stop"];
+    [stopButton setBezelStyle:NSRoundedBezelStyle];
+    [stopButton setTarget:self];
+    [stopButton setAction:@selector(stopRun:)];
+    [stopButton setEnabled:NO];
+    [stopButton setToolTip:@"Stop the model now (Command-period)"];
+    [chatPane addSubview:stopButton];
+
+    editButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [editButton setTitle:@"Edit Last"];
+    [editButton setBezelStyle:NSRoundedBezelStyle];
+    [[editButton cell] setControlSize:NSSmallControlSize];
+    [editButton setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [editButton setTarget:self];
+    [editButton setAction:@selector(editLast:)];
+    [editButton setToolTip:@"Take your last message back into the message box to change it and send it again"];
+    [chatPane addSubview:editButton];
+
+    retryButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [retryButton setTitle:@"Retry"];
+    [retryButton setBezelStyle:NSRoundedBezelStyle];
+    [[retryButton cell] setControlSize:NSSmallControlSize];
+    [retryButton setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [retryButton setTarget:self];
+    [retryButton setAction:@selector(retryLast:)];
+    [retryButton setToolTip:@"Send your last message again and replace the reply"];
+    [chatPane addSubview:retryButton];
+
+    thinkingField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [thinkingField setStringValue:@""];
+    [thinkingField setEditable:NO];
+    [thinkingField setSelectable:NO];
+    [thinkingField setBezeled:NO];
+    [thinkingField setDrawsBackground:NO];
+    [thinkingField setFont:[NSFont systemFontOfSize:11]];
+    [thinkingField setTextColor:[NSColor colorWithCalibratedWhite:0.28 alpha:1]];
+    [[thinkingField cell] setWraps:YES];
+    [[thinkingField cell] setLineBreakMode:NSLineBreakByTruncatingHead];
+    [chatPane addSubview:thinkingField];
+
     relayStatusField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
     [relayStatusField setStringValue:@""];
     [relayStatusField setEditable:NO];
@@ -545,6 +616,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [self refillWorkspacePopup];
 
     contextField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [[contextField cell] setLineBreakMode:NSLineBreakByTruncatingHead];
     [contextField setStringValue:@""];
     [contextField setEditable:NO];
     [contextField setSelectable:NO];
@@ -635,11 +707,11 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     column = sideW - 28;
     if (column < 80)
         column = 80;
-    fieldW = mainW - 104;
+    fieldW = mainW - 16 - 76 - 64 - 12;
     if (fieldW < 80)
         fieldW = 80;
-    chatLayout = TBLayoutChatPane(mainW, mainH, [self inputHeightForWidth:fieldW],
-        [self relayStatusHeightForWidth:mainW - 16]);
+    chatLayout = TBLayoutChatPane(mainW, mainH, [self inputHeightForWidth:fieldW - 70],
+        [self relayStatusHeightForWidth:mainW - 16], [self thinkingHeightForWidth:mainW - 16]);
     inputHeight = chatLayout.fieldHeight;
     [label setHidden:YES];
     /* Top margin 12; 10 pixels between the workspace selector and New,
@@ -649,7 +721,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [deleteButton setFrame:NSMakeRect(14, sideH - 112, column, 28)];
     [modelPopup setFrame:NSMakeRect(14, 76, column, 26)];
     [variantPopup setFrame:NSMakeRect(14, 42, column, 26)];
-    [toolsButton setFrame:NSMakeRect(14, 8, column, 28)];
+    [toolsPopup setFrame:NSMakeRect(14, 8, column, 26)];
     [chatScroll setFrame:NSMakeRect(14, 110, column, MAX(40, sideH - 234))];
     {
         /* The relay problem wraps across the top; the context readout sits below it. */
@@ -676,6 +748,22 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
         [input setNeedsDisplay:YES];
         moved = YES;
     }
+    if (!NSEqualRects([stopButton frame], chatLayout.stop)) {
+        [stopButton setFrame:chatLayout.stop];
+        [chatPane setNeedsDisplayInRect:NSInsetRect(chatLayout.stop, -4, -4)];
+    }
+    if (!NSEqualRects([thinkingField frame], chatLayout.thinking)) {
+        NSRect oldThinking = [thinkingField frame];
+        [thinkingField setFrame:chatLayout.thinking];
+        [chatPane setNeedsDisplayInRect:NSUnionRect(oldThinking, chatLayout.thinking)];
+        moved = YES;
+    }
+    {
+        NSRect actions = chatLayout.actions;
+        float half = floorf((NSWidth(actions) - 4) / 2.0f);
+        [editButton setFrame:NSMakeRect(NSMinX(actions), NSMinY(actions) - 1, half, 20)];
+        [retryButton setFrame:NSMakeRect(NSMinX(actions) + half + 4, NSMinY(actions) - 1, half, 20)];
+    }
     if (!NSEqualRects(oldSendFrame, chatLayout.send)) {
         [sendButton setFrame:chatLayout.send];
         [chatPane setNeedsDisplayInRect:NSUnionRect(oldSendFrame, chatLayout.send)];
@@ -700,7 +788,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     layingOut = 0;
 }
 
-- (float)splitView:(NSSplitView *)sender constrainMinCoordinate:(float)proposedMin ofSubviewAt:(int)offset
+- (CGFloat)splitView:(NSSplitView *)sender constrainMinCoordinate:(CGFloat)proposedMin ofSubviewAt:(NSInteger)offset
 {
     (void)sender;
     (void)proposedMin;
@@ -708,7 +796,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     return 168;
 }
 
-- (float)splitView:(NSSplitView *)sender constrainMaxCoordinate:(float)proposedMax ofSubviewAt:(int)offset
+- (CGFloat)splitView:(NSSplitView *)sender constrainMaxCoordinate:(CGFloat)proposedMax ofSubviewAt:(NSInteger)offset
 {
     (void)proposedMax;
     (void)offset;
@@ -806,9 +894,12 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         SEL actions[6];
         unsigned i;
         menu = [[[NSMenu alloc] initWithTitle:@"Configuration"] autorelease];
-        titles = [NSArray arrayWithObjects:@"MCP Servers and Agent Tools...", @"Export All Settings...", @"Import All Settings...", nil];
+        titles = [NSArray arrayWithObjects:@"MCP Servers and Agent Tools...", @"Export All Settings...", @"Import All Settings...",
+            @"Connect Commander over SSH...", nil];
         actions[0] = @selector(showIntegrations:); actions[1] = @selector(exportAllSettings:); actions[2] = @selector(importAllSettings:);
-        for (i = 0; i < 3; i++) {
+        actions[3] = @selector(connectCommanderSSH:);
+        for (i = 0; i < 4; i++) {
+            if (i == 3) [menu addItem:[NSMenuItem separatorItem]];
             item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
             [item setTarget:self]; [menu addItem:item];
         }
@@ -816,8 +907,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [slot setSubmenu:menu]; [appMenu addItem:slot];
         [appMenu addItem:[NSMenuItem separatorItem]];
         menu = [[[NSMenu alloc] initWithTitle:@"History"] autorelease];
-        titles = [NSArray arrayWithObjects:@"Export History...", @"Import History...",
-            @"Export History to Relay Host...", @"Import History from Relay Host...", @"Clear All History...", nil];
+        titles = [NSArray arrayWithObjects:@"Export All History...", @"Import History...",
+            @"Export All History to Relay Host...", @"Import History from Relay Host...", @"Clear All History...", nil];
         actions[0] = @selector(exportHistory:); actions[1] = @selector(importHistory:);
         actions[2] = @selector(exportHistoryToRelay:); actions[3] = @selector(importHistoryFromRelay:);
         actions[4] = @selector(clearAllHistory:);
@@ -864,15 +955,26 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         unsigned i;
         item = [[[NSMenuItem alloc] initWithTitle:@"New Chat" action:@selector(newChat:) keyEquivalent:@"n"] autorelease];
         [item setTarget:self]; [chat addItem:item];
-        item = [[[NSMenuItem alloc] initWithTitle:@"Toggle Tools for This Chat" action:@selector(toggleTools:) keyEquivalent:@"t"] autorelease];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Toggle Commander for This Chat" action:@selector(toggleTools:) keyEquivalent:@"t"] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        [chat addItem:[NSMenuItem separatorItem]];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Stop" action:@selector(stopRun:) keyEquivalent:@"."] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Retry Last Message" action:@selector(retryLast:) keyEquivalent:@"r"] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Edit Last Message" action:@selector(editLast:) keyEquivalent:@"R"] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Compact Chat Now" action:@selector(compactNow:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         [chat addItem:[NSMenuItem separatorItem]];
         {
             NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Workspace"] autorelease];
             NSMenuItem *slot;
-            titles = [NSArray arrayWithObjects:@"New Workspace...", @"Next Workspace", nil];
+            titles = [NSArray arrayWithObjects:@"New Workspace...", @"Next Workspace", @"Workspace Settings...", @"Delete Workspace...", nil];
             actions[0] = @selector(newWorkspace:); actions[1] = @selector(workspaceNext:);
-            for (i = 0; i < 2; i++) {
+            actions[2] = @selector(showWorkspaceSettings:); actions[3] = @selector(deleteWorkspace:);
+            for (i = 0; i < 4; i++) {
+                if (i == 2) [menu addItem:[NSMenuItem separatorItem]];
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
                 [item setTarget:self]; [menu addItem:item];
             }
@@ -921,7 +1023,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     }
 
     {
-        NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Command Standalone"] autorelease];
+        NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Commander"] autorelease];
         NSMenuItem *slot = [[[NSMenuItem alloc] init] autorelease];
         NSMenuItem *item;
         NSArray *titles;
@@ -929,7 +1031,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         unsigned i;
         [menu setAutoenablesItems:NO];
         [menu setDelegate:self];
-        item = [[[NSMenuItem alloc] initWithTitle:@"Command Standalone: Off" action:NULL keyEquivalent:@""] autorelease];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Commander: Off" action:NULL keyEquivalent:@""] autorelease];
         [item setEnabled:NO];
         [menu addItem:item];
         titles = [NSArray arrayWithObjects:@"Start", @"Stop", @"Start at Login", @"This Mac's IP Addresses...", nil];
@@ -1071,6 +1173,20 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     return [NSString stringWithFormat:@"The relay at %@ answered with HTTP %d.", base, [request status]];
 }
 
+/* Height the live thinking line needs, up to three lines; 0 when idle. */
+- (float)thinkingHeightForWidth:(float)width
+{
+    NSSize size;
+    if (!thinkingField || [[thinkingField stringValue] length] == 0 || !busy)
+        return 0;
+    if (width < 40)
+        width = 40;
+    size = [[thinkingField cell] cellSizeForBounds:NSMakeRect(0, 0, width, 1000)];
+    if (size.height > TB_THINKING_MAX)
+        return TB_THINKING_MAX;
+    return ceilf(size.height);
+}
+
 /* Height the relay problem needs at this width, 0 when there is none. */
 - (float)relayStatusHeightForWidth:(float)width
 {
@@ -1098,6 +1214,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 
 - (void)setRelayProblem:(NSString *)text
 {
+    NSString *commander;
     relayReachable = (text == nil);
     [relayStatusField setStringValue:text ? text : @""];
     [relayStatusField setToolTip:text];
@@ -1106,6 +1223,14 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [relayStatusField setStringValue:[NSString stringWithFormat:
             @"The relay is still testing %d models. More may appear.", [[ModelCatalog shared] checkingCount]]];
         [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
+    }
+    /* A Commander problem (SSH cannot sign in, the Mac is unreachable...) is
+       shown when nothing more basic is wrong. */
+    commander = text ? nil : [self commanderStatusLine];
+    if (commander && [[relayStatusField stringValue] length] == 0) {
+        [relayStatusField setStringValue:commander];
+        [relayStatusField setToolTip:commander];
+        [relayStatusField setTextColor:[NSColor colorWithCalibratedRed:0.72 green:0.35 blue:0.0 alpha:1]];
     }
     [self relayStatusChanged];
 }
@@ -1116,8 +1241,14 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
     double now = CFAbsoluteTimeGetCurrent();
     (void)timer;
+    /* While a reply streams, the stream itself shows the relay is alive. A
+       separate check can time out on a long tool run and cry "disconnected". */
+    if (busy && bodyStream)
+        return;
     if (!relayReachable || [[ModelCatalog shared] checkingCount] > 0 || now - lastCatalog > 600)
         [self refreshCatalog];
+    if (relayReachable)
+        [self refreshToolCatalog];
     if (relayReachable && [[self providerForChat:current] isEqualToString:@"local"] && [localModels count] == 0)
         [self refreshLocalModels];
 }
@@ -1326,7 +1457,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [NSApp activateIgnoringOtherApps:YES];
     [window makeFirstResponder:input];
     [window display];
+    [self ensureCommanderInstalled];
+    [self refreshCommanderStatus];
     [self refreshCatalog];
+    [self refreshToolCatalog];
     [self refreshLocalModels];
     relayTimer = [[NSTimer scheduledTimerWithTimeInterval:30 target:self
         selector:@selector(relayTick:) userInfo:nil repeats:YES] retain];
@@ -1344,13 +1478,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     return YES;
 }
 
-- (int)numberOfRowsInTableView:(NSTableView *)aTable
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)aTable
 {
     (void)aTable;
-    return (int)[chats count];
+    return (NSInteger)[chats count];
 }
 
-- (id)tableView:(NSTableView *)aTable objectValueForTableColumn:(NSTableColumn *)column row:(int)row
+- (id)tableView:(NSTableView *)aTable objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     NSString *title;
     NSString *chatId;
@@ -1365,7 +1499,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     return title ? title : @"";
 }
 
-- (void)tableView:(NSTableView *)aTable setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(int)row
+- (void)tableView:(NSTableView *)aTable setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     NSString *title;
     (void)aTable;
@@ -1390,7 +1524,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(focusInputIfNotEditing) object:nil];
 }
 
-- (BOOL)tableView:(NSTableView *)aTable shouldEditTableColumn:(NSTableColumn *)column row:(int)row
+- (BOOL)tableView:(NSTableView *)aTable shouldEditTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     /* The table's own editor highlights the name and then drops keystrokes.
        Double-click opens renameField instead. */
@@ -1637,6 +1771,12 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         NSWindow *win = [self frontWindow];
         [item setState:(win && [win level] > NSNormalWindowLevel) ? NSOnState : NSOffState];
     }
+    if ([item action] == @selector(stopRun:))
+        return busy && !stopping;
+    if ([item action] == @selector(retryLast:) || [item action] == @selector(editLast:))
+        return !busy && [self lastUserIndex] >= 0;
+    if ([item action] == @selector(compactNow:))
+        return !busy;
     if ([[[item menu] title] isEqualToString:@"Workspace"]) return !busy && !naming;
     if ([[[item menu] title] isEqualToString:@"Configuration"]) return !busy;
     if ([[[item menu] title] isEqualToString:@"History"])
@@ -1694,25 +1834,21 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [window makeFirstResponder:input];
 }
 
-- (IBAction)toggleTools:(id)sender
-{
-    BOOL on;
-    (void)sender;
-    if (!current)
-        return;
-    on = [self toolsEnabled:current];
-    [current setObject:[NSNumber numberWithBool:!on] forKey:@"tools"];
-    [self syncToolsButton];
-    [self saveStore];
-}
-
 - (void)setBusy:(BOOL)flag
 {
     busy = flag;
     [workspacePopup setEnabled:!flag];
-    [input setEnabled:!flag];
-    [sendButton setEnabled:!flag];
+    /* The message box stays usable while a model works, for guidance. */
+    [input setEnabled:YES];
     [deleteButton setEnabled:!flag];
+    if (flag) {
+        [self startPulse];
+    } else {
+        [self stopPulse];
+        stopping = NO;
+        [self setThinkingText:nil];
+    }
+    [self syncRunButtons];
     [window setTitle:flag ? [NSString stringWithFormat:@"Tiger Build - %@ - Working...",[self workspaceName]]
         : [NSString stringWithFormat:@"Tiger Build - %@",[self workspaceName]]];
     suppressSelection = YES;
@@ -1720,6 +1856,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     suppressSelection = NO;
     if (!flag)
         [window makeFirstResponder:input];
+    [self layoutPanes];
 }
 
 - (NSMutableDictionary *)chatWithId:(NSString *)chatId
@@ -1750,19 +1887,42 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     double now;
     if (chat != current)
         return;
-    NSRect visible=[transcript visibleRect];
-    BOOL follow=NSMaxY(visible)>NSHeight([transcript bounds])-70;
+    NSRect visible;
+    BOOL follow;
+    now = CFAbsoluteTimeGetCurrent();
+    /* Laying out and painting the whole chat for every few characters kept
+       the window from answering the mouse (the beach ball) on a long reply.
+       While a reply streams, do it at most about eight times a second, and
+       once more shortly after the last change. */
+    if (busy && now - lastPaintRequest < 0.12) {
+        if (!paintScheduled) {
+            paintScheduled = YES;
+            [self performSelector:@selector(paintLater) withObject:nil afterDelay:0.15];
+        }
+        return;
+    }
+    lastPaintRequest = now;
+    visible = [transcript visibleRect];
+    follow = NSMaxY(visible) > NSHeight([transcript bounds]) - 70;
     [transcript setMessages:[chat objectForKey:@"messages"]];
-    if(follow)[transcript scrollToEnd];
+    if (follow)
+        [transcript scrollToEnd];
     /* NSURLConnection on Tiger delivers the body only when the connection
        closes. The read stream calls us as bytes arrive, and the window will
        not redraw until this callback returns to an idle run loop, which does
        not happen while more bytes are already waiting. Paint here. */
-    now = CFAbsoluteTimeGetCurrent();
-    if (now - lastPaint > 0.05) {
+    if (now - lastPaint > 0.12) {
         lastPaint = now;
         [window displayIfNeeded];
     }
+}
+
+- (void)paintLater
+{
+    paintScheduled = NO;
+    lastPaintRequest = 0;
+    if (current)
+        [self refreshTranscriptIfCurrent:current];
 }
 
 - (void)addStatus:(NSString *)text toChat:(NSMutableDictionary *)chat
@@ -1809,7 +1969,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.2";
+        version = @"1.3";
     NSRunAlertPanel(@"About Tiger Build",
         @"Version %@\nLicensed under the MIT License.",
         @"OK", nil, nil, version);
@@ -1906,25 +2066,47 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     return TBEstimateTokens([chat objectForKey:@"messages"], [self toolsEnabled:chat]);
 }
 
+/* Tokens in use: what the service last reported for the prompt, plus an
+   estimate for messages added since; before any report, an estimate. */
+- (int)contextTokensForChat:(NSDictionary *)chat
+{
+    int measured = [[chat objectForKey:@"ctxTokens"] intValue];
+    int at = [[chat objectForKey:@"ctxAt"] intValue];
+    NSArray *messages = [chat objectForKey:@"messages"];
+    int estimate = [self estimatedTokens:chat];
+    NSMutableArray *newer;
+    unsigned i;
+    if (measured <= 0 || at <= 0 || at > (int)[messages count])
+        return estimate;
+    newer = [NSMutableArray array];
+    for (i = at; i < [messages count]; i++)
+        [newer addObject:[messages objectAtIndex:i]];
+    return measured + TBEstimateTokens(newer, NO) - 400;
+}
+
 - (void)updateContextReadout
 {
     int used;
     int limit;
+    NSString *cost;
+    NSString *text;
     if (!contextField)
         return;
     if (!current) {
         [contextField setStringValue:@""];
         return;
     }
-    used = [self estimatedTokens:current];
+    used = [self contextTokensForChat:current];
     limit = [[current objectForKey:@"contextLimit"] intValue];
-    if (limit > 0) {
-        [contextField setStringValue:[NSString stringWithFormat:@"Context %@ / %@",
-            [self tokenString:used], [self tokenString:limit]]];
-    } else {
-        [contextField setStringValue:[NSString stringWithFormat:@"Context %@",
-            [self tokenString:used]]];
-    }
+    if (limit > 0)
+        text = [NSString stringWithFormat:@"Context %@ / %@", [self tokenString:used], [self tokenString:limit]];
+    else
+        text = [NSString stringWithFormat:@"Context %@", [self tokenString:used]];
+    cost = TBCostReadout(current);
+    if ([cost length])
+        text = [NSString stringWithFormat:@"%@   %@", text, cost];
+    [contextField setStringValue:text];
+    [contextField setToolTip:TBCostDetail(current)];
 }
 
 - (int)rememberContextLimit
@@ -2050,9 +2232,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     limit = [[chat objectForKey:@"contextLimit"] intValue];
     if (limit <= 0 && chat == current)
         limit = [self rememberContextLimit];
-    used = [self estimatedTokens:chat];
+    used = [self contextTokensForChat:chat];
     /* Compact at 80 percent: the estimate is rough, and the reply needs room. */
-    if (limit < 1000 || (long)used * 100 < (long)limit * 80)
+    if (!compactForced && (limit < 1000 || (long)used * 100 < (long)limit * 80))
         return NO;
     messages = [chat objectForKey:@"messages"];
     spoken = [NSMutableArray array];
@@ -2064,8 +2246,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             continue;
         [spoken addObject:message];
     }
-    if ((int)[spoken count] < 6)
+    if ((int)[spoken count] < 6) {
+        compactForced = NO;
         return NO;
+    }
+    compactForced = NO;
     older = [NSMutableArray array];
     for (i = 0; i < [spoken count] - 4; i++)
         [older addObject:[spoken objectAtIndex:i]];
@@ -2085,7 +2270,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [body appendFormat:@"\"}],\"tools\":false,\"provider\":\"%@\",\"model\":\"%@\"}",
         TBJSONEscape([self providerForChat:chat]), TBJSONEscape([self modelForChat:chat])];
     info = [NSDictionary dictionaryWithObjectsAndKeys:chat, @"chat", older, @"older", nil];
-    [RelayRequest send:@"POST" path:@"/v1/summarize" body:body timeout:120
+    sideRequest = [RelayRequest send:@"POST" path:@"/v1/summarize" body:body timeout:120
         target:self action:@selector(compactionArrived:) context:info];
     return YES;
 }
@@ -2093,6 +2278,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 - (void)compactionArrived:(RelayRequest *)request
 {
     NSDictionary *info = [request context];
+    if (stopping || !busy)
+        return;
+    sideRequest = nil;
     NSMutableDictionary *chat = [info objectForKey:@"chat"];
     NSArray *older = [info objectForKey:@"older"];
     NSMutableArray *messages = [chat objectForKey:@"messages"];
@@ -2123,8 +2311,33 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [self refreshTranscriptIfCurrent:chat];
         [self updateContextReadout];
     }
+    if (compactOnly) {
+        compactOnly = NO;
+        [self saveStore];
+        [self setBusy:NO];
+        return;
+    }
     [window setTitle:@"Tiger Build - Sending..."];
     [self beginChatStream];
+}
+
+- (void)compactNow:(id)sender
+{
+    NSMutableDictionary *chat;
+    (void)sender;
+    if (busy || !current)
+        return;
+    [streamingId release];
+    streamingId = [[current objectForKey:@"id"] copy];
+    compactForced = YES;
+    compactOnly = YES;
+    [self setBusy:YES];
+    if (![self startCompactionIfNeeded]) {
+        compactOnly = NO;
+        chat = current;
+        [self addStatus:@"This chat is too short to compact." toChat:chat];
+        [self setBusy:NO];
+    }
 }
 
 - (void)autonameChat:(NSMutableDictionary *)chat
@@ -2231,13 +2444,16 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
        list, so they are escaped like any other text. */
     /* The relay describes this Mac to the model from what it reports here,
        so nothing about the machine or account is assumed. */
-    [body appendFormat:@"],\"tools\":%s,\"provider\":\"%@\",\"model\":\"%@\","
-        @"\"client\":{\"machine\":\"%@\",\"os\":\"%@\",\"user\":\"%@\",\"home\":\"%@\"}}",
-        [self toolsEnabled:chat] ? "true" : "false",
+    [body appendFormat:@"],\"tools\":%s,\"provider\":\"%@\",\"model\":\"%@\",\"run\":\"%@\","
+        @"\"client\":{\"machine\":\"%@\",\"os\":\"%@\",\"user\":\"%@\",\"home\":\"%@\"}",
+        [self anyServerEnabled:chat] ? "true" : "false",
         TBJSONEscape([self providerForChat:chat]),
         TBJSONEscape([self modelForChat:chat]),
+        TBJSONEscape(runId),
         TBJSONEscape([TBMachine name]), TBJSONEscape([TBMachine systemVersion]),
         TBJSONEscape(NSUserName()), TBJSONEscape(NSHomeDirectory())];
+    [body appendString:[self runOptionsJSONForChat:chat]];
+    [body appendString:@"}"];
     return body;
 }
 
@@ -2249,13 +2465,27 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     NSString *title;
     NSText *editor;
     (void)sender;
-    if (busy || !current)
+    if (!current)
         return;
     editor = [input currentEditor];
     if (editor)
         text = [[editor string] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     else
         text = [[input stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (busy) {
+        /* A model is working: what is typed now is guidance for it. */
+        if ([text length] == 0 || ![self guidanceAvailable]) {
+            NSBeep();
+            return;
+        }
+        [input setStringValue:@""];
+        if (editor)
+            [editor setString:@""];
+        inputHeight = TB_FIELD_MIN;
+        [self layoutPanes];
+        [self sendGuidance:text];
+        return;
+    }
     if ([text length] == 0)
         return;
     if (![self providerUsable:[self providerForChat:current]]) {
@@ -2271,6 +2501,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         NSBeep();
         return;
     }
+    [self forgetEdit];
     [input setStringValue:@""];
     if (editor)
         [editor setString:@""];
@@ -2295,10 +2526,19 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [current setObject:trimmed forKey:@"title"];
         [self reloadTableSelect:[table selectedRow] show:NO];
     }
+    [self rememberLastUsed];
     [self saveStore];
     [self refreshTranscriptIfCurrent:current];
+    [self startTurn];
+}
+
+/* The chat's last message is a user message followed by an empty open reply.
+   Send the chat to the model. */
+- (void)startTurn
+{
     [streamingId release];
     streamingId = [[current objectForKey:@"id"] copy];
+    [self rememberLastUsed];
     [self setBusy:YES];
     /* A long chat is summarized first; compactionArrived: then starts the stream. */
     if ([self startCompactionIfNeeded])
@@ -2335,6 +2575,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [errorBody setLength:0];
     httpStatus = 0;
     [self closeStream];
+    [self newRunId];
+    lastFrame = CFAbsoluteTimeGetCurrent();
+    sideRequest = nil;
     payload = [[self requestBodyForChat:chat] dataUsingEncoding:NSUTF8StringEncoding];
     message = [RelayRequest copyMessage:@"POST" path:@"/v1/chat" body:payload];
     if (!message) {
@@ -2467,6 +2710,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         return;
     chat = [self chatWithId:streamingId];
     [self closeStream];
+    [self returnUndeliveredGuidance];
     if (chat) {
         open = [self openMessageIn:chat];
         if (open) {
@@ -2497,6 +2741,28 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         text = [[NSString alloc] initWithData:payload encoding:NSUTF8StringEncoding];
         if (!text)
             text = [[NSString alloc] initWithData:payload encoding:NSMacOSRomanStringEncoding];
+    }
+    if (kind == 'k') {
+        lastFrame = CFAbsoluteTimeGetCurrent();
+        [text release];
+        return;
+    }
+    lastFrame = CFAbsoluteTimeGetCurrent();
+    if (kind == 'u') {
+        NSString *uerror = nil;
+        NSDictionary *usage = [NSPropertyListSerialization propertyListFromData:payload mutabilityOption:NSPropertyListImmutable
+            format:NULL errorDescription:&uerror];
+        if (uerror)
+            [uerror release];
+        if ([usage isKindOfClass:[NSDictionary class]])
+            [self noteUsage:usage chat:chat];
+        [text release];
+        return;
+    }
+    if (kind == 'q') {
+        [self askApprovalFrame:payload chat:chat];
+        [text release];
+        return;
     }
     if (kind == 'a') {
         NSString *error=nil;
@@ -2535,8 +2801,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             [messages insertObject:thinking atIndex:[messages count]>0?[messages count]-1:0];
         }
         [thinking setObject:[[thinking objectForKey:@"detail"] stringByAppendingString:text?text:@""] forKey:@"detail"];
+        [self noteThinking:text];
         [self refreshTranscriptIfCurrent:chat];
     }
+    else if (kind == 'g')
+        [self guidanceDelivered:text chat:chat];
+    else if (kind == 'c')
+        [self addStatus:text toChat:chat];
     else if (kind == 't')
         [self appendDelta:text toChat:chat];
     else if (kind == 'm')
@@ -2686,6 +2957,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     }
     if (command == @selector(insertNewline:)) {
         [self send:nil];
+        return YES;
+    }
+    if ((command == @selector(cancelOperation:) || command == @selector(cancel:)) && editBackup) {
+        [self cancelEdit:nil];
         return YES;
     }
     return NO;
