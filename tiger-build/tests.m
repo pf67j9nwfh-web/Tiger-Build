@@ -1,6 +1,7 @@
 /* make test: checks the pieces of Tiger Build that do not need a window. */
 #import <Foundation/Foundation.h>
 #import "TBSupport.h"
+#import <unistd.h>
 
 static int failures = 0;
 
@@ -142,6 +143,35 @@ int main(void)
         tbcheck(TBHistoryBundle([NSDictionary dictionaryWithObjectsAndKeys:@"TigerBuild-history", @"format",
             [NSDictionary dictionaryWithObject:one forKey:@"../evil"], @"workspaces", nil], nil) == nil, @"bad workspace name rejected");
         tbcheck(TBWorkspaceNameOK(@"Project 1") && !TBWorkspaceNameOK(@".hidden") && !TBWorkspaceNameOK(@"a/b"), @"workspace names");
+    }
+    {
+        /* Two windows on one workspace share one store; nothing is lost. */
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"tbstore-%d.plist", (int)getpid()]];
+        TBStore *a;
+        TBStore *b;
+        NSMutableDictionary *chatOne = [NSMutableDictionary dictionaryWithObjectsAndKeys:@"1", @"id", [NSMutableArray array], @"messages", nil];
+        NSMutableDictionary *chatTwo = [NSMutableDictionary dictionaryWithObjectsAndKeys:@"2", @"id", [NSMutableArray array], @"messages", nil];
+        [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+        a = [TBStore storeAtPath:file];
+        b = [TBStore storeAtPath:file];
+        tbcheck(a == b, @"two windows get the same store");
+        tbcheck([a takeNextId] == 1 && [b takeNextId] == 2, @"chat numbers do not collide between windows");
+        [[a chats] addObject:chatOne];
+        [[b chats] addObject:chatTwo];
+        tbcheck([[a chats] count] == 2, @"one window sees the other's new chat");
+        [[a settings] setObject:@"x" forKey:@"k"];
+        [a markDirty];
+        [b markDirty];
+        [TBStore flushAll];
+        [TBStore forgetAll];
+        a = [TBStore storeAtPath:file];
+        fprintf(stderr, "INFO chats=%d next=%d\n", (int)[[a chats] count], [a next]);
+        tbcheck([[a chats] count] == 2 && [a next] == 3, @"both windows' chats were saved");
+        tbcheck([[[a settings] objectForKey:@"k"] isEqualToString:@"x"], @"settings were saved");
+        tbcheck([TBStore storeAtPath:[file stringByAppendingString:@".other"]] != a, @"different workspaces get different stores");
+        [TBStore forgetAll];
+        [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
     }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 

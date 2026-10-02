@@ -43,12 +43,9 @@ static NSMutableArray *extraWindows = nil;
 - (void)rememberLastUsed;
 @end
 
-/* Set for "Compact Chat Now": summarize without sending a new message. */
-static BOOL compactForced = NO;
-static BOOL compactOnly = NO;
-
-static int streamDepth = 0;
-static int streamEndDeferred = 0;
+/* Every open window, so they can tell each other about changes. Windows do not
+   retain each other. */
+static NSMutableArray *allControllers = nil;
 
 static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void *info)
 {
@@ -116,15 +113,12 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     self = [super init];
     if (!self)
         return nil;
-    chats = [[NSMutableArray alloc] init];
     frameBuffer = [[NSMutableData alloc] init];
     errorBody = [[NSMutableData alloc] init];
     localModels = [[NSMutableArray alloc] init];
     prefsFields = [[NSMutableDictionary alloc] init];
     contextPending = [[NSMutableDictionary alloc] init];
-    workspaceSettings = [[NSMutableDictionary alloc] init];
     queuedGuidance = [[NSMutableArray alloc] init];
-    nextNumber = 1;
     renameRow = -1;
     sidebarWidth = [[NSUserDefaults standardUserDefaults] floatForKey:@"TigerBuildSidebarWidth"];
     if (sidebarWidth < 160)
@@ -135,6 +129,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
 
 - (void)dealloc
 {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [relayTimer invalidate];
     [relayTimer release];
     [self closeStream];
@@ -155,7 +150,8 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [retryButton release];
     [thinkingField release];
     [runId release];
-    [workspaceSettings release];
+    [store release];
+    [workspaceChoice release];
     [toolCatalog release];
     [commanderProblem release];
     [commanderCode release];
@@ -173,6 +169,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [relayStatusField release];
     [renameField release];
     [chats release];
+    [workspaceSettings release];
     [frameBuffer release];
     [errorBody release];
     [streamingId release];
@@ -262,8 +259,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [hello setObject:@"Hello. Ask me anything." forKey:@"text"];
     [hello setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
     [messages addObject:hello];
-    [chat setObject:[NSString stringWithFormat:@"%d", nextNumber] forKey:@"id"];
-    nextNumber += 1;
+    [chat setObject:[NSString stringWithFormat:@"%d", [store takeNextId]] forKey:@"id"];
     [chat setObject:@"New Chat" forKey:@"title"];
     [chat setObject:[NSNumber numberWithBool:YES] forKey:@"autoTitle"];
     [chat setObject:[NSNumber numberWithBool:YES] forKey:@"tools"];
@@ -274,95 +270,108 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     return chat;
 }
 
+/* Show this window's workspace. Several windows can show the same one; they
+   then share its chats (see TBStore). Switching never changes another window. */
 - (void)loadStore
 {
-    NSData *data = [NSData dataWithContentsOfFile:[self storePath]];
-    NSString *error = nil;
-    id root;
-    NSArray *saved;
-    unsigned i;
-    int highest = 0;
-    [chats removeAllObjects];
-    if (data) {
-        root = [NSPropertyListSerialization propertyListFromData:data
-                                                mutabilityOption:NSPropertyListMutableContainers
-                                                          format:NULL
-                                                errorDescription:&error];
-        if (error)
-            [error release];
-        if ([root isKindOfClass:[NSDictionary class]]) {
-            saved = [root objectForKey:@"chats"];
-            if ([saved isKindOfClass:[NSArray class]]) {
-                for (i = 0; i < [saved count]; i++) {
-                    NSArray *list = [[saved objectAtIndex:i] objectForKey:@"messages"];
-                    unsigned j;
-                    for (j = 0; j < [list count]; j++) {
-                        [[list objectAtIndex:j] removeObjectForKey:@"pendingMedia"];
-                        [[list objectAtIndex:j] removeObjectForKey:@"open"];
-                    }
-                    [chats addObject:[saved objectAtIndex:i]];
-                }
-            }
-            highest = [[root objectForKey:@"next"] intValue];
-            [workspaceSettings removeAllObjects];
-            if ([[root objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
-                [workspaceSettings addEntriesFromDictionary:[root objectForKey:@"settings"]];
-        }
-    } else {
-        [workspaceSettings removeAllObjects];
+    TBStore *found = [TBStore storeAtPath:[self storePath]];
+    if (found != store) {
+        [store release];
+        store = [found retain];
+        [chats release];
+        chats = [[store chats] retain];
+        [workspaceSettings release];
+        workspaceSettings = [[store settings] retain];
     }
-    if (highest < 1) {
-        for (i = 0; i < [chats count]; i++) {
-            int number = [[[chats objectAtIndex:i] objectForKey:@"id"] intValue];
-            if (number > highest)
-                highest = number;
-        }
-    }
-    nextNumber = highest + 1;
     if ([chats count] == 0)
         [chats addObject:[self blankChat]];
 }
 
 - (void)saveStore
 {
-    /* A streamed reply, a rename, and a model change can all arrive within a
-       second. Write once they settle rather than rewriting the file each time. */
-    if (storeDirty)
-        return;
-    storeDirty = YES;
-    [self performSelector:@selector(flushStore) withObject:nil afterDelay:0.75];
+    [store markDirty];
+    [self announceStoreChange];
 }
 
 - (void)flushStore
 {
-    NSMutableDictionary *root;
-    NSString *error = nil;
-    NSData *data;
-    if (!storeDirty)
+    [store flush];
+}
+
+/* Tell the other windows something in the chats changed, so they redraw. */
+- (void)announceStoreChange
+{
+    NSDictionary *info = [NSDictionary dictionaryWithObject:[NSValue valueWithNonretainedObject:self] forKey:@"source"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:TBStoreChangedNotification object:store userInfo:info];
+}
+
+/* Another window changed the chats this one shows. */
+- (void)storeChanged:(NSNotification *)note
+{
+    NSValue *source = [[note userInfo] objectForKey:@"source"];
+    NSUInteger at;
+    if ([note object] != store || [source nonretainedObjectValue] == self || !table)
         return;
-    storeDirty = NO;
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flushStore) object:nil];
-    root = [NSMutableDictionary dictionary];
-    [root setObject:chats forKey:@"chats"];
-    [root setObject:[NSNumber numberWithInt:nextNumber] forKey:@"next"];
-    [root setObject:workspaceSettings forKey:@"settings"];
-    /* Binary plists are about half the size of XML and much faster to write.
-       loadStore reads either format. */
-    data = [NSPropertyListSerialization dataFromPropertyList:root
-                                                      format:NSPropertyListBinaryFormat_v1_0
-                                            errorDescription:&error];
-    if (error) {
-        NSLog(@"Tiger Build could not save chats: %@", error);
-        [error release];
+    at = [chats indexOfObjectIdenticalTo:current];
+    [self reloadTableSelect:(at == NSNotFound ? 0 : (int)at) show:(at == NSNotFound)];
+    if (current && !busy)
+        [transcript setMessages:[current objectForKey:@"messages"]];
+    /* The other window finished, so the "working in another window" note is stale. */
+    if ([[relayStatusField stringValue] hasPrefix:@"This chat is working in another window"]
+        && ![self chatIsBusyElsewhere:current])
+        [self setRelayProblem:nil];
+    [self syncRunButtons];
+}
+
+/* The files behind every store were replaced (import, clear, delete): open
+   them again. A window whose workspace no longer exists moves to another. */
+- (void)storesReplaced:(NSNotification *)note
+{
+    NSArray *names;
+    (void)note;
+    if (!table)
+        return;
+    names = [self workspaceNamesOnDisk];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:[self storePath]]
+        && ![[self workspaceName] isEqualToString:@"Default"] && [names count] > 0)
+        [self setWorkspaceChoice:[names objectAtIndex:0]];
+    current = nil;
+    [self loadStore];
+    [self reloadTableSelect:0 show:YES];
+    [self refillWorkspacePopup];
+}
+
+/* Does a window other than this one have a reply running in this chat? */
+- (BOOL)chatIsBusyElsewhere:(NSDictionary *)chat
+{
+    unsigned i;
+    for (i = 0; allControllers && i < [allControllers count]; i++) {
+        ChatController *other = [[allControllers objectAtIndex:i] nonretainedObjectValue];
+        if (other != self && other->busy && other->streamingId && [other chatWithId:other->streamingId] == chat)
+            return YES;
     }
-    if (data)
-        [data writeToFile:[self storePath] atomically:YES];
+    return NO;
+}
+
+- (BOOL)anyWindowBusy
+{
+    unsigned i;
+    for (i = 0; allControllers && i < [allControllers count]; i++) {
+        if ([[[allControllers objectAtIndex:i] nonretainedObjectValue] isBusy])
+            return YES;
+    }
+    return NO;
+}
+
+- (BOOL)isBusy
+{
+    return busy || naming;
 }
 
 - (void)applicationWillTerminate:(NSNotification *)note
 {
     (void)note;
-    [self flushStore];
+    [TBStore flushAll];
 }
 
 - (BOOL)toolsEnabled:(NSDictionary *)chat
@@ -637,6 +646,14 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [contextField setFont:[NSFont systemFontOfSize:12]];
     [contextField setTextColor:[NSColor colorWithCalibratedWhite:0.25 alpha:1]];
     [chatPane addSubview:contextField];
+
+    if (!allControllers)
+        allControllers = [[NSMutableArray alloc] init];
+    [allControllers addObject:[NSValue valueWithNonretainedObject:self]];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(storeChanged:)
+        name:TBStoreChangedNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(storesReplaced:)
+        name:@"TBStoresReplaced" object:nil];
 }
 
 - (float)clampedSidebar:(float)proposed
@@ -672,7 +689,6 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
 
 - (void)layoutPanes
 {
-    static int layingOut = 0;
     NSRect side;
     NSRect mainRect;
     float sideW;
@@ -1326,7 +1342,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         if ([self providerUsable:pid]) return;
     }
     if ([[ModelCatalog shared] checkingCount] > 0) return;
-    [relayStatusField setStringValue:@"No usable service configured. Add an API key or a local server in Preferences."];
+    [relayStatusField setStringValue:@"No usable service configured. Add an API key or a local LLM server in Preferences."];
     [relayStatusField setToolTip:[relayStatusField stringValue]];
     [relayStatusField setTextColor:[NSColor redColor]];
     [self relayStatusChanged];
@@ -1808,9 +1824,20 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (void)windowWillClose:(NSNotification *)note
 {
+    NSUInteger i;
     (void)note;
     if (self == [NSApp delegate])
         return;
+    /* A window closed in the middle of a reply must not leave the relay working. */
+    if (busy && !stopping)
+        [self stopRun:nil];
+    for (i = 0; allControllers && i < [allControllers count]; i++) {
+        if ([[allControllers objectAtIndex:i] nonretainedObjectValue] == self) {
+            [allControllers removeObjectAtIndex:i];
+            break;
+        }
+    }
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self performSelector:@selector(retireExtraWindow) withObject:nil afterDelay:0];
 }
 
@@ -1821,6 +1848,8 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (!extraWindows)
         extraWindows = [[NSMutableArray alloc] init];
     extra = [[ChatController alloc] init];
+    /* A new window shows the same workspace as the one it was opened from. */
+    [extra setWorkspaceChoice:[self workspaceName]];
     [extraWindows addObject:extra];
     [extra release];
     [extra openSecondary];
@@ -1890,6 +1919,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (renameRow >= 0)
         [self cancelRename:nil];
     row = [table selectedRow];
+    if (row >= 0 && row < (int)[chats count] && [self chatIsBusyElsewhere:[chats objectAtIndex:row]]) {
+        NSBeep();
+        return;
+    }
     if (row < 0 || row >= (int)[chats count])
         return;
     if ([table editedRow] >= 0)
@@ -2555,6 +2588,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     if (!current)
         return;
+    if (!busy && [self chatIsBusyElsewhere:current]) {
+        [self setRelayProblem:@"This chat is working in another window. Wait for it to finish, or use a different chat."];
+        NSBeep();
+        return;
+    }
     editor = [input currentEditor];
     if (editor)
         text = [[editor string] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -2580,7 +2618,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         NSString *pid = [self providerForChat:current];
         NSString *note = [self providerNote:pid];
         if ([pid isEqualToString:@"local"])
-            [self setRelayProblem:@"The local server has no models loaded. Load one, or set the local server in Preferences."];
+            [self setRelayProblem:@"The local LLM server has no models loaded. Load one, or set the local LLM server in Preferences."];
         else if (!relayReachable)
             [self setRelayProblem:[self relayProblemForRequest:nil]];
         else

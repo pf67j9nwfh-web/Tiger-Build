@@ -40,7 +40,7 @@
         if ([root isKindOfClass:[NSDictionary class]] && [[root objectForKey:@"chats"] isKindOfClass:[NSArray class]])
             [all setObject:root forKey:name];
     }
-    [all setObject:[NSDictionary dictionaryWithObjectsAndKeys:chats, @"chats", [NSNumber numberWithInt:nextNumber], @"next",
+    [all setObject:[NSDictionary dictionaryWithObjectsAndKeys:chats, @"chats", [NSNumber numberWithInt:[store next]], @"next",
         workspaceSettings, @"settings", nil] forKey:mine];
     return all;
 }
@@ -74,28 +74,26 @@
     NSArray *names;
     unsigned i;
     (void)sender;
-    if (busy) return;
+    if ([self anyWindowBusy]) { NSBeep(); return; }
     if (NSRunAlertPanel(@"Clear all history and workspaces?", @"This deletes every chat in every workspace (%d) on this Mac, "
         @"and the workspaces themselves. A new empty Default workspace is made. "
         @"Exports and history already copied to the relay are not deleted.", @"Clear All", @"Cancel", nil,
         (int)[[self workspaceNamesOnDisk] count])
         != NSAlertDefaultReturn) return;
     [self forgetEdit];
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flushStore) object:nil];
+    [TBStore forgetAll];
     names = [self workspaceNamesOnDisk];
     for (i = 0; i < [names count]; i++)
         [[NSFileManager defaultManager] removeFileAtPath:[self pathForWorkspace:[names objectAtIndex:i]] handler:nil];
-    [[NSUserDefaults standardUserDefaults] setObject:@"Default" forKey:@"TigerBuildWorkspace"];
-    [chats removeAllObjects];
-    nextNumber = 1;
-    [workspaceSettings removeAllObjects];
-    [chats addObject:[self blankChat]];
-    storeDirty = NO;
+    [self setWorkspaceChoice:@"Default"];
+    current = nil;
+    [self loadStore];
+    [self saveStore];
+    [self flushStore];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"TBStoresReplaced" object:nil];
     [self reloadTableSelect:0 show:YES];
     [self refillWorkspacePopup];
     [window setTitle:@"Tiger Build - Default"];
-    [self saveStore];
-    [self flushStore];
 }
 
 - (void)exportHistory:(id)sender
@@ -204,8 +202,8 @@
     NSString *backup;
     NSString *open;
     unsigned i;
-    if (busy) {
-        NSRunAlertPanel(@"History", @"Wait until the current reply finishes before importing.", @"OK", nil, nil);
+    if ([self anyWindowBusy]) {
+        NSRunAlertPanel(@"History", @"Wait until the current reply finishes, in every window, before importing.", @"OK", nil, nil);
         return;
     }
     root = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListImmutable
@@ -235,8 +233,7 @@
         NSRunAlertPanel(@"History", @"Could not back up the current history; import cancelled.", @"OK", nil, nil); return;
     }
     [self forgetEdit];
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flushStore) object:nil];
-    storeDirty = NO;
+    [TBStore forgetAll];
     if ([[bundle objectForKey:@"bundle"] boolValue]) {
         NSArray *old = [self workspaceNamesOnDisk];
         for (i = 0; i < [old count]; i++)
@@ -250,14 +247,14 @@
         open = [self workspaceName];
         [self writeWorkspace:open data:[self cleanedWorkspace:[spaces objectForKey:[names objectAtIndex:0]]]];
     }
-    [[NSUserDefaults standardUserDefaults] setObject:open forKey:@"TigerBuildWorkspace"];
-    [chats removeAllObjects];
-    nextNumber = 1;
+    [self setWorkspaceChoice:open];
+    current = nil;
     [self loadStore];
+    [self saveStore];
+    [self flushStore];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"TBStoresReplaced" object:nil];
     [self reloadTableSelect:0 show:YES];
     [self refillWorkspacePopup];
     [window setTitle:[NSString stringWithFormat:@"Tiger Build - %@", open]];
-    [self saveStore];
-    [self flushStore];
 }
 @end

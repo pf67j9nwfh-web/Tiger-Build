@@ -8,6 +8,7 @@ ppc-commander tools on that Mac over SSH.
 
 import json
 import os
+import re
 import socket
 import ssl
 import sys
@@ -88,12 +89,17 @@ SYSTEM = (
     "The shell is bash and the system Python is 2.3. "
     "After the tools finish, answer in a few plain sentences."
 )
-MAX_TOOL_ROUNDS = 12
+MAX_TOOL_ROUNDS = 40  # the default; "max_tool_steps" in the tool settings changes it
 
 
 ENV_PATH = os.path.join(ROOT, ".env")
 TOKEN = ""
 ALLOWED = set()
+
+
+def show_thinking_on():
+    from providers import show_thinking
+    return show_thinking()
 
 
 def reload_allowed(config=None):
@@ -366,6 +372,68 @@ STEP_NOTE = (
 COMPACT_AT = 0.80  # share of the context window that starts trimming a long run
 
 
+# Opening an SSH login to an old Mac is slow and its sshd refuses a crowd (it
+# drops connections beyond a handful that are still signing in). Starts to the
+# same Mac go through a small gate, one tool-list lookup at a time.
+START_GATE = 3
+_GATES = {}
+_LOOKUP_LOCKS = {}
+_GATE_LOCK = threading.Lock()
+
+
+def _gate(host):
+    with _GATE_LOCK:
+        if host not in _GATES:
+            _GATES[host] = threading.BoundedSemaphore(START_GATE)
+        return _GATES[host]
+
+
+def _lookup_lock(host):
+    with _GATE_LOCK:
+        return _LOOKUP_LOCKS.setdefault(host, threading.Lock())
+
+
+class StartFailure(Exception):
+    """A Commander session could not be started; stderr is what ssh printed."""
+
+    def __init__(self, exc, stderr):
+        Exception.__init__(self, str(exc))
+        self.cause = exc
+        self.stderr = stderr
+
+
+# Retrying will not fix these.
+FINAL_CODES = ("auth", "host_key_changed", "stopped", "key_missing", "kex", "old_ssh", "unset", "unlinked")
+
+
+def start_commander(config, root="", run=None, attempts=3):
+    """A started ppc-commander session for this Mac, or StartFailure. Starts
+    wait their turn and are retried, since a refused login is usually just a
+    busy sshd."""
+    failure = None
+    for attempt in range(attempts):
+        if run is not None:
+            run.check()
+        client = McpClient(ssh_command(config, root))
+        gate = _gate(config.get("TIGER_HOST") or "")
+        gate.acquire()
+        try:
+            if run is not None:
+                run.on_abort(client.close)
+            client.start()
+            return client
+        except Exception as exc:
+            text = client.stderr_text()
+            client.close()
+            failure = StartFailure(exc, text)
+            if connection.diagnose(text, exc, config)[0] in FINAL_CODES:
+                break
+        finally:
+            gate.release()
+        time.sleep(0.8 * (attempt + 1))
+    raise failure
+
+
 def invalidate_tools(host=None):
     """Forget the cached tool list (one Mac's, or all), so the next request
     looks again. Called after an address, user or key changes."""
@@ -424,8 +492,30 @@ def supports_images(provider, model):
     return False
 
 
+_CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_text(value):
+    """Property lists cannot hold control characters. Terminal output has
+    plenty (colour codes, backspaces, carriage returns), so drop colour
+    sequences and replace the rest."""
+    if not isinstance(value, str):
+        return value
+    value = re.sub("\x1b\\[[0-9;?]*[ -/]*[@-~]", "", value)
+    value = re.sub("\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)", "", value)
+    return _CONTROL.sub("\ufffd", value)
+
+
+def _clean(data):
+    if isinstance(data, dict):
+        return dict((clean_text(k), _clean(v)) for k, v in data.items())
+    if isinstance(data, (list, tuple)):
+        return [_clean(v) for v in data]
+    return clean_text(data)
+
+
 def _plist(data):
-    return plistlib.dumps(data, fmt=plistlib.FMT_XML).decode()
+    return plistlib.dumps(_clean(data), fmt=plistlib.FMT_XML).decode()
 
 
 class ToolSession(object):
@@ -491,6 +581,13 @@ class ToolSession(object):
             return "/Users/%s" % self.account()
         return "~"
 
+    def max_steps(self):
+        """Tool rounds allowed in one reply (a runaway guard)."""
+        try:
+            return max(1, min(int(self.extra.config.get("max_tool_steps") or MAX_TOOL_ROUNDS), 200))
+        except (TypeError, ValueError):
+            return MAX_TOOL_ROUNDS
+
     def media_root(self):
         return self.home() + "/Library/Application Support/Tiger Build/media"
 
@@ -539,33 +636,45 @@ class ToolSession(object):
             self.tools = []
             return self.tools
         host = self.config["TIGER_HOST"]
-        with _TOOL_LOCK:
-            entry = _TOOL_CACHE.get(host)
-            if entry is not None:
-                age = time.time() - entry["at"]
-                keep = TOOL_CACHE_SECONDS if entry["tools"] else OFFLINE_RETRY_SECONDS
-                if age < keep:
-                    self.tools = entry["tools"]
-                    self.offline = entry["offline"]
-                    self.offline_code = entry["code"]
-                    return self.tools
-        client = McpClient(ssh_command(self.config))
-        code = ""
-        message = ""
-        try:
-            client.start()
-            tools = xai_tools_from_mcp(client.request("tools/list", {}, timeout=30))
-            offline = ""
-        except Exception as exc:
-            tools = []
-            code, message = connection.diagnose(client.stderr_text(), exc, self.config)
-            offline = "Tiger Mac tools are offline. %s" % (message or str(exc))
-            sys.stderr.write("tigerbuild-relay: %s (%s)\n" % (offline, exc))
-        finally:
-            client.close()
-        with _TOOL_LOCK:
-            _TOOL_CACHE[host] = {"tools": tools, "at": time.time(), "offline": offline, "code": code,
-                                 "detail": (message or "") if offline else ""}
+
+        def cached():
+            with _TOOL_LOCK:
+                entry = _TOOL_CACHE.get(host)
+            if entry is None:
+                return None
+            age = time.time() - entry["at"]
+            keep = TOOL_CACHE_SECONDS if entry["tools"] else OFFLINE_RETRY_SECONDS
+            return entry if age < keep else None
+
+        entry = cached()
+        if entry is None:
+            # Everyone who arrives together waits for one lookup.
+            with _lookup_lock(host):
+                entry = cached()
+                if entry is None:
+                    code = ""
+                    message = ""
+                    client = None
+                    try:
+                        client = start_commander(self.config, "", self.run)
+                        tools = xai_tools_from_mcp(client.request("tools/list", {}, timeout=30))
+                        offline = ""
+                    except runs.Stopped:
+                        raise
+                    except Exception as exc:
+                        tools = []
+                        text = exc.stderr if isinstance(exc, StartFailure) else ""
+                        code, message = connection.diagnose(text, exc, self.config)
+                        offline = "Tiger Mac tools are offline. %s" % (message or str(exc))
+                        sys.stderr.write("tigerbuild-relay: %s (%s)\n" % (offline, exc))
+                    finally:
+                        if client is not None:
+                            client.close()
+                    entry = {"tools": tools, "at": time.time(), "offline": offline, "code": code,
+                             "detail": (message or "") if offline else ""}
+                    with _TOOL_LOCK:
+                        _TOOL_CACHE[host] = entry
+        tools, offline, code = entry["tools"], entry["offline"], entry["code"]
         self.tools = tools
         self.offline = offline
         self.offline_code = code
@@ -715,10 +824,7 @@ class ToolSession(object):
 
     def _client_for(self, client_holder):
         if client_holder[0] is None:
-            client = McpClient(ssh_command(self.config, self.options["root"]))
-            self.run.on_abort(client.close)
-            client_holder[0] = client
-            client.start()
+            client_holder[0] = start_commander(self.config, self.options["root"], self.run)
         return client_holder[0]
 
     def _run_one_call(self, provider, call, client_holder):
@@ -758,7 +864,10 @@ class ToolSession(object):
             images = result_images(result)
         except Exception as exc:
             self.run.check()
-            stderr = client_holder[0].stderr_text() if client_holder[0] is not None else ""
+            if client_holder[0] is not None:
+                stderr = client_holder[0].stderr_text()
+            else:
+                stderr = exc.stderr if isinstance(exc, StartFailure) else ""
             code, message = connection.diagnose(stderr, exc, self.config)
             output = "error: %s" % (message or exc)
             if code and code not in ("closed",):
@@ -961,6 +1070,14 @@ class ToolSession(object):
                         self.run.check()
                         etype = event.get("type") if isinstance(event, dict) else ""
                         delta = text_delta(event)
+                        if etype == "response.reasoning_summary_text.delta" and show_thinking_on():
+                            piece = event.get("delta")
+                            if isinstance(piece, str) and piece:
+                                yield ("h", piece)
+                            continue
+                        if etype == "response.reasoning_summary_part.done" and show_thinking_on():
+                            yield ("h", "\n\n")
+                            continue
                         if delta:
                             saw_text = True
                             yield ("t", delta)
@@ -996,7 +1113,7 @@ class ToolSession(object):
                     yield ("t", LIMIT_NOTE)
                     return
                 calls = function_calls(completed) if tools else []
-                if calls and completed.get("id") and not forced and round_index < MAX_TOOL_ROUNDS:
+                if calls and completed.get("id") and not forced and round_index < self.max_steps():
                     outputs = []
                     extra_input = []
                     for call in calls:
@@ -1004,7 +1121,7 @@ class ToolSession(object):
                         client = client_holder[0]
                         last_output = output
                         last_failed = failed
-                        if round_index >= MAX_TOOL_ROUNDS - 3:
+                        if round_index >= self.max_steps() - 3:
                             output += (
                                 "\n\nFinish the task with the calls you have left. "
                                 "Do not ask the user to type continue."
@@ -1173,9 +1290,9 @@ class ToolSession(object):
                     if not holder.get("noted"):
                         yield ("t", LIMIT_NOTE)
                     return
-                if not calls or round_index >= MAX_TOOL_ROUNDS:
-                    if calls and round_index >= MAX_TOOL_ROUNDS:
-                        yield ("t", STEP_NOTE % MAX_TOOL_ROUNDS)
+                if not calls or round_index >= self.max_steps():
+                    if calls and round_index >= self.max_steps():
+                        yield ("t", STEP_NOTE % self.max_steps())
                     elif not saw_text and last_failed:
                         yield ("t", self._stopped_early(last_output, None))
                     elif not saw_text and last_output and not any_text:
@@ -1638,7 +1755,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/run":
             self._post_run()
             return
-        if path in ("/v1/ssh/connect", "/v1/ssh/settings", "/v1/ssh/forget", "/v1/ssh/test"):
+        if path in ("/v1/ssh/connect", "/v1/ssh/settings", "/v1/ssh/forget", "/v1/ssh/test", "/v1/ssh/remove"):
             self._post_ssh(path)
             return
         if path != "/v1/chat":
@@ -1780,6 +1897,14 @@ class Handler(BaseHTTPRequestHandler):
         relay_itself = address in ("", "127.0.0.1", "::1")
         try:
             base = load_shell_config()
+            if path == "/v1/ssh/remove" and not relay_itself:
+                # A Mac disconnecting itself.
+                removed = connection.remove_client(address)
+                invalidate_tools(address)
+                ALLOWED = reload_allowed(load_shell_config())
+                self._lines([("ok", "1" if removed else "0"), ("code", ""),
+                             ("message", "Disconnected." if removed else "This Mac was not connected.")])
+                return
             if relay_itself:
                 # From the relay computer: the default Mac in config.sh.
                 if path == "/v1/ssh/connect":
@@ -2069,6 +2194,9 @@ def main(argv):
     ALLOWED = reload_allowed(config)
     start_discovery(True)
     pricing.start(ssl_context())
+    # The default queue holds 5 waiting connections, so a burst of chats from
+    # several computers had some of them reset before the relay accepted them.
+    ThreadingHTTPServer.request_queue_size = 128
     server = ThreadingHTTPServer((address, port), Handler)
     server.daemon_threads = True
     from paths import support_dir as _support

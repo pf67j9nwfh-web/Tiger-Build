@@ -2,10 +2,20 @@
 #import "TranscriptView.h"
 
 @implementation ChatController (Workspaces)
+/* Each window has its own workspace; the preference only remembers the last
+   one chosen, for the next launch. */
 - (NSString *)workspaceName
 {
-    NSString *name=[[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildWorkspace"];
-    return [name length]?name:@"Default";
+    if(!workspaceChoice) {
+        NSString *name=[[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildWorkspace"];
+        workspaceChoice=[([name length]?name:@"Default") copy];
+    }
+    return workspaceChoice;
+}
+- (void)setWorkspaceChoice:(NSString *)name
+{
+    [workspaceChoice release];workspaceChoice=[name copy];
+    [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"TigerBuildWorkspace"];
 }
 /* The file a workspace's chats live in. Default has always been chats.plist. */
 - (NSString *)pathForWorkspace:(NSString *)name
@@ -44,9 +54,9 @@
     if(busy||naming) {NSBeep();return;}
     if([name isEqualToString:[self workspaceName]])return;
     [self forgetEdit];
-    [self saveStore];[self flushStore];
-    [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"TigerBuildWorkspace"];
-    [chats removeAllObjects];nextNumber=1;
+    [self flushStore];
+    [self setWorkspaceChoice:name];
+    current=nil;
     [self loadStore];[self reloadTableSelect:0 show:YES];[self refillWorkspacePopup];
     [input setStringValue:@""];
     [window setTitle:[NSString stringWithFormat:@"Tiger Build - %@",name]];
@@ -62,21 +72,21 @@
 - (void)deleteWorkspace:(id)sender
 {
     (void)sender;
-    if(busy||naming){NSBeep();return;}
+    if([self anyWindowBusy]){NSBeep();return;}
     NSString *name=[self workspaceName];
     if(NSRunAlertPanel(@"Delete this workspace?",@"This deletes the workspace \"%@\" and all %d chats in it from this Mac. "
         @"Exports and history already copied to the relay are not deleted.",@"Delete",@"Cancel",nil,name,(int)[chats count])!=NSAlertDefaultReturn)return;
     [self forgetEdit];
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flushStore) object:nil];
-    storeDirty=NO;
+    [TBStore flushAll];
+    [TBStore forgetAll];
     [[NSFileManager defaultManager] removeFileAtPath:[self pathForWorkspace:name] handler:nil];
     NSArray *left=[self workspaceNamesOnDisk];
     NSString *next=[left count]?[left objectAtIndex:0]:@"Default";
-    [[NSUserDefaults standardUserDefaults] setObject:next forKey:@"TigerBuildWorkspace"];
-    [chats removeAllObjects];nextNumber=1;
-    [workspaceSettings removeAllObjects];
+    [self setWorkspaceChoice:next];
+    current=nil;
     [self loadStore];
     if([left count]==0){[self saveStore];[self flushStore];}
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"TBStoresReplaced" object:nil];
     [self reloadTableSelect:0 show:YES];[self refillWorkspacePopup];
     [input setStringValue:@""];
     [window setTitle:[NSString stringWithFormat:@"Tiger Build - %@",next]];

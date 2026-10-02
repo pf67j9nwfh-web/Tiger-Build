@@ -21,7 +21,7 @@ ROWS = (
     ("Mistral", "mistral_api_key", True),
     ("Muse", "muse_api_key", True),
     ("Google / Gemini", "gemini_api_key", True),
-    ("Local server URL", "local_url", False),
+    ("Local LLM server URL", "local_url", False),
     ("Local API key (optional)", "local_api_key", True),
 )
 TOGGLES = (
@@ -174,35 +174,94 @@ def main():
     book = ttk.Notebook(top)
     book.grid(row=7, column=0, columnspan=5, sticky="ew")
     keys = ttk.Frame(book, padding=8)
-    book.add(keys, text="AI services and local server")
+    book.add(keys, text="AI services and local LLM server")
     mac = ttk.Frame(book, padding=8)
-    book.add(mac, text="Tiger Mac (Commander)")
-    mac_host = tk.StringVar()
+    book.add(mac, text="Connected Macs (Commander)")
+    mac_address = tk.StringVar()
     mac_user = tk.StringVar()
     mac_home = tk.StringVar()
+    mac_host = tk.StringVar()
     mac_note = tk.StringVar()
-    ttk.Label(mac, text="Commander runs a Tiger Mac's tools over SSH. Tiger Build on that Mac can also set this up itself "
-              "(Configuration, Connect Commander over SSH).", wraplength=680, justify="left").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
-    for index, (title, var) in enumerate((("Tiger Mac address", mac_host), ("Account (short name)", mac_user), ("Home folder (optional)", mac_home)), start=1):
-        ttk.Label(mac, text=title, width=24, anchor="e").grid(row=index, column=0, sticky="e", pady=3)
-        ttk.Entry(mac, textvariable=var, width=40).grid(row=index, column=1, sticky="w")
+    ttk.Label(mac, text="Commander runs a Mac's tools over SSH. Each Mac that chats through this relay needs a row here, or can "
+              "add itself from Tiger Build (Configuration, Connect Commander over SSH). The first row is the default.",
+              wraplength=700, justify="left").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
+    columns = ("address", "user", "home", "host")
+    grid = ttk.Treeview(mac, columns=columns, show="headings", height=4, selectmode="browse")
+    for name, title, width in (("address", "Mac's address", 150), ("user", "Account", 100), ("home", "Home folder", 180), ("host", "Tools run on", 150)):
+        grid.heading(name, text=title)
+        grid.column(name, width=width, stretch=True)
+    grid.grid(row=1, column=0, columnspan=4, sticky="ew")
+    fields_mac = (("Mac's address", mac_address), ("Account (short name)", mac_user), ("Home folder (optional)", mac_home),
+                  ("Run its tools on (optional)", mac_host))
+    for index, (title, var) in enumerate(fields_mac):
+        ttk.Label(mac, text=title, anchor="e", width=24).grid(row=2 + index // 2, column=(index % 2) * 2, sticky="e", pady=2)
+        ttk.Entry(mac, textvariable=var, width=26).grid(row=2 + index // 2, column=(index % 2) * 2 + 1, sticky="w")
     macbar = ttk.Frame(mac)
-    macbar.grid(row=4, column=0, columnspan=3, sticky="w", pady=8)
-    ttk.Label(mac, textvariable=mac_note, wraplength=680, justify="left").grid(row=5, column=0, columnspan=3, sticky="w")
-    ttk.Label(keys, text="One API key is enough, or use only a local model server. Blank fields keep what is saved.").grid(row=0, column=0, columnspan=4, sticky="w")
-    for index, (title, key, secret) in enumerate(ROWS, start=1):
-        ttk.Label(keys, text=title, width=28, anchor="e").grid(row=index, column=0, sticky="e", pady=2)
-        var = tk.StringVar()
-        entry = ttk.Entry(keys, textvariable=var, width=42, show="*" if secret else "")
-        entry.grid(row=index, column=1, sticky="w")
-        if key == "local_url":
-            entry.configure(width=52)
-        mark = tk.StringVar()
-        ttk.Label(keys, textvariable=mark, width=8).grid(row=index, column=2)
-        ttk.Button(keys, text="Delete", command=lambda name=key: delete_field(name)).grid(row=index, column=3, padx=4)
-        fields[key] = var
-        saved[key] = mark
-    ttk.Label(keys, text="The local server address is as seen from this computer. It can be this computer or another one.").grid(row=len(ROWS) + 1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+    macbar.grid(row=4, column=0, columnspan=4, sticky="w", pady=6)
+    ttk.Label(mac, textvariable=mac_note, wraplength=700, justify="left").grid(row=5, column=0, columnspan=4, sticky="w")
+    shown = []
+
+    def pick(_event=None):
+        chosen = grid.selection()
+        if not chosen:
+            return
+        row = shown[int(chosen[0])]
+        mac_address.set(row["address"])
+        mac_user.set(row["user"])
+        mac_home.set(row["home"])
+        mac_host.set(row["host"] if row["host"] != row["address"] else "")
+        mac_note.set("The default Mac. Its address is changed in config.sh." if row["default"] else "")
+    grid.bind("<<TreeviewSelect>>", pick)
+
+    def fill_macs(rows):
+        shown[:] = rows
+        grid.delete(*grid.get_children())
+        for index, row in enumerate(rows):
+            grid.insert("", "end", iid=str(index), values=(
+                row["address"] + (" (default)" if row.get("default") else ""), row["user"], row["home"],
+                row["host"] if row["host"] != row["address"] else ""))
+
+    def mac_apply(result):
+        busy["on"] = False
+        if result.get("error"):
+            mac_note.set(str(result["error"]))
+            return
+        apply_result(result, "status")
+        outcome = result.get("ssh_result") or {}
+        mac_note.set(outcome.get("message") or "")
+
+    def mac_run(action, payload=None):
+        if busy["on"]:
+            return
+        busy["on"] = True
+        mac_note.set("Working\u2026")
+        submit(lambda: command(script, action, payload), mac_apply)
+
+    def mac_payload():
+        return {"address": mac_address.get().strip(), "user": mac_user.get().strip(), "home": mac_home.get().strip(),
+                "host": mac_host.get().strip()}
+
+    def mac_save():
+        data = mac_payload()
+        if not data["address"] or not data["user"]:
+            mac_note.set("Enter the Mac's address and its account name.")
+            return
+        mac_run("client-save", data)
+
+    def mac_remove():
+        data = mac_payload()
+        if not data["address"]:
+            return
+        if messagebox.askokcancel("Remove this Mac?", "The relay stops running Commander for %s. It can connect again later." % data["address"]):
+            mac_run("client-remove", {"address": data["address"]})
+
+    ttk.Button(macbar, text="Save and Test", command=mac_save).pack(side="left")
+    ttk.Button(macbar, text="Test", command=lambda: mac_run("client-test", {"address": mac_address.get().strip()})).pack(side="left", padx=6)
+    ttk.Button(macbar, text="Remove", command=mac_remove).pack(side="left")
+    ttk.Button(macbar, text="New", command=lambda: [v.set("") for v in (mac_address, mac_user, mac_home, mac_host)]).pack(side="left", padx=6)
+
+    keys.grid_configure(sticky="ew")
+    top.columnconfigure(2, weight=1)
 
     buttons = ttk.Frame(top)
     buttons.grid(row=8, column=0, columnspan=5, sticky="w", pady=10)
@@ -237,10 +296,7 @@ def main():
         else:
             line += "    ·    no Tiger Build connection seen yet"
         tiger.set(line)
-        if not mac_host.get() and not mac_user.get() or action != "status":
-            mac_host.set(host)
-            mac_user.set(user)
-            mac_home.set(result.get("tiger_home") or "")
+        fill_macs(result.get("clients") or [])
         auto.set(bool(result.get("autostart")))
         flags = result.get("saved") if isinstance(result.get("saved"), dict) else {}
         for key, mark in saved.items():
@@ -312,7 +368,7 @@ def main():
             run("clear", {"clear": [name]})
 
     def clear_all():
-        if messagebox.askokcancel("Clear all API keys and local server settings?", "This affects Tiger Build too. Provider and search keys and custom MCP configuration are removed. The relay connection and history are kept."):
+        if messagebox.askokcancel("Clear all API keys and local LLM server settings?", "This affects Tiger Build too. Provider and search keys and custom MCP configuration are removed. The relay connection and history are kept."):
             run("clear-all")
 
     def export_settings():
@@ -365,6 +421,11 @@ def main():
                 var = tk.BooleanVar()
                 ttk.Checkbutton(switches, text=title, variable=var).pack(anchor="w")
                 self.toggles[name] = var
+            steps = ttk.Frame(frame)
+            steps.pack(anchor="w", pady=4)
+            ttk.Label(steps, text="Most tool steps in one reply").pack(side="left")
+            self.steps = tk.IntVar(value=40)
+            ttk.Spinbox(steps, from_=1, to=200, width=5, textvariable=self.steps).pack(side="left", padx=6)
             self.provider = tk.StringVar(value="brave")
             pick = ttk.Frame(frame)
             pick.pack(anchor="w")
@@ -420,6 +481,7 @@ def main():
                 return
             self.rows = result.get("servers") or []
             self.provider.set(result.get("search_provider") or "brave")
+            self.steps.set(int(result.get("max_tool_steps") or 40))
             for name, var in self.toggles.items():
                 var.set(bool(result.get(name)))
             self.msg.set("Saved keys: Brave %s, Tavily %s. Imported servers stay disabled until you enable them." % (
@@ -477,6 +539,7 @@ def main():
                 "tavily_api_key": self.tavily.get(),
                 "clear_tavily_key": self.clear_tavily.get(),
                 "search_provider": self.provider.get(),
+                "max_tool_steps": max(1, min(int(self.steps.get() or 40), 200)),
             }
             for name, var in self.toggles.items():
                 payload[name] = bool(var.get())

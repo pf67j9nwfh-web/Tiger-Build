@@ -292,6 +292,157 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
     return (int)tokens;
 }
 
+NSString *TBStoreChangedNotification = @"TBStoreChanged";
+static NSMutableDictionary *openStores = nil;
+
+@implementation TBStore
+
++ (TBStore *)storeAtPath:(NSString *)path
+{
+    TBStore *store;
+    if (!openStores)
+        openStores = [[NSMutableDictionary alloc] init];
+    store = [openStores objectForKey:path];
+    if (store)
+        return store;
+    store = [[[TBStore alloc] initWithPath:path] autorelease];
+    [openStores setObject:store forKey:path];
+    return store;
+}
+
++ (void)forgetAll
+{
+    NSEnumerator *all = [[openStores allValues] objectEnumerator];
+    TBStore *store;
+    while ((store = [all nextObject])) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:store selector:@selector(flush) object:nil];
+        store->dirty = NO;
+    }
+    [openStores removeAllObjects];
+}
+
++ (void)flushAll
+{
+    NSEnumerator *all = [[openStores allValues] objectEnumerator];
+    TBStore *store;
+    while ((store = [all nextObject]))
+        [store flush];
+}
+
+- (id)initWithPath:(NSString *)file
+{
+    NSData *data;
+    NSString *error = nil;
+    id root;
+    NSArray *saved;
+    unsigned i;
+    int highest = 0;
+    self = [super init];
+    if (!self)
+        return nil;
+    path = [file copy];
+    chats = [[NSMutableArray alloc] init];
+    settings = [[NSMutableDictionary alloc] init];
+    data = [NSData dataWithContentsOfFile:path];
+    if (data) {
+        root = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListMutableContainers
+            format:NULL errorDescription:&error];
+        if (error)
+            [error release];
+        if ([root isKindOfClass:[NSDictionary class]]) {
+            saved = [root objectForKey:@"chats"];
+            if ([saved isKindOfClass:[NSArray class]]) {
+                for (i = 0; i < [saved count]; i++) {
+                    NSArray *list = [[saved objectAtIndex:i] objectForKey:@"messages"];
+                    unsigned j;
+                    for (j = 0; j < [list count]; j++) {
+                        /* A reply that was still streaming when the app quit. */
+                        [[list objectAtIndex:j] removeObjectForKey:@"pendingMedia"];
+                        [[list objectAtIndex:j] removeObjectForKey:@"open"];
+                    }
+                    [chats addObject:[saved objectAtIndex:i]];
+                }
+            }
+            highest = [[root objectForKey:@"next"] intValue];
+            if ([[root objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
+                [settings addEntriesFromDictionary:[root objectForKey:@"settings"]];
+        }
+    }
+    /* The saved value is the next number to hand out. Without one, go by the
+       highest chat number there is. */
+    if (highest < 1) {
+        for (i = 0; i < [chats count]; i++) {
+            int number = [[[chats objectAtIndex:i] objectForKey:@"id"] intValue];
+            if (number > highest)
+                highest = number;
+        }
+        highest++;
+    }
+    next = highest;
+    return self;
+}
+
+- (void)dealloc
+{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    [path release];
+    [chats release];
+    [settings release];
+    [super dealloc];
+}
+
+- (NSString *)path { return path; }
+- (NSMutableArray *)chats { return chats; }
+- (NSMutableDictionary *)settings { return settings; }
+- (int)next { return next; }
+- (void)setNext:(int)value { next = value; }
+
+- (int)takeNextId
+{
+    int value = next;
+    next++;
+    return value;
+}
+
+/* A streamed reply, a rename and a model change can all arrive within a
+   second. Write once they settle rather than rewriting the file each time. */
+- (void)markDirty
+{
+    if (dirty)
+        return;
+    dirty = YES;
+    [self performSelector:@selector(flush) withObject:nil afterDelay:0.75];
+}
+
+- (void)flush
+{
+    NSMutableDictionary *root;
+    NSString *error = nil;
+    NSData *data;
+    if (!dirty)
+        return;
+    dirty = NO;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flush) object:nil];
+    root = [NSMutableDictionary dictionary];
+    [root setObject:chats forKey:@"chats"];
+    [root setObject:[NSNumber numberWithInt:next] forKey:@"next"];
+    [root setObject:settings forKey:@"settings"];
+    /* Binary plists are about half the size of XML and much faster to write.
+       Loading reads either format. */
+    data = [NSPropertyListSerialization dataFromPropertyList:root format:NSPropertyListBinaryFormat_v1_0
+        errorDescription:&error];
+    if (error) {
+        NSLog(@"Tiger Build could not save chats: %@", error);
+        [error release];
+    }
+    if (data) {
+        [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+        [data writeToFile:path atomically:YES];
+    }
+}
+
+@end
+
 @implementation ModelCatalog
 
 + (ModelCatalog *)shared

@@ -31,6 +31,8 @@ DEFAULT = {
     "ppc_approval": False,
     # Let the model ask another available model for a second opinion.
     "consult_enabled": True,
+    # Tool rounds one reply may use before the relay stops it and says so.
+    "max_tool_steps": 40,
     "servers": [],
 }
 FLAGS = (
@@ -77,6 +79,10 @@ def validate(obj):
         if type(obj[name]) is not bool:
             raise ValueError(name + " must be true or false.")
         out[name] = obj[name]
+    steps = obj.get("max_tool_steps", DEFAULT["max_tool_steps"])
+    if type(steps) is not int or not 1 <= steps <= 200:
+        raise ValueError("Tool steps per reply must be a whole number from 1 to 200.")
+    out["max_tool_steps"] = steps
     key = obj.get("search_api_key", "")
     if not isinstance(key, str):
         raise ValueError("Search API key must be text.")

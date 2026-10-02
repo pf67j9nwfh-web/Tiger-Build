@@ -338,3 +338,110 @@ class HttpTests(unittest.TestCase):
         conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
         conn.request("GET", "/v1/tools")
         self.assertEqual(conn.getresponse().status, 401)
+
+
+class ControlCharTests(unittest.TestCase):
+    """Terminal output is full of control characters; none may break a turn."""
+
+    def test_activity_card_survives_escape_codes(self):
+        session = C.ToolSession(runs.Run("cc"), C.clean_options({}))
+        event = session._tool_event({"id": "1", "name": "start_process", "arguments": json.dumps({"command": "ls\x1b[1m"})},
+                                    "result", "\x1b[31mred\x1b[0m\x08\x00 text\r\nmore\x1b]0;title\x07", False, 0.5)
+        card = plistlib.loads(event.encode())
+        self.assertEqual(card["output"].replace("\r", ""), "red�� text\nmore")
+        self.assertNotIn("\x1b", card["detail"])
+
+    def test_approval_question_survives_control_characters(self):
+        session = C.ToolSession(runs.Run("cc2"), C.clean_options({"approve": {"all": True}}))
+        gen = session._gate({"id": "c1", "name": "start_process", "arguments": json.dumps({"command": "echo \x07\x1b[0m hi"})})
+        kind, text = next(gen)
+        self.assertEqual(kind, "q")
+        self.assertIn("hi", plistlib.loads(text.encode())["detail"])
+        session.run.cancel()
+
+    def test_tool_step_limit_is_a_setting(self):
+        session = C.ToolSession(runs.Run("cc3"), C.clean_options({}))
+        session.extra.config = dict(session.extra.config, max_tool_steps=5)
+        self.assertEqual(session.max_steps(), 5)
+        session.extra.config = dict(session.extra.config, max_tool_steps="junk")
+        self.assertEqual(session.max_steps(), C.MAX_TOOL_ROUNDS)
+        session.extra.config = dict(session.extra.config, max_tool_steps=9999)
+        self.assertEqual(session.max_steps(), 200)
+
+    def test_step_limit_stops_the_loop_and_says_so(self):
+        # Reuses the fake model/commander from TurnTests.
+        case = TurnTests("test_usage_frame_has_cost")
+        case.setUp()
+        try:
+            session = case.session()
+            session.extra.config = dict(session.extra.config, max_tool_steps=3)
+            rounds = [{"calls": [call("start_process", command="echo %d" % i)]} for i in range(10)]
+            frames = case.frames(session, rounds)
+            ran = [c for c in FakeClient.calls if c[0] == "tools/call"]
+            self.assertEqual(len(ran), 3)
+            self.assertIn("Stopped after 3 tool steps", "".join(t for k, t in frames if k == "t"))
+        finally:
+            for item in case.patches:
+                item.stop()
+
+
+class ConcurrencyTests(unittest.TestCase):
+    def test_runs_with_different_ids_do_not_touch_each_other(self):
+        a, b = runs.start("conc-a-0001"), runs.start("conc-b-0001")
+        a.add_guidance("only a")
+        b.cancel()
+        self.assertTrue(b.cancelled.is_set())
+        self.assertFalse(a.cancelled.is_set())
+        self.assertEqual(b.take_guidance(), [])
+        self.assertEqual(a.take_guidance(), ["only a"])
+        runs.finish(a)
+        runs.finish(b)
+
+    def test_start_gate_limits_simultaneous_logins_per_mac(self):
+        peak = {"now": 0, "max": 0}
+        lock = threading.Lock()
+
+        class Slow(FakeClient):
+            def start(self):
+                with lock:
+                    peak["now"] += 1
+                    peak["max"] = max(peak["max"], peak["now"])
+                import time
+                time.sleep(0.15)
+                with lock:
+                    peak["now"] -= 1
+
+        with patch.object(C, "McpClient", Slow):
+            threads = [threading.Thread(target=C.start_commander, args=({"TIGER_HOST": "gate-host", "TIGER_USER": "u",
+                       "TIGER_KEY": "k", "TIGER_KNOWN": "n", "REMOTE_COMMANDER": "x"},)) for _ in range(9)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+        self.assertLessEqual(peak["max"], C.START_GATE)
+        self.assertGreater(peak["max"], 1)
+
+    def test_one_tool_lookup_for_a_crowd(self):
+        starts = []
+
+        class Counting(FakeClient):
+            def start(self):
+                starts.append(1)
+                import time
+                time.sleep(0.2)
+
+        config = {"TIGER_HOST": "crowd-host", "TIGER_USER": "u", "TIGER_KEY": "k", "TIGER_KNOWN": "n", "REMOTE_COMMANDER": "x"}
+        C.invalidate_tools()
+        results = []
+
+        def one():
+            session = C.ToolSession(runs.Run("crowd"), C.clean_options({}))
+            session.config = config
+            session.linked = True
+            results.append(len(session.definitions()))
+
+        with patch.object(C, "McpClient", Counting):
+            threads = [threading.Thread(target=one) for _ in range(8)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(results, [2] * 8)
+        C.invalidate_tools()

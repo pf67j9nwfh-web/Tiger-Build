@@ -2,8 +2,8 @@
 """Local GUI/CLI service controller. Never exposed by the HTTP relay.
 Usage: control.py status|start|stop|save|autostart|clear-all|clear|config
        integrations|integrations-save|settings-export|settings-import|history-import
-       ssh-test|ssh-save|ssh-forget
-save/autostart/clear/ssh-save read JSON on stdin. No passwords in process arguments.
+       ssh-test|ssh-save|ssh-forget|clients|client-save|client-remove|client-test
+save/autostart/clear/ssh-save/client-* read JSON on stdin. No passwords in process arguments.
 
 macOS uses launchd. Linux uses a systemd user service when a user session
 exists, otherwise the same supervisor Windows uses. Windows uses a logon
@@ -416,6 +416,10 @@ def status():
             'support': str(SUPPORT), 'config': str(CONFIG),
             'tiger_host': config.get('TIGER_HOST') or '', 'tiger_user': config.get('TIGER_USER') or '',
             'tiger_home': config.get('TIGER_HOME') or '',
+            'clients': __import__('connection').list_clients(config),
+            'max_tool_steps': __import__('integrations').read().get('max_tool_steps', 40),
+            'clients': __import__('connection').list_clients(config),
+            'max_tool_steps': __import__('integrations').read().get('max_tool_steps', 40),
             'last_client': last_client(), 'version': VERSION,
             'history': str(SUPPORT / 'history/TigerBuild-history.plist'),
             'has_history': (SUPPORT / 'history/TigerBuild-history.plist').is_file()}
@@ -424,9 +428,26 @@ def status():
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
     ensure_config_file(str(ROOT / '.env'))
-    if cmd in ('save', 'autostart', 'clear', 'history-import', 'integrations-save', 'settings-import', 'ssh-save'):
+    if cmd in ('save', 'autostart', 'clear', 'history-import', 'integrations-save', 'settings-import', 'ssh-save',
+               'client-save', 'client-remove', 'client-test'):
         incoming = json.load(sys.stdin)
-    if cmd in ('ssh-test', 'ssh-save', 'ssh-forget'):
+    if cmd in ('clients', 'client-save', 'client-remove', 'client-test'):
+        import connection
+        result = None
+        if cmd == 'client-save':
+            connection.save_client(incoming.get('address', ''), incoming.get('user', ''), incoming.get('home', ''),
+                                   incoming.get('host', ''))
+            result = connection.test_client(incoming.get('address', ''))
+        elif cmd == 'client-remove':
+            connection.remove_client(incoming.get('address', ''))
+        elif cmd == 'client-test':
+            result = connection.test_client(incoming.get('address', ''))
+        out = status()
+        if result is not None:
+            out['ssh_result'] = result
+        print(json.dumps(out))
+        return
+    elif cmd in ('ssh-test', 'ssh-save', 'ssh-forget'):
         import connection
         changed = False
         if cmd == 'ssh-save':

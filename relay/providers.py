@@ -228,6 +228,14 @@ OPENAI_RESPONSES = (
     "o1-pro",
 )
 
+def openai_reasoning_model(model):
+    """Models that reason before answering, so they have something to show."""
+    model = (model or "").lower()
+    if "chat" in model or "audio" in model or "realtime" in model or "image" in model:
+        return False
+    return model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6"))
+
+
 ENV_MODEL = {
     "grok": "XAI_MODEL",
     "chatgpt": "OPENAI_MODEL",
@@ -1286,11 +1294,31 @@ def stream_round(provider, system, log, tools, holder, ssl_context, api_error_te
         )
         return
     key = require_key(provider)
+    wants_summary = (
+        provider == "chatgpt" and not probing and endpoint != "responses" and openai_reasoning_model(model)
+        and show_thinking()
+    )
     if provider == "chatgpt" and (endpoint == "responses" or (endpoint is None and model in OPENAI_RESPONSES)):
         yield from stream_openai_responses(
             key, model, system, log, tools, holder, ssl_context, api_error_text
         )
         return
+    if wants_summary:
+        # Chat completions never return reasoning, so a reasoning model is
+        # asked through the Responses API, which returns summaries. If that
+        # API refuses before anything was said, fall back to chat completions.
+        spoke = False
+        try:
+            for piece in stream_openai_responses(
+                key, model, system, log, tools, holder, ssl_context, api_error_text
+            ):
+                spoke = True
+                yield piece
+            return
+        except RuntimeError:
+            if spoke:
+                raise
+            holder["calls"] = []
     if provider in ("chatgpt", "muse", "mistral"):
         if provider == "chatgpt":
             url = OPENAI_URL

@@ -547,8 +547,8 @@ static NSString *newRunId(void)
         [sendButton setEnabled:NO];
         [sendButton setToolTip:nil];
     }
-    [editButton setEnabled:!busy && [self lastUserIndex] >= 0];
-    [retryButton setEnabled:!busy && [self lastUserIndex] >= 0];
+    [editButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
+    [retryButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
     [editButton setTitle:editBackup ? @"Cancel Edit" : @"Edit Last"];
 }
 
@@ -573,7 +573,7 @@ static NSString *newRunId(void)
     NSDictionary *userMessage;
     NSMutableDictionary *openMessage;
     (void)sender;
-    if (busy || !current)
+    if (busy || !current || [self chatIsBusyElsewhere:current])
         return;
     if (editBackup)
         [self cancelEdit:nil];
@@ -609,7 +609,7 @@ static NSString *newRunId(void)
     int index;
     NSString *text;
     (void)sender;
-    if (busy || !current)
+    if (busy || !current || [self chatIsBusyElsewhere:current])
         return;
     if (editBackup) {
         [self cancelEdit:nil];

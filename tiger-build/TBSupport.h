@@ -53,6 +53,33 @@ NSString *TBChatListProblem(id chats);
 NSDictionary *TBHistoryBundle(id root, NSString *fallbackName);
 BOOL TBWorkspaceNameOK(NSString *name);
 
+/* One workspace's chats, shared by every window that shows it. Windows used
+   to each load their own copy of the file, so the one that saved last
+   silently erased the other's work. A store is created on first use and
+   found again by path; saves are batched and written once. */
+extern NSString *TBStoreChangedNotification;
+@interface TBStore : NSObject {
+    NSString *path;
+    NSMutableArray *chats;
+    NSMutableDictionary *settings;
+    int next;
+    BOOL dirty;
+}
+- (id)initWithPath:(NSString *)file;
++ (TBStore *)storeAtPath:(NSString *)path;
+/* Forget every open store without saving: the files were replaced. */
++ (void)forgetAll;
++ (void)flushAll;
+- (NSString *)path;
+- (NSMutableArray *)chats;
+- (NSMutableDictionary *)settings;
+- (int)next;
+- (int)takeNextId;
+- (void)setNext:(int)value;
+- (void)markDirty;
+- (void)flush;
+@end
+
 /* Rough token count for a chat, used for the context readout and to decide
    when to compact. messages holds dictionaries with text/role/status/image. */
 int TBEstimateTokens(NSArray *messages, BOOL toolsOn);

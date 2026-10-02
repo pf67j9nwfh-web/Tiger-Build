@@ -9,14 +9,37 @@ Tiger Build is a Cocoa chat window for old Macs. Each chat picks its own service
 
 Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE).
 
-| Tiger Build Relay | Tools and MCP servers |
-| --- | --- |
-| ![Tiger Build Relay main window](docs/screenshots/relay-main.png) | ![MCP servers and agent tools](docs/screenshots/relay-tools.png) |
+## Screenshots
 
-*Screenshots use example addresses and an example account; the token is hidden.*
+**The client**, on Mac OS X 10.4 Tiger (PowerPC, brushed metal) and on 10.6 Snow Leopard (Intel):
+
+| Tiger | Snow Leopard |
+| --- | --- |
+| ![Tiger Build on Tiger: a chat that used the calculator, notebook and time tools](docs/screenshots/client-tiger-chat.png) | ![Tiger Build on Snow Leopard running a shell command and two calculator tools](docs/screenshots/client-snowleopard-chat.png) |
+
+**Asking before a tool runs, with the model's thinking shown above the message box while it works** (Stop and Guide replace Send while a reply runs), and **the Tools menu**, which switches each tool on or off for the chat:
+
+| Approval and live thinking | Tools menu |
+| --- | --- |
+| ![The approval question for a notebook tool, with the live thinking strip](docs/screenshots/client-approval.png) | ![The Tools menu: Commander and every MCP server, Ask Before Running, and settings](docs/screenshots/client-tools-menu.png) |
+
+**Preferences** are in tabs so they fit a 1024x768 screen, and **MCP servers** are a list with an edit sheet:
+
+| Commander | Local LLM Server | MCP servers |
+| --- | --- | --- |
+| ![Preferences, Commander tab](docs/screenshots/client-preferences-commander.png) | ![Preferences, Local LLM Server tab](docs/screenshots/client-preferences-llm.png) | ![MCP Servers tab](docs/screenshots/client-mcp-servers.png) |
+
+**The relay app** (macOS shown; Windows and Linux have the same settings in a Tk window):
+
+| Relay | Tools and MCP servers | Connected Macs |
+| --- | --- | --- |
+| ![Tiger Build Relay main window](docs/screenshots/relay-main.png) | ![MCP servers and agent tools](docs/screenshots/relay-tools.png) | ![Connected Macs window](docs/screenshots/relay-macs.png) |
+
+*Screenshots use example addresses, accounts and servers; the token is hidden.*
 
 ## Contents
 
+- [Screenshots](#screenshots)
 - [How it fits together](#how-it-fits-together)
 - [What you need](#what-you-need)
 - [Setup](#setup)
@@ -133,7 +156,7 @@ The settings folder is **`~/Library/Application Support/Tiger Build Relay/`** on
 | --- | --- |
 | `config.sh` | Tiger Mac address and user (also editable in the relay app's Tiger Mac settings or in Tiger Build's Preferences, Commander), SSH key paths, relay port, optional `LISTEN_ADDR`, `ALLOWED_CLIENTS`, `RELAY_TOKEN`, `TIGER_HOME` (override path: `TIGERBUILD_RELAY_CONFIG`) |
 | `pricing-cache.json` | Model prices used for the cost estimate, fetched when the relay starts and then daily; the last copy is kept so costs work offline |
-| `providers.json` | API keys, Anthropic workspace ID, local server address and key (mode 600) |
+| `providers.json` | API keys, Anthropic workspace ID, local LLM server address and key (mode 600) |
 | `integrations.json` | Tool switches, Brave/Tavily keys and choice, Claude thinking, custom MCP servers (mode 600) |
 | `relay-token` | The shared token Tiger Build must send (mode 600) |
 | `models-cache.json` | Results of the model tests |
@@ -172,11 +195,12 @@ Elsewhere on the Tiger Mac: `~/Library/Preferences/local.tigerbuild.TigerBuild.p
 - **Tools.** The **Tools** button under the chat list switches each tool on or off for the chat: Commander, the agent toolbox, web search, other models (see below) and every custom MCP server. **Ask Before Running** makes the model wait for your answer before it runs a tool, for all tools or for chosen ones, and "Always Allow" in the question turns it off for that tool in that chat. The choices are remembered per chat. Each tool call shows as a card; click it to see the command and its output.
 - **Stop and guidance.** **Stop** (⌘.) ends a running reply at once, even in the middle of a long command. While a model works with tools, **Send** becomes **Guide** (its dot blinks while the model runs): a note typed then is delivered to the model between steps, never in the middle of a command. If the reply ends first, the note goes back into the message box. Guidance is offered for Grok, ChatGPT, Claude, Gemini and Mistral.
 - **Edit and retry.** **Retry** sends your last message again and replaces the reply. **Edit Last** takes the last message back into the message box to change; Cancel Edit (or Escape) puts everything back.
-- **Thinking.** "Show model thinking" is on by default (Tools settings). Returned reasoning appears in its own card, and the latest of it stays visible just above the message box while the model runs, so it does not scroll away. Claude, ChatGPT Responses models, Gemini, Mistral reasoning models and local models return readable reasoning; ChatGPT chat-completions models and Grok do not.
+- **Thinking.** "Show model thinking" is on by default (Tools settings). Returned reasoning appears in its own card, and the latest of it stays visible just above the message box while the model runs, so it does not scroll away. It is shown for Claude, ChatGPT reasoning models (o-series, GPT-5 and 6; asked through the Responses API, which returns summaries), Grok, Gemini, Mistral Magistral and local reasoning models. A model shows nothing when it chose not to reason about that question, and non-reasoning models (for example GPT-4.1) have nothing to show.
 - **Cost and context.** The line above the chat shows the context in use and a running **estimated cost** of the chat, summed over every model it used (hover it for the breakdown). Rates come from a public price list the relay fetches, including the higher rates some services charge for very large prompts. Local models show N/A. It is an estimate, not an invoice. When a chat's context fills, it is summarized (also Chat, Compact Chat Now), and long tool runs trim old output to stay inside the window. A reply that hits the model's output limit ends with a note instead of an error.
 - **Screenshots.** Commander has a `take_screenshot` tool; a model that can see pictures uses it to look at the Mac's screen (someone must be logged in at its console).
 - **Ask other models.** When switched on for a chat, the model can ask any other working model for a second opinion with `consult_model`. The other model's usage is counted in the chat's cost.
-- **Commander runs on the Mac you chat from.** The relay keeps one SSH link per Tiger Build computer (`ssh-clients.json`), so a MacBook and a Power Mac using the same relay each get their own files, shell and screenshots. A computer that has not chosen Configuration, Connect Commander over SSH gets no Commander, and says so, rather than silently using another Mac. Tiger Build offers to connect when it sees this.
+- **Commander runs on the Mac you chat from.** The relay keeps one SSH link per Tiger Build computer (`ssh-clients.json`), so a MacBook and a Power Mac using the same relay each get their own files, shell and screenshots. A computer that has not chosen Configuration, Connect Commander over SSH gets no Commander, and says so, rather than silently using another Mac. Tiger Build offers to connect when it sees this. Several windows, and several computers, can work at once: windows share one copy of each workspace's chats (a chat that is working in one window cannot be sent to from another), each window has its own workspace, and the relay handles each request separately, limiting simultaneous SSH logins to one Mac so an old sshd is not overwhelmed. A burst of 24 simultaneous chats was tested; the only failures were a local LLM server refusing that many parallel generations.
+- **Tool steps.** A reply may use up to 40 tool steps (set 1 to 200 under Tools settings, Most tool steps in one reply). At the limit the relay stops it and says so; say "continue" to go on.
 - **Relay and Commander status.** A red line at the top of the chat says when the relay cannot be reached, rejects the token, or does not accept this Mac's address. An orange one says why Commander cannot run, for example that SSH cannot sign in, Remote Login is off, or the host key changed, with the fix. During a long run the relay sends heartbeats, so a slow command never looks like a lost connection.
 - **Commander menu.** Start, Stop and Start at Login for ppc-commander as a standalone service, and this Mac's model, OS and IP addresses. The status line shows On or Off.
 - **History menu.** Export, import and clear the history of **all workspaces at once**, or copy it to and from the relay Mac. Files from 1.2 (one workspace) still import, into the current workspace.
@@ -186,7 +210,7 @@ Every menu command has a keyboard shortcut, shown in the menu.
 
 ## Tiger Build Relay app
 
-The Mac app and the Windows and Linux settings windows show the same things: whether the relay is running, its address, port and token, the Tiger Mac, start and stop, start at login, API keys, and the local server. Closing the window leaves the relay running.
+The Mac app and the Windows and Linux settings windows show the same things: whether the relay is running, its address, port and token, the Tiger Mac, start and stop, start at login, API keys, and the local server. Closing the window leaves the relay running. They also list the **Connected Macs**: each Mac that chats through the relay with its account, home folder and where its tools run, with Add, Save and Test, Test and Remove. Everything needed to connect a Mac can be done from these windows, from Tiger Build's own Preferences (Commander tab: Connect, Test, Forget Host Key, Disconnect), or by choosing Configuration, Connect Commander over SSH in Tiger Build.
 
 From Terminal, without opening a window:
 
@@ -200,7 +224,7 @@ From Terminal, without opening a window:
 ## Models, tools and search
 
 - **Live model list.** At start and every six hours the relay asks each service that has a key for its models, drops non-chat models, and sends each a tiny test request with a tool. Only models that pass are offered. Changing a key retests that service.
-- **Local server.** None is assumed. The address is as seen from the relay computer, and it is not the relay's own address. LM Studio on the relay computer is usually `http://127.0.0.1:1234/v1`. LM Studio on another computer is that computer's address, for example `http://10.0.1.105:1234/v1`.
+- **Local LLM server.** None is assumed. The address is as seen from the relay computer, and it is not the relay's own address. LM Studio on the relay computer is usually `http://127.0.0.1:1234/v1`. LM Studio on another computer is that computer's address, for example `http://10.0.1.105:1234/v1`.
 - **Custom MCP servers.** Add stdio servers (absolute program path, arguments, environment) in the MCP Servers tab of the tools panel of either app; double-click a server to edit it. Each can be switched on, and set to ask first. They run on the relay Mac and start disabled; enable only programs you trust. `relay/http_mcp.py` bridges Streamable HTTP servers.
 - **Example MCP servers.** `mcp-examples/` has three small servers to try the custom-server feature, in Python 3 with no dependencies: `mcp_calc.py` (exact arithmetic and unit conversion), `mcp_notes.py` (a notebook the model can write to; add it with "Ask first" on to see approvals) and `mcp_sysinfo.py` (host facts, plus `slow_task` and `always_fails` for testing Stop and errors). In the MCP Servers tab choose Add, set the program to your Python 3 (for example `/usr/local/bin/python3`) and the argument to the full path of the script. The official reference servers also work: for example program `/path/to/npx` with arguments `-y|@modelcontextprotocol/server-filesystem|/some/folder`, and environment `PATH=/path/to/node/bin:/usr/bin:/bin` (or `uvx` with `mcp-server-time`). They run on the relay computer.
 - **Agent toolbox.** Optional UTC time and scratch-note tools.

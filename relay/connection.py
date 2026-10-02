@@ -322,6 +322,65 @@ def register_client(address, user, home="", host=""):
     return data[address]
 
 
+def remove_client(address):
+    """Forget a connected computer. It can connect again later."""
+    import json
+    address = _plain(address)
+    with _LOCK:
+        data = load_clients()
+        found = data.pop(address, None) is not None
+        path = clients_path()
+        temporary = path + ".tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(data, handle, indent=2)
+        os.replace(temporary, path)
+    return found
+
+
+def list_clients(config=None):
+    """Every computer the relay will run Commander for: [{address, host, user,
+    home, default}]. The Mac in config.sh comes first, marked default."""
+    config = config or load_shell_config()
+    rows = []
+    default = (config.get("TIGER_HOST") or "").strip()
+    if default:
+        rows.append({"address": default, "host": default, "user": config.get("TIGER_USER") or "",
+                     "home": config.get("TIGER_HOME") or "", "default": True})
+    for address, entry in sorted(load_clients().items()):
+        if address == default:
+            continue
+        rows.append({"address": address, "host": entry.get("host") or address, "user": entry.get("user") or "",
+                     "home": entry.get("home") or "", "default": False})
+    return rows
+
+
+def save_client(address, user, home="", host="", config=None):
+    """Add or change a computer from a relay app. The relay's own default Mac
+    is changed through config.sh instead."""
+    config = config or load_shell_config()
+    address = _plain(address)
+    default = (config.get("TIGER_HOST") or "").strip()
+    if address == default:
+        return update_config({"TIGER_USER": user, "TIGER_HOME": home})
+    register_client(address, user, home, host)
+    return load_shell_config()
+
+
+def test_client(address, config=None):
+    config = config or load_shell_config()
+    target = target_config(config, address)
+    if target is None:
+        code, message = diagnose("This Mac has not been connected", None, {"TIGER_HOST": "x", "TIGER_USER": "x"})
+        return {"ok": False, "code": code, "message": message}
+    try:
+        ensure_key(target)
+        remember_host_key(target)
+    except RuntimeError as exc:
+        return {"ok": False, "code": "hostkey", "message": str(exc)}
+    return test(target)
+
+
 def target_config(config, address):
     """The settings for running Commander for the computer at address, or None
     when that computer has not been connected."""

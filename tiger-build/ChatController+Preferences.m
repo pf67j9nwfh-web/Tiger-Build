@@ -97,7 +97,7 @@ static NSString *splitBase(NSString *base, NSString **port)
 - (NSString *)localStatusText:(NSString *)status url:(NSString *)url
 {
     if ([url length] == 0 || [status isEqualToString:@"unset"])
-        return @"No local server set up. Enter its address if you use one.";
+        return @"No local LLM server set up. Enter its address if you use one.";
     if ([status hasPrefix:@"ok "])
         return [NSString stringWithFormat:@"In use: %@ - answering, %d models loaded", url,
             [[status substringFromIndex:3] intValue]];
@@ -154,7 +154,7 @@ static NSString *splitBase(NSString *base, NSString **port)
             saved++;
     }
     if (saved == 0)
-        [self setPreferencesStatus:@"No provider keys yet. Add any you use, or use only a local server."];
+        [self setPreferencesStatus:@"No provider keys yet. Add any you use, or use only a local LLM server."];
 }
 
 /* Write the relay address, port, and token. NO (with an alert) if unusable. */
@@ -275,7 +275,7 @@ static NSString *splitBase(NSString *base, NSString **port)
 - (void)clearAllSettings:(id)sender
 {
     (void)sender;
-    if (NSRunAlertPanel(@"Clear all relay settings?", @"Remove every provider/search API key, workspace ID, local server settings and custom MCP configuration? "
+    if (NSRunAlertPanel(@"Clear all relay settings?", @"Remove every provider/search API key, workspace ID, local LLM server settings and custom MCP configuration? "
         @"The relay connection and chat history are kept. This affects the relay GUI too.", @"Clear All", @"Cancel", nil)
         != NSAlertDefaultReturn) return;
     [RelayRequest send:@"POST" path:@"/v1/settings" body:@"{\"clear_all\":true}" timeout:15
@@ -579,7 +579,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     /* ---- API keys ---- */
     tab = [self preferencesTab:@"API Keys" in:tabs];
     y = 304;
-    [self preferencesNote:@"Add a key for each service you use. One is enough, and none is fine if you only use a local server."
+    [self preferencesNote:@"Add a key for each service you use. One is enough, and none is fine if you only use a local LLM server."
         frame:NSMakeRect(16, y - 14, 520, 30) inView:tab];
     y -= 40;
     keys = [NSArray arrayWithObjects:
@@ -602,10 +602,10 @@ static NSString *splitBase(NSString *base, NSString **port)
         y -= 34;
     }
 
-    /* ---- Local server ---- */
-    tab = [self preferencesTab:@"Local Server" in:tabs];
+    /* ---- Local LLM server ---- */
+    tab = [self preferencesTab:@"Local LLM Server" in:tabs];
     y = 284;
-    field = [self preferencesRow:@"Local server address" key:@"local_url" y:y secure:NO width:190
+    field = [self preferencesRow:@"Local LLM server address" key:@"local_url" y:y secure:NO width:190
         help:@"An OpenAI-compatible server such as LM Studio, as this computer sees it. "
              @"It can be another computer. It is not the relay address. "
              @"Example on the relay computer: http://127.0.0.1:1234/v1. "
@@ -618,7 +618,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     [prefsFields setObject:note forKey:@"local.inuse"];
     y -= 34;
     [self preferencesRow:@"Local API key (optional)" key:@"local_api_key" y:y secure:YES width:190
-        help:@"Optional. Only needed if your local server was set up to require a key. "
+        help:@"Optional. Only needed if your local LLM server was set up to require a key. "
              @"LM Studio does not require one unless you turn that on."
         removable:@"Remove" inView:tab];
 
@@ -640,10 +640,10 @@ static NSString *splitBase(NSString *base, NSString **port)
     /* ---- Commander ---- */
     tab = [self preferencesTab:@"Commander" in:tabs];
     y = 292;
-    [self preferencesNote:@"The relay runs Commander's tools on a Mac over SSH. These say which Mac and which account. "
-        @"Connect adds the relay's key to this Mac so no password is needed."
-        frame:NSMakeRect(16, y - 14, 520, 32) inView:tab];
-    y -= 56;
+    [self preferencesNote:@"The relay runs Commander's tools on the Mac you chat from, and keeps one connection for each Mac that uses it. "
+        @"These settings are for THIS Mac. Connect adds the relay's key here so no password is needed."
+        frame:NSMakeRect(16, y - 28, 520, 46) inView:tab];
+    y -= 74;
     [self preferencesRow:@"Mac's address" key:@"ssh_host" y:y secure:NO width:190
         help:@"The IP address or name of the Mac whose files and shell the model uses, as the relay sees it. For this Mac, choose Connect below."
         removable:nil inView:tab];
@@ -659,6 +659,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     [self preferencesButton:@"Connect This Mac" frame:NSMakeRect(16, y, 150, 28) action:@selector(connectCommanderSSH:) inView:tab];
     [self preferencesButton:@"Test" frame:NSMakeRect(172, y, 80, 28) action:@selector(testSSH:) inView:tab];
     [self preferencesButton:@"Forget Host Key" frame:NSMakeRect(258, y, 130, 28) action:@selector(forgetSSHHostKey:) inView:tab];
+    [self preferencesButton:@"Disconnect" frame:NSMakeRect(394, y, 110, 28) action:@selector(disconnectCommander:) inView:tab];
     y -= 56;
     note = [self preferencesNote:@"" frame:NSMakeRect(16, y, 520, 54) inView:tab];
     [prefsFields setObject:note forKey:@"ssh.status"];
@@ -740,6 +741,16 @@ static NSString *splitBase(NSString *base, NSString **port)
     (void)sender;
     [self setSSHStatus:@"Testing..."];
     [RelayRequest send:@"POST" path:@"/v1/ssh/test" body:@"{}" timeout:40 target:self action:@selector(sshResultArrived:) context:nil];
+}
+
+- (void)disconnectCommander:(id)sender
+{
+    (void)sender;
+    if (NSRunAlertPanel(@"Disconnect this Mac?", @"The relay stops running Commander for this Mac. Chats still work without tools. "
+        @"You can connect again at any time.", @"Disconnect", @"Cancel", nil) != NSAlertDefaultReturn)
+        return;
+    [self setSSHStatus:@"Working..."];
+    [RelayRequest send:@"POST" path:@"/v1/ssh/remove" body:@"{}" timeout:20 target:self action:@selector(sshResultArrived:) context:nil];
 }
 
 - (void)forgetSSHHostKey:(id)sender

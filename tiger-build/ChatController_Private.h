@@ -50,6 +50,13 @@
 - (void)showWorkspaceSettings:(id)sender;
 - (void)connectCommanderSSH:(id)sender;
 - (void)compactNow:(id)sender;
+- (void)setWorkspaceChoice:(NSString *)name;
+- (void)announceStoreChange;
+- (BOOL)chatIsBusyElsewhere:(NSDictionary *)chat;
+- (BOOL)anyWindowBusy;
+- (BOOL)isBusy;
+- (void)storeChanged:(NSNotification *)note;
+- (void)storesReplaced:(NSNotification *)note;
 - (void)startTurn;
 - (void)finishWithoutStream:(NSMutableDictionary *)chat;
 - (NSMutableDictionary *)chatWithId:(NSString *)chatId;

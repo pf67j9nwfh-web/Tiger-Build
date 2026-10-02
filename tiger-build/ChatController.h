@@ -2,6 +2,7 @@
 #import "TBCompat.h"
 
 @class RelayRequest;
+@class TBStore;
 
 @interface ChatController : NSObject {
     NSWindow *window;
@@ -45,7 +46,13 @@
     id transcript;
     NSMutableArray *chats;
     NSMutableDictionary *current;
-    int nextNumber;
+    TBStore *store;
+    NSString *workspaceChoice;
+    int streamDepth;
+    int streamEndDeferred;
+    BOOL compactForced;
+    BOOL compactOnly;
+    BOOL layingOut;
     BOOL suppressSelection;
     BOOL busy;
     void *bodyStream;
@@ -66,7 +73,6 @@
     NSMutableDictionary *prefsFields;
     NSWindow *prefsWindow;
     NSMutableDictionary *contextPending;
-    BOOL storeDirty;
     NSTextField *relayStatusField;
     NSTimer *relayTimer;
     BOOL relayReachable;
