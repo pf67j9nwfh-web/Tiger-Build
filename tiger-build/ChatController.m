@@ -406,7 +406,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     if (row >= (int)[chats count])
         row = (int)[chats count] - 1;
     if (row >= 0)
-        [table selectRow:row byExtendingSelection:NO];
+        [table selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
     suppressSelection = NO;
     if (show)
         [self showChatAtIndex:row];
@@ -425,12 +425,23 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     NSTableColumn *column;
     NSFont *labelFont;
 
-    window = [[NSWindow alloc] initWithContentRect:NSMakeRect(40, 80, 860, 660)
-                                         styleMask:mask
-                                           backing:NSBackingStoreBuffered
-                                             defer:NO];
+    /* 860x660 on a 1024x768 or larger screen; smaller screens (an iBook's
+       800x600) get a window that fits what is visible. */
+    {
+        NSRect visible = [[NSScreen mainScreen] visibleFrame];
+        float w = 860;
+        float h = 660;
+        if (w > NSWidth(visible) - 20)
+            w = NSWidth(visible) - 20;
+        if (h > NSHeight(visible) - 24)
+            h = NSHeight(visible) - 24;
+        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(NSMinX(visible) + 10, NSMaxY(visible) - h - 10, w, h)
+                                             styleMask:mask
+                                               backing:NSBackingStoreBuffered
+                                                 defer:NO];
+    }
     [window setTitle:@"Tiger Build"];
-    [window setMinSize:NSMakeSize(680, 440)];
+    [window setMinSize:NSMakeSize(640, 420)];
     [window setDelegate:self];
     if (nextWindowIsExtra) {
         extraWindowCount++;
@@ -1050,8 +1061,12 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [bar addItem:slot];
     }
 
-    [bar setValue:@"NSMainMenu" forKey:@"name"];
-    [appMenu setValue:@"NSAppleMenu" forKey:@"name"];
+    /* Tiger needs these private names to treat the first menu as the application
+       menu. Leopard and later find it as the first item, and the names break the menu bar there. */
+    if (TBSystemMinor() < 5) {
+        [bar setValue:@"NSMainMenu" forKey:@"name"];
+        [appMenu setValue:@"NSAppleMenu" forKey:@"name"];
+    }
     {
         NSDictionary *shortcuts=[NSDictionary dictionaryWithObjectsAndKeys:
             @"n",@"newChat:",@"N",@"newWorkspace:",@"]",@"workspaceNext:",@"l",@"focusComposer:",
@@ -1065,7 +1080,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             applyMenuShortcuts([[bar itemAtIndex:g] submenu], shortcuts);
     }
     [NSApp setMainMenu:bar];
-    [NSApp setAppleMenu:appMenu];
+    if (TBSystemMinor() < 5)
+        [NSApp setAppleMenu:appMenu];
     [appMenu release];
     [bar release];
 }
@@ -1570,7 +1586,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [self cancelPendingInputFocus];
     renameRow = row;
     suppressSelection = YES;
-    [table selectRow:row byExtendingSelection:NO];
+    [table selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
     suppressSelection = NO;
     [self showChatAtIndex:row];
     if (!renameField) {
@@ -1625,7 +1641,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         if (row >= (int)[chats count])
             row = (int)[chats count] - 1;
         if (row >= 0)
-            [table selectRow:row byExtendingSelection:NO];
+            [table selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
         suppressSelection = NO;
         [self showChatAtIndex:row];
     }

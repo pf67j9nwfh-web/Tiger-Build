@@ -1,4 +1,5 @@
 #import "TranscriptView.h"
+#import "TBSupport.h"
 #if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
 #endif
@@ -744,6 +745,22 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     return menu;
 }
 
+/* Double-click a picture: Leopard and Snow Leopard have Quick Look, which
+   shows it in a floating preview; on Tiger it opens in the default viewer. */
+- (void)openMediaPath:(NSString *)path
+{
+    if(!path)return;
+    if(TBSystemMinor()>=5&&[[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/bin/qlmanage"]) {
+        NSTask *task=[[[NSTask alloc] init] autorelease];
+        [task setLaunchPath:@"/usr/bin/qlmanage"];
+        [task setArguments:[NSArray arrayWithObjects:@"-p",path,nil]];
+        [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+        [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+        [task launch];
+        return;
+    }
+    [[NSWorkspace sharedWorkspace] openFile:path];
+}
 - (void)copyMessageText:(id)sender
 {
     NSPasteboard *p=[NSPasteboard generalPasteboard];[p declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
@@ -753,6 +770,12 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 {
     NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
     if([event clickCount]>1) {
+        for(i=0;i<[boxes count];i++) {
+            NSDictionary *pictureBox=[boxes objectAtIndex:i];
+            if([pictureBox objectForKey:@"imageRect"]&&NSPointInRect(point,[[pictureBox objectForKey:@"imageRect"] rectValue])) {
+                [self openMediaPath:[pictureBox objectForKey:@"image"]];return;
+            }
+        }
         for(i=0;i<[boxes count];i++) {
             NSDictionary *box=[boxes objectAtIndex:i];
             if([box objectForKey:@"videoRect"]&&NSPointInRect(point,[[box objectForKey:@"videoRect"] rectValue])&&![self playingVideo:[box objectForKey:@"video"]]) {
