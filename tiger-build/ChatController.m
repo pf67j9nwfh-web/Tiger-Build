@@ -605,7 +605,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [thinkingField setFont:[NSFont systemFontOfSize:11]];
     [thinkingField setTextColor:[NSColor colorWithCalibratedWhite:0.28 alpha:1]];
     [[thinkingField cell] setWraps:YES];
-    [[thinkingField cell] setLineBreakMode:NSLineBreakByTruncatingHead];
+    [[thinkingField cell] setLineBreakMode:NSLineBreakByWordWrapping];
     [chatPane addSubview:thinkingField];
 
     relayStatusField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];

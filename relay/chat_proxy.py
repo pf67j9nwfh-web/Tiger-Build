@@ -346,7 +346,7 @@ def start_discovery(run=True):
     return DISCOVERY
 
 
-_TOOL_CACHE = {"tools": None, "at": 0.0, "offline": "", "code": ""}
+_TOOL_CACHE = {"tools": None, "at": 0.0, "offline": "", "code": "", "detail": ""}
 _TOOL_LOCK = threading.Lock()
 TOOL_CACHE_SECONDS = 300
 OFFLINE_RETRY_SECONDS = 15
@@ -528,6 +528,7 @@ class ToolSession(object):
             offline = ""
         except Exception as exc:
             tools = []
+            message = ""
             code, message = connection.diagnose(client.stderr_text(), exc, self.config)
             offline = "Tiger Mac tools are offline. %s" % (message or str(exc))
             sys.stderr.write("tigerbuild-relay: %s (%s)\n" % (offline, exc))
@@ -538,6 +539,7 @@ class ToolSession(object):
             _TOOL_CACHE["at"] = time.time()
             _TOOL_CACHE["offline"] = offline
             _TOOL_CACHE["code"] = code
+            _TOOL_CACHE["detail"] = (message or "") if offline else ""
         self.tools = tools
         self.offline = offline
         self.offline_code = code
@@ -1501,7 +1503,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/tools":
             from integrations import catalogue
             with _TOOL_LOCK:
-                offline = _TOOL_CACHE["offline"]
+                offline = _TOOL_CACHE["detail"] or _TOOL_CACHE["offline"]
                 code = _TOOL_CACHE["code"]
             payload = plistlib.dumps({"tools": catalogue(), "commander_problem": offline,
                                       "commander_code": code}, fmt=plistlib.FMT_XML)
@@ -1723,7 +1725,7 @@ class Handler(BaseHTTPRequestHandler):
         config = load_shell_config()
         info = connection.describe(config)
         with _TOOL_LOCK:
-            offline = _TOOL_CACHE["offline"]
+            offline = _TOOL_CACHE["detail"] or _TOOL_CACHE["offline"]
             code = _TOOL_CACHE["code"]
             known = _TOOL_CACHE["tools"] is not None
         rows = [
