@@ -140,8 +140,10 @@ static void shadeEvaluate(void *info, const CGFloat *in, CGFloat *out)
     CGFloat t = in[0];
     CGFloat gloss = 0.0;
     int i;
-    if (t < 0.28)
-        gloss = (0.28 - t) / 0.28 * 0.62;
+    /* The upper half is lighter than the lower, with a soft edge between them,
+       like the glass look of iChat and iOS 6 Messages. */
+    if (t < 0.5)
+        gloss = 0.11 + 0.17 * (0.5 - t) / 0.5;
     for (i = 0; i < 3; i++) {
         CGFloat c = shade->top[i] + (shade->bottom[i] - shade->top[i]) * t;
         c = c + (1.0 - c) * gloss;
@@ -195,6 +197,26 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 }
 
 @implementation TranscriptView
+
+/* The backdrop of iOS 6 Messages and iChat: a light blue-gray with very fine
+   vertical lines. A tiled picture, so painting it costs one fill. */
++ (NSColor *)backgroundColor
+{
+    static NSColor *color = nil;
+    NSImage *tile;
+    if (color)
+        return color;
+    tile = [[NSImage alloc] initWithSize:NSMakeSize(4, 4)];
+    [tile lockFocus];
+    [[NSColor colorWithCalibratedRed:215.0 / 255.0 green:219.0 / 255.0 blue:227.0 / 255.0 alpha:1] set];
+    NSRectFill(NSMakeRect(0, 0, 4, 4));
+    [[NSColor colorWithCalibratedRed:205.0 / 255.0 green:210.0 / 255.0 blue:220.0 / 255.0 alpha:1] set];
+    NSRectFill(NSMakeRect(0, 0, 1, 4));
+    [tile unlockFocus];
+    color = [[NSColor colorWithPatternImage:tile] retain];
+    [tile release];
+    return color;
+}
 
 - (id)initWithFrame:(NSRect)frame
 {
@@ -473,11 +495,11 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             [box setObject:[NSValue valueWithRect:NSMakeRect(24, yFromTop, layoutWidth - 48, used.size.height+(activity?18:0))] forKey:@"topRect"];
             yFromTop += used.size.height + (activity?28:10);
         } else {
-            bubble.size.width = used.size.width + 28;
-            if (imageW + 28 > bubble.size.width)
-                bubble.size.width = imageW + 28;
-            if (videoW + 28 > bubble.size.width)
-                bubble.size.width = videoW + 28;
+            bubble.size.width = used.size.width + 34;
+            if (imageW + 34 > bubble.size.width)
+                bubble.size.width = imageW + 34;
+            if (videoW + 34 > bubble.size.width)
+                bubble.size.width = videoW + 34;
             bubble.size.height = used.size.height + 18;
             if (imageH > 0)
                 bubble.size.height += imageH + 8;
@@ -515,13 +537,13 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             float stackY = NSMinY(rect) + 10;
             if ([box objectForKey:@"image"]) {
                 NSSize imageSize = [[box objectForKey:@"imageSize"] sizeValue];
-                NSRect imageRect = NSMakeRect(NSMinX(rect) + 14, stackY, imageSize.width, imageSize.height);
+                NSRect imageRect = NSMakeRect(NSMinX(rect) + 17, stackY, imageSize.width, imageSize.height);
                 [box setObject:[NSValue valueWithRect:imageRect] forKey:@"imageRect"];
                 stackY += imageSize.height + 8;
             }
             if ([box objectForKey:@"video"]) {
                 NSSize videoSize = [[box objectForKey:@"videoSize"] sizeValue];
-                NSRect videoRect = NSMakeRect(NSMinX(rect) + 14, stackY, videoSize.width, videoSize.height);
+                NSRect videoRect = NSMakeRect(NSMinX(rect) + 17, stackY, videoSize.width, videoSize.height);
                 [box setObject:[NSValue valueWithRect:videoRect] forKey:@"videoRect"];
             }
         }
@@ -534,7 +556,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             } else {
                 NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
                 textRect.size = textSize;
-                textRect.origin.x = NSMinX(rect) + 14;
+                textRect.origin.x = NSMinX(rect) + 17;
                 if ([box objectForKey:@"image"] || [box objectForKey:@"video"])
                     textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
                 else
@@ -631,14 +653,16 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)drawRect:(NSRect)dirty
 {
-    float blueTop[3] = {161.0 / 255.0, 204.0 / 255.0, 242.0 / 255.0};
-    float blueBottom[3] = {51.0 / 255.0, 125.0 / 255.0, 203.0 / 255.0};
-    float grayTop[3] = {252.0 / 255.0, 252.0 / 255.0, 254.0 / 255.0};
-    float grayBottom[3] = {208.0 / 255.0, 208.0 / 255.0, 216.0 / 255.0};
+    float blueTop[3] = {112.0 / 255.0, 184.0 / 255.0, 246.0 / 255.0};
+    float blueBottom[3] = {26.0 / 255.0, 110.0 / 255.0, 226.0 / 255.0};
+    float blueLine[3] = {30.0 / 255.0, 88.0 / 255.0, 170.0 / 255.0};
+    float grayTop[3] = {252.0 / 255.0, 252.0 / 255.0, 253.0 / 255.0};
+    float grayBottom[3] = {214.0 / 255.0, 217.0 / 255.0, 224.0 / 255.0};
+    float grayLine[3] = {160.0 / 255.0, 163.0 / 255.0, 172.0 / 255.0};
     unsigned i;
 
-    [[NSColor colorWithCalibratedRed:215.0 / 255.0 green:218.0 / 255.0 blue:224.0 / 255.0 alpha:1] set];
-    NSRectFill([self bounds]);
+    [[TranscriptView backgroundColor] set];
+    NSRectFill(dirty);
     for (i = 0; i < [boxes count]; i++) {
         NSDictionary *box = [boxes objectAtIndex:i];
         NSRect rect = [[box objectForKey:@"rect"] rectValue];
@@ -655,27 +679,71 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         {
             NSBezierPath *path = [NSBezierPath bezierPath];
             NSBezierPath *tail = [NSBezierPath bezierPath];
-            float radius = 8;
+            NSBezierPath *edge = [NSBezierPath bezierPath];
+            float radius = 18;
             float *top = fromUser ? blueTop : grayTop;
             float *bottom = fromUser ? blueBottom : grayBottom;
+            float *line = fromUser ? blueLine : grayLine;
+            NSColor *bottomColor = [NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1];
+            NSColor *lineColor = [NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1];
+            NSShadow *shadow;
             if (radius > rect.size.height / 2.0)
                 radius = rect.size.height / 2.0;
             appendRoundedRect(path, rect, radius);
-            [[NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1] set];
-            [path fill];
-            fillBubble(path, rect, top, bottom);
+            appendRoundedRect(edge, NSInsetRect(rect, 0.5, 0.5), radius - 0.5);
+            /* A curved fin at the lower corner, pointing out and down, as on iOS 6. */
             if (fromUser) {
-                [tail moveToPoint:NSMakePoint(NSMaxX(rect) - 22, NSMinY(rect) + 10)];
-                [tail lineToPoint:NSMakePoint(NSMaxX(rect) - 6, NSMinY(rect) + 2)];
-                [tail lineToPoint:NSMakePoint(NSMaxX(rect) + 8, NSMinY(rect) - 8)];
+                [tail moveToPoint:NSMakePoint(NSMaxX(rect) - 28, NSMinY(rect) + 1)];
+                [tail curveToPoint:NSMakePoint(NSMaxX(rect) + 9, NSMinY(rect) - 3)
+                     controlPoint1:NSMakePoint(NSMaxX(rect) - 12, NSMinY(rect) + 1)
+                     controlPoint2:NSMakePoint(NSMaxX(rect) + 0, NSMinY(rect) + 0)];
+                [tail curveToPoint:NSMakePoint(NSMaxX(rect) - 7, NSMinY(rect) + 14)
+                     controlPoint1:NSMakePoint(NSMaxX(rect) + 4, NSMinY(rect) + 2)
+                     controlPoint2:NSMakePoint(NSMaxX(rect) - 1, NSMinY(rect) + 9)];
             } else {
-                [tail moveToPoint:NSMakePoint(NSMinX(rect) + 22, NSMinY(rect) + 10)];
-                [tail lineToPoint:NSMakePoint(NSMinX(rect) + 6, NSMinY(rect) + 2)];
-                [tail lineToPoint:NSMakePoint(NSMinX(rect) - 8, NSMinY(rect) - 8)];
+                [tail moveToPoint:NSMakePoint(NSMinX(rect) + 28, NSMinY(rect) + 1)];
+                [tail curveToPoint:NSMakePoint(NSMinX(rect) - 9, NSMinY(rect) - 3)
+                     controlPoint1:NSMakePoint(NSMinX(rect) + 12, NSMinY(rect) + 1)
+                     controlPoint2:NSMakePoint(NSMinX(rect) - 0, NSMinY(rect) + 0)];
+                [tail curveToPoint:NSMakePoint(NSMinX(rect) + 7, NSMinY(rect) + 14)
+                     controlPoint1:NSMakePoint(NSMinX(rect) - 4, NSMinY(rect) + 2)
+                     controlPoint2:NSMakePoint(NSMinX(rect) + 1, NSMinY(rect) + 9)];
             }
             [tail closePath];
-            [[NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1] set];
+            /* Body and tail share one soft shadow, then the tail gets its
+               outline; the body is painted over its inner end. */
+            [NSGraphicsContext saveGraphicsState];
+            shadow = [[[NSShadow alloc] init] autorelease];
+            [shadow setShadowOffset:NSMakeSize(0, -1)];
+            [shadow setShadowBlurRadius:3];
+            [shadow setShadowColor:[NSColor colorWithCalibratedWhite:0 alpha:0.32]];
+            [shadow set];
+            [bottomColor set];
+            [path fill];
             [tail fill];
+            [NSGraphicsContext restoreGraphicsState];
+            [bottomColor set];
+            [tail fill];
+            [lineColor set];
+            [tail setLineWidth:1];
+            [tail stroke];
+            [bottomColor set];
+            [path fill];
+            fillBubble(path, rect, top, bottom);
+            /* A faint light line just inside the top edge. */
+            {
+                NSBezierPath *light = [NSBezierPath bezierPath];
+                appendRoundedRect(light, NSInsetRect(rect, 1.5, 1.5), radius - 1.5);
+                [NSGraphicsContext saveGraphicsState];
+                [path addClip];
+                [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.35 : 0.8] set];
+                [light setLineWidth:1];
+                [light stroke];
+                [NSGraphicsContext restoreGraphicsState];
+            }
+            [lineColor set];
+            [edge setLineWidth:1];
+            [edge stroke];
             if ([box objectForKey:@"imageRect"]) {
                 NSImage *picture = [self cachedImage:[box objectForKey:@"image"]];
                 NSRect imageRect = [[box objectForKey:@"imageRect"] rectValue];

@@ -170,10 +170,10 @@ NSString *TBCostReadout(NSDictionary *chat)
         calls += [[row objectForKey:@"calls"] intValue];
     }
     if (priced == 0)
-        return @"Cost N/A";
+        return @"Cost (est) N/A";
     /* Some calls had no price (a local model, or a model the price list does
        not know): the total is then a floor, shown with a plus. */
-    return [NSString stringWithFormat:@"Cost ~%@%@", TBFormatCost(total), priced < calls ? @"+" : @""];
+    return [NSString stringWithFormat:@"Cost (est) %@%@", TBFormatCost(total), priced < calls ? @"+" : @""];
 }
 
 NSString *TBCostDetail(NSDictionary *chat)

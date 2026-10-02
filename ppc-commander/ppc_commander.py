@@ -717,7 +717,7 @@ def path_allowed(path):
 def denied_message(path):
     if not workspace_allows(path):
         return (
-            'path is outside this workspace\'s folder: %s. Work inside %s.'
+            'path is outside this workspace\'s directory: %s. Work inside %s.'
             % (path, WORKSPACE['root'])
         )
     roots = CONFIG.get('allowedDirectories', [])
@@ -741,7 +741,7 @@ def protected_paths():
     ]
 
 
-# A workspace can limit Commander to one folder. The relay passes the folder
+# A workspace can restrict Commander to one directory. The relay passes the directory
 # in TB_WORKSPACE_ROOT when it starts this program over SSH, so the model, which
 # can only call tools, cannot change it. File tools are held to it exactly.
 # Shell commands are held to it as well as a plain command line can be: the
@@ -809,7 +809,7 @@ def workspace_command_problem(command):
                 ok = 1
                 break
         if not ok:
-            return 'the command uses %s, which is outside this workspace folder (%s)' % (word, root)
+            return 'the command uses %s, which is outside this workspace directory (%s)' % (word, root)
     return None
 
 
@@ -1998,10 +1998,10 @@ def tool_start_process(args):
         raise ToolError('blocked command (%s). Change blockedCommands only if you mean to.' % why)
     if WORKSPACE['root'] and not os.path.isdir(WORKSPACE['root']):
         raise ToolError('this workspace is limited to %s, which does not exist on this Mac. '
-                        'Change the folder in the workspace settings.' % WORKSPACE['root'])
+                        'Change the directory in the workspace settings.' % WORKSPACE['root'])
     why = workspace_command_problem(command)
     if why:
-        raise ToolError('blocked by the workspace folder limit: %s' % why)
+        raise ToolError('blocked by the workspace directory restriction: %s' % why)
     if opt_bool(args, 'detach', False):
         child = detach_command(command, shell)
         lines = [
@@ -2943,7 +2943,7 @@ def run_self_test():
     except ToolError:
         expect('self protected', True, failures, '')
 
-    # Workspace folder limit.
+    # Workspace directory restriction.
     import tempfile
     work = os.path.realpath(tempfile.mkdtemp())
     WORKSPACE['root'] = work

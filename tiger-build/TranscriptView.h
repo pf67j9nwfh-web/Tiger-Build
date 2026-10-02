@@ -16,6 +16,7 @@
     NSMutableDictionary *sizeCache;
 }
 
++ (NSColor *)backgroundColor;
 - (void)setMessages:(NSArray *)newMessages;
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible;
 - (void)scrollToEnd;

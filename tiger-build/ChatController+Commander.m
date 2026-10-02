@@ -140,7 +140,7 @@ static int compareVersions(NSString *a, NSString *b)
 
 /* The app carries its own ppc-commander. At launch it is copied to
    ~/ppc-commander when that is missing or older, so the tools that need a new
-   Commander (screenshots, folder limits) work without a separate install. */
+   Commander (screenshots, directory restrictions) work without a separate install. */
 - (void)ensureCommanderInstalled
 {
     NSFileManager *fm = [NSFileManager defaultManager];

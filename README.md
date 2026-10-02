@@ -155,7 +155,7 @@ The settings folder is **`~/Library/Application Support/Tiger Build/`**.
 | --- | --- |
 | `server.txt` | Relay address and port |
 | `token.txt` | Relay token (mode 600) |
-| `chats.plist` | Chats in the Default workspace, with that workspace's settings (folder limit, last-used model and tools) |
+| `chats.plist` | Chats in the Default workspace, with that workspace's settings (directory restriction, last-used model and tools) |
 | `workspaces/<name>.plist` | The same for each other workspace |
 | `models.txt` | The model list last received from the relay |
 | `media/` | Downloaded images and videos |
@@ -166,7 +166,7 @@ Elsewhere on the Tiger Mac: `~/Library/Preferences/local.tigerbuild.TigerBuild.p
 
 ## Using Tiger Build
 
-- **Chats and workspaces.** The popup at the top of the sidebar picks a workspace (project); each has its own chats. Workspace → New Workspace (⌘⇧N) makes one, Delete Workspace removes one (deleting the last one starts a new empty Default), and Workspace Settings can limit Commander to one folder. API keys and tools are shared. Clear All History in the History menu deletes every chat and every workspace.
+- **Chats and workspaces.** The popup at the top of the sidebar picks a workspace (project); each has its own chats. Workspace → New Workspace (⌘⇧N) makes one, Delete Workspace removes one (deleting the last one starts a new empty Default), and Workspace Directory Restriction can restrict Commander to one directory. API keys and tools are shared. Clear All History in the History menu deletes every chat and every workspace.
 - **Models.** The popups under the chat list pick the service and model. A new chat starts with the model, tool switches and approval choices of the chat used last in that workspace, or with one fixed model if you choose that in Preferences, New Chats. Services with no key or no working models are dimmed with the reason.
 - **Tools.** The **Tools** button under the chat list switches each tool on or off for the chat: Commander, the agent toolbox, web search, other models (see below) and every custom MCP server. **Ask Before Running** makes the model wait for your answer before it runs a tool, for all tools or for chosen ones, and "Always Allow" in the question turns it off for that tool in that chat. The choices are remembered per chat. Each tool call shows as a card; click it to see the command and its output.
 - **Stop and guidance.** **Stop** (⌘.) ends a running reply at once, even in the middle of a long command. While a model works with tools, **Send** becomes **Guide** (its dot blinks while the model runs): a note typed then is delivered to the model between steps, never in the middle of a command. If the reply ends first, the note goes back into the message box. Guidance is offered for Grok, ChatGPT, Claude, Gemini and Mistral.

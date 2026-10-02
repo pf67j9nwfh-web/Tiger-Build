@@ -877,7 +877,7 @@ class ToolSession(object):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
             if self.options["root"]:
                 system += (
-                    " This workspace is limited to the folder %s. File tools and shell commands "
+                    " This workspace is restricted to the directory %s. File tools and shell commands "
                     "cannot reach outside it; work inside it."
                 ) % self.options["root"]
         if any(t.get("name") == CONSULT_TOOL for t in tools):

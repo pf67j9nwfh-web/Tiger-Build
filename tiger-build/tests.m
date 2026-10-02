@@ -115,11 +115,11 @@ int main(void)
         tbcheck([TBCostReadout(c) length] == 0, @"no usage, no readout");
         TBAddUsage(c, [NSDictionary dictionaryWithObjectsAndKeys:@"local", @"provider", @"qwen", @"model",
             [NSNumber numberWithInt:100], @"input", [NSNumber numberWithInt:50], @"output", nil]);
-        tbcheck([TBCostReadout(c) isEqualToString:@"Cost N/A"], @"local only is N/A");
+        tbcheck([TBCostReadout(c) isEqualToString:@"Cost (est) N/A"], @"local only is N/A");
         TBAddUsage(c, [NSDictionary dictionaryWithObjectsAndKeys:@"claude", @"provider", @"sonnet", @"model",
             [NSNumber numberWithInt:1000], @"input", [NSNumber numberWithInt:200], @"output",
             [NSNumber numberWithDouble:0.0123], @"cost", nil]);
-        tbcheck([TBCostReadout(c) isEqualToString:@"Cost ~$0.0123+"], @"model switch keeps cloud cost, marks unpriced");
+        tbcheck([TBCostReadout(c) isEqualToString:@"Cost (est) $0.0123+"], @"model switch keeps cloud cost, marks unpriced");
         TBAddUsage(c, [NSDictionary dictionaryWithObjectsAndKeys:@"claude", @"provider", @"sonnet", @"model",
             [NSNumber numberWithInt:1000], @"input", [NSNumber numberWithDouble:0.01], @"cost", nil]);
         tbcheck([[TBCostDetail(c) componentsSeparatedByString:@"\n"] count] >= 3, @"cost detail per model");

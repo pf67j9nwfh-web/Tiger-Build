@@ -38,7 +38,7 @@ TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wantedFie
 NSString *TBFormatCost(double dollars);
 NSString *TBFormatTokens(int count);
 void TBAddUsage(NSMutableDictionary *chat, NSDictionary *event);
-/* "Cost ~$0.0123", or "Cost N/A" when nothing was priced (local models). */
+/* "Cost (est) $0.0123", or "Cost (est) N/A" when nothing was priced (local models). */
 NSString *TBCostReadout(NSDictionary *chat);
 /* One line per model for the readout's tooltip. */
 NSString *TBCostDetail(NSDictionary *chat);

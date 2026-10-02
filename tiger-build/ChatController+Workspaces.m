@@ -155,7 +155,7 @@
     BOOL limit=[[prefsFields objectForKey:@"ws.limit"] state]==NSOnState;
     BOOL isDir=NO;
     if(limit&&(![root hasPrefix:@"/"]||![[NSFileManager defaultManager] fileExistsAtPath:root isDirectory:&isDir]||!isDir)) {
-        NSRunAlertPanel(@"Workspace",@"Choose a folder that exists on this Mac, such as /Users/%@/Projects.",@"OK",nil,nil,NSUserName());return;
+        NSRunAlertPanel(@"Workspace",@"Choose a directory that exists on this Mac, such as /Users/%@/Projects.",@"OK",nil,nil,NSUserName());return;
     }
     while([root length]>1&&[root hasSuffix:@"/"])root=[root substringToIndex:[root length]-1];
     [workspaceSettings setObject:[NSNumber numberWithBool:limit] forKey:@"limitRoot"];
@@ -171,7 +171,7 @@
     NSView *view=[panel contentView];
     [panel setTitle:[NSString stringWithFormat:@"Workspace Settings - %@",[self workspaceName]]];[panel center];
     NSButton *limit=[[[NSButton alloc] initWithFrame:NSMakeRect(20,190,460,22)] autorelease];
-    [limit setButtonType:NSSwitchButton];[limit setTitle:@"Limit Commander to one folder in this workspace"];
+    [limit setButtonType:NSSwitchButton];[limit setTitle:@"Restrict Commander to one directory in this workspace"];
     [limit setState:[[workspaceSettings objectForKey:@"limitRoot"] boolValue]?NSOnState:NSOffState];[view addSubview:limit];
     [prefsFields setObject:limit forKey:@"ws.limit"];
     NSTextField *field=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,156,360,24)] autorelease];
@@ -181,7 +181,7 @@
     NSButton *choose=[[[NSButton alloc] initWithFrame:NSMakeRect(388,153,96,30)] autorelease];
     [choose setTitle:@"Choose..."];[choose setBezelStyle:NSRoundedBezelStyle];[choose setTarget:self];[choose setAction:@selector(workspaceSettingsChoose:)];[view addSubview:choose];
     NSTextField *note=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,60,460,86)] autorelease];
-    [note setStringValue:@"With a folder set, Commander's file tools can only read and write inside it, and shell commands start there "
+    [note setStringValue:@"With a directory set, Commander's file tools can only read and write inside it, and shell commands start there "
         @"and may only name paths inside it (programs in the system folders still run). A command line can only be checked so far: "
         @"for a hard limit, run Tiger Build under a separate account."];
     [note setEditable:NO];[note setBezeled:NO];[note setDrawsBackground:NO];[note setFont:[NSFont systemFontOfSize:11]];[[note cell] setWraps:YES];[view addSubview:note];
