@@ -752,8 +752,23 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
             float radius = 16;
             appendBubble(path, rect, radius, fromUser);
             fillBubble(path, rect, fromUser);
-            /* A faint bright line just inside the outline, as on the glass bubbles. */
-            appendRoundedRect(light, NSInsetRect(rect, 1.5, 1.5), radius - 1.5);
+            /* A faint bright line just inside the outline, over the upper half only.
+               Going all the way round drew a white arc across the tail. */
+            {
+                float left = NSMinX(rect) + 1.5f;
+                float right = NSMaxX(rect) - 1.5f;
+                float topY = NSMaxY(rect) - 1.5f;
+                float midY = NSMidY(rect);
+                float r = radius - 1.5f;
+                if (r > (topY - midY))
+                    r = topY - midY;
+                [light moveToPoint:NSMakePoint(left, midY)];
+                [light lineToPoint:NSMakePoint(left, topY - r)];
+                [light appendBezierPathWithArcWithCenter:NSMakePoint(left + r, topY - r) radius:r startAngle:180 endAngle:90 clockwise:YES];
+                [light lineToPoint:NSMakePoint(right - r, topY)];
+                [light appendBezierPathWithArcWithCenter:NSMakePoint(right - r, topY - r) radius:r startAngle:90 endAngle:0 clockwise:YES];
+                [light lineToPoint:NSMakePoint(right, midY)];
+            }
             [NSGraphicsContext saveGraphicsState];
             [path addClip];
             [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.30 : 0.55] set];

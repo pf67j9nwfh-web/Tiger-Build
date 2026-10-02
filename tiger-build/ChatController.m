@@ -862,7 +862,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         if (key) {
             BOOL shifted = [key isEqualToString:[key uppercaseString]] && ![[key lowercaseString] isEqualToString:[key uppercaseString]];
             unsigned mask = NSCommandKeyMask | (shifted ? NSShiftKeyMask : 0);
-            if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:))
+            if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
+                || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:))
                 mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
             [item setKeyEquivalentModifierMask:mask];
@@ -897,6 +898,21 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [appMenu addItem:preferences];
     [preferences release];
     [appMenu addItem:[NSMenuItem separatorItem]];
+    {
+        NSMenuItem *hide = [[[NSMenuItem alloc] initWithTitle:@"Hide Tiger Build" action:@selector(hide:) keyEquivalent:@"h"] autorelease];
+        NSMenuItem *others = [[[NSMenuItem alloc] initWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"] autorelease];
+        NSMenuItem *all = [[[NSMenuItem alloc] initWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""] autorelease];
+        [hide setTarget:NSApp];
+        [others setTarget:NSApp];
+        [others setKeyEquivalentModifierMask:NSCommandKeyMask | NSAlternateKeyMask];
+        [all setTarget:NSApp];
+        [all setKeyEquivalent:@"h"];
+        [all setKeyEquivalentModifierMask:NSCommandKeyMask | NSAlternateKeyMask | NSShiftKeyMask];
+        [appMenu addItem:hide];
+        [appMenu addItem:others];
+        [appMenu addItem:all];
+        [appMenu addItem:[NSMenuItem separatorItem]];
+    }
     {
         NSMenu *menu;
         NSMenuItem *item;
@@ -987,6 +1003,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             for (i = 0; i < 4; i++) {
                 if (i == 2) [menu addItem:[NSMenuItem separatorItem]];
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
+                if (i == 3) {
+                    [item setKeyEquivalent:@"\b"];
+                    [item setKeyEquivalentModifierMask:NSCommandKeyMask | NSShiftKeyMask];
+                }
                 [item setTarget:self]; [menu addItem:item];
             }
             slot = [[[NSMenuItem alloc] initWithTitle:@"Workspace" action:NULL keyEquivalent:@""] autorelease];
@@ -1021,11 +1041,14 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         NSMenuItem *windowSlot = [[[NSMenuItem alloc] init] autorelease];
         NSArray *titles = [NSArray arrayWithObjects:@"New Window", @"Close Window", @"Minimize", @"Maximize", @"Keep It On Top", nil];
         SEL actions[] = {@selector(newWindow:), @selector(closeWindow:), @selector(minimizeWindow:), @selector(zoomWindow:), @selector(toggleOnTop:)};
-        NSArray *keys = [NSArray arrayWithObjects:@"N", @"w", @"m", @"M", @"T", nil];
+        NSArray *keys = [NSArray arrayWithObjects:@"n", @"w", @"m", @"M", @"T", nil];
         unsigned i;
         for (i = 0; i < [titles count]; i++) {
             NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:[keys objectAtIndex:i]] autorelease];
             [item setTarget:self];
+            /* New Window is Option-Command-N; Shift-Command-N makes a workspace. */
+            if (i == 0)
+                [item setKeyEquivalentModifierMask:NSCommandKeyMask | NSAlternateKeyMask];
             if (i == 4)
                 [windowMenu addItem:[NSMenuItem separatorItem]];
             [windowMenu addItem:item];
@@ -1074,7 +1097,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
             @"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
-            @"b",@"showAbout:",nil];
+            @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
             applyMenuShortcuts([[bar itemAtIndex:g] submenu], shortcuts);
@@ -1455,10 +1478,59 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [self updateContextReadout];
 }
 
+/* --list-shortcuts: print every menu item with its shortcut, flag duplicates
+   and items that have none, and quit. Used to check the menus. */
+static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, int *problems)
+{
+    int i;
+    for (i = 0; i < [menu numberOfItems]; i++) {
+        NSMenuItem *item = [menu itemAtIndex:i];
+        NSString *title = [item title];
+        NSString *key = [item keyEquivalent];
+        unsigned mask = [item keyEquivalentModifierMask];
+        NSMutableString *combo = [NSMutableString string];
+        if ([item isSeparatorItem])
+            continue;
+        if ([item submenu]) {
+            dumpMenu([item submenu], [path isEqualToString:@"Menu bar"] ? [[item submenu] title] : [NSString stringWithFormat:@"%@ > %@", path, [[item submenu] title]], seen, problems);
+            continue;
+        }
+        if (![item action])
+            continue;
+        if ([key length] > 0) {
+            NSString *shown = [key isEqualToString:@"\b"] ? @"Delete" : [key uppercaseString];
+            /* An upper-case letter means Shift as well. */
+            BOOL implicitShift = [key isEqualToString:[key uppercaseString]] && ![key isEqualToString:[key lowercaseString]];
+            if (mask & NSControlKeyMask) [combo appendString:@"Ctrl-"];
+            if (mask & NSAlternateKeyMask) [combo appendString:@"Opt-"];
+            if ((mask & NSShiftKeyMask) || implicitShift) [combo appendString:@"Shift-"];
+            if (mask & NSCommandKeyMask) [combo appendString:@"Cmd-"];
+            [combo appendString:shown];
+            if ([seen objectForKey:combo]) {
+                printf("DUPLICATE %s: %s [%s] also %s\n", [combo UTF8String], [title UTF8String], [path UTF8String], [[seen objectForKey:combo] UTF8String]);
+                (*problems)++;
+            }
+            [seen setObject:[NSString stringWithFormat:@"%@ [%@]", title, path] forKey:combo];
+            printf("%-14s %s > %s\n", [combo UTF8String], [path UTF8String], [title UTF8String]);
+        } else {
+            printf("MISSING        %s > %s\n", [path UTF8String], [title UTF8String]);
+            (*problems)++;
+        }
+    }
+}
+
 - (void)applicationWillFinishLaunching:(NSNotification *)note
 {
     (void)note;
     [self installMenus];
+    if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-shortcuts"]) {
+        NSMutableDictionary *seen = [NSMutableDictionary dictionary];
+        int problems = 0;
+        dumpMenu([NSApp mainMenu], @"Menu bar", seen, &problems);
+        printf("%d problems\n", problems);
+        fflush(stdout);
+        exit(problems ? 1 : 0);
+    }
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note
