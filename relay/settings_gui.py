@@ -103,7 +103,7 @@ def main():
     script = installed_control()
     root = tk.Tk()
     root.title("Tiger Build Relay")
-    root.geometry("760x700")
+    root.geometry("880x740")
     if not script:
         folder = support_home()
         tk.Label(root, text="Tiger Build Relay is not set up for this account yet.", font=("", 14, "bold")).pack(anchor="w", padx=16, pady=(16, 6))
@@ -175,6 +175,21 @@ def main():
     book.grid(row=7, column=0, columnspan=5, sticky="ew")
     keys = ttk.Frame(book, padding=8)
     book.add(keys, text="AI services and local LLM server")
+    ttk.Label(keys, text="One API key is enough, or use only a local LLM server. Blank fields keep what is saved.").grid(row=0, column=0, columnspan=4, sticky="w")
+    for index, (title, key, secret) in enumerate(ROWS, start=1):
+        ttk.Label(keys, text=title, width=28, anchor="e").grid(row=index, column=0, sticky="e", pady=2)
+        var = tk.StringVar()
+        entry = ttk.Entry(keys, textvariable=var, width=42, show="*" if secret else "")
+        entry.grid(row=index, column=1, sticky="w")
+        if key == "local_url":
+            entry.configure(width=52)
+        mark = tk.StringVar()
+        ttk.Label(keys, textvariable=mark, width=8).grid(row=index, column=2)
+        ttk.Button(keys, text="Delete", command=lambda name=key: delete_field(name)).grid(row=index, column=3, padx=4)
+        fields[key] = var
+        saved[key] = mark
+    ttk.Label(keys, text="The local LLM server address is as seen from this computer. It can be this computer or another one.").grid(row=len(ROWS) + 1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
     mac = ttk.Frame(book, padding=8)
     book.add(mac, text="Connected Macs (Commander)")
     mac_address = tk.StringVar()
@@ -195,7 +210,7 @@ def main():
                   ("Run its tools on (optional)", mac_host))
     for index, (title, var) in enumerate(fields_mac):
         ttk.Label(mac, text=title, anchor="e", width=24).grid(row=2 + index // 2, column=(index % 2) * 2, sticky="e", pady=2)
-        ttk.Entry(mac, textvariable=var, width=26).grid(row=2 + index // 2, column=(index % 2) * 2 + 1, sticky="w")
+        ttk.Entry(mac, textvariable=var, width=22).grid(row=2 + index // 2, column=(index % 2) * 2 + 1, sticky="w")
     macbar = ttk.Frame(mac)
     macbar.grid(row=4, column=0, columnspan=4, sticky="w", pady=6)
     ttk.Label(mac, textvariable=mac_note, wraplength=700, justify="left").grid(row=5, column=0, columnspan=4, sticky="w")
@@ -260,7 +275,6 @@ def main():
     ttk.Button(macbar, text="Remove", command=mac_remove).pack(side="left")
     ttk.Button(macbar, text="New", command=lambda: [v.set("") for v in (mac_address, mac_user, mac_home, mac_host)]).pack(side="left", padx=6)
 
-    keys.grid_configure(sticky="ew")
     top.columnconfigure(2, weight=1)
 
     buttons = ttk.Frame(top)
@@ -289,7 +303,7 @@ def main():
         folder.set("Settings: %s" % (result.get("support") or support_home()))
         host = result.get("tiger_host") or ""
         user = result.get("tiger_user") or ""
-        line = "Tiger Mac: not set — see the Tiger Mac tab" if not host else "Tiger Mac: %s@%s" % (user or "?", host)
+        line = "Tiger Mac: not set — see the Connected Macs tab" if not host else "Tiger Mac: %s@%s" % (user or "?", host)
         seen = result.get("last_client") if isinstance(result.get("last_client"), dict) else {}
         if seen.get("machine"):
             line += "    ·    last connected: %s" % seen.get("machine")
@@ -320,33 +334,6 @@ def main():
             note.set("Working…")
 
         submit(lambda: command(script, action, payload), lambda result: apply_result(result, action))
-
-    def mac_apply(result):
-        busy["on"] = False
-        if result.get("error"):
-            mac_note.set(str(result["error"]))
-            return
-        apply_result(result, "status")
-        outcome = result.get("ssh_result") or {}
-        mac_note.set(outcome.get("message") or "")
-
-    def mac_run(action, payload=None):
-        if busy["on"]:
-            return
-        busy["on"] = True
-        mac_note.set("Working…")
-        submit(lambda: command(script, action, payload), mac_apply)
-
-    def mac_save():
-        mac_run("ssh-save", {"host": mac_host.get().strip(), "user": mac_user.get().strip(), "home": mac_home.get().strip()})
-
-    def mac_forget():
-        if messagebox.askokcancel("Forget the saved host key?", "Use this when the Tiger Mac was reinstalled or replaced. The relay learns its key again."):
-            mac_run("ssh-forget", {})
-
-    ttk.Button(macbar, text="Save and Test", command=mac_save).pack(side="left")
-    ttk.Button(macbar, text="Test", command=lambda: mac_run("ssh-test")).pack(side="left", padx=6)
-    ttk.Button(macbar, text="Forget Saved Host Key", command=mac_forget).pack(side="left")
 
     def save():
         try:
