@@ -56,11 +56,19 @@ from mcp_bridge import (
     McpClient,
     McpError,
     load_shell_config,
+    result_images,
     result_text,
     ssh_command,
     tool_summary,
     xai_tools_from_mcp,
 )
+import connection
+import pricing
+import runs
+from discovery import has_key as disc_has_key
+from integrations import function as function_tool
+from providers import PROVIDERS as CATALOG_PROVIDERS
+from providers import _openai_usage, openai_responses_input
 
 MODEL = "grok-4.7"
 API_URL = "https://api.x.ai/v1/responses"
@@ -86,6 +94,16 @@ MAX_TOOL_ROUNDS = 12
 ENV_PATH = os.path.join(ROOT, ".env")
 TOKEN = ""
 ALLOWED = set()
+
+
+def reload_allowed(config=None):
+    """The addresses that may connect, after the Tiger Mac's address changed."""
+    config = config or load_shell_config()
+    allowed = allowed_clients(config)
+    address = listen_address(config)
+    if address not in ("0.0.0.0", "::"):
+        allowed.add(address)
+    return allowed
 
 
 def refresh_settings():
@@ -213,7 +231,7 @@ def events_from_lines(lines):
         yield json.loads(data)
 
 
-def open_stream(payload):
+def open_stream(payload, run=None):
     key = load_key()
     if not key:
         raise RuntimeError(
@@ -233,14 +251,17 @@ def open_stream(payload):
         method="POST",
     )
     try:
-        return urllib.request.urlopen(request, timeout=180, context=ssl_context())
+        response = urllib.request.urlopen(request, timeout=180, context=ssl_context())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")
         raise RuntimeError(api_error_text(detail, exc.code))
+    if run is not None:
+        run.on_abort(response.close)
+    return response
 
 
-def iter_response_events(payload):
-    response = open_stream(payload)
+def iter_response_events(payload, run=None):
+    response = open_stream(payload, run)
     try:
         while True:
             raw = response.readline()
@@ -256,6 +277,8 @@ def iter_response_events(payload):
                 continue
             yield json.loads(data)
     finally:
+        if run is not None:
+            run.off_abort(response.close)
         response.close()
 
 
@@ -323,10 +346,69 @@ def start_discovery(run=True):
     return DISCOVERY
 
 
-_TOOL_CACHE = {"tools": None, "at": 0.0, "offline": ""}
+_TOOL_CACHE = {"tools": None, "at": 0.0, "offline": "", "code": ""}
 _TOOL_LOCK = threading.Lock()
 TOOL_CACHE_SECONDS = 300
 OFFLINE_RETRY_SECONDS = 15
+
+CONSULT_TOOL = "consult_model"
+SCREENSHOT_TOOL = "take_screenshot"
+LIMIT_NOTE = (
+    "\n\n[The reply stopped here because the model reached its output limit. "
+    "Say \"continue\" and it will pick up where it left off.]"
+)
+STEP_NOTE = (
+    "\n\n[Stopped after %d tool steps in one turn. Say \"continue\" to keep going.]"
+)
+COMPACT_AT = 0.80  # share of the context window that starts trimming a long run
+
+
+def invalidate_tools():
+    """Forget the cached tool list, so the next request looks again. Called
+    after the Tiger Mac's address, user or key changes."""
+    with _TOOL_LOCK:
+        _TOOL_CACHE["tools"] = None
+        _TOOL_CACHE["at"] = 0.0
+
+
+def clean_options(incoming):
+    """The per-chat switches Tiger Build sends with a request. Anything that is
+    not the expected shape is ignored."""
+    options = {"servers": {}, "approve": {}, "root": ""}
+    if not isinstance(incoming, dict):
+        return options
+    for name in ("servers", "approve"):
+        table = incoming.get(name)
+        if isinstance(table, dict):
+            for key, value in table.items():
+                if isinstance(key, str) and len(key) <= 40 and isinstance(value, bool):
+                    options[name][key] = value
+    root = incoming.get("root")
+    if isinstance(root, str):
+        root = root.strip()
+        if root.startswith("/") and len(root) <= 300 and "\n" not in root and "\x00" not in root:
+            options["root"] = root.rstrip("/") or "/"
+    return options
+
+
+def supports_images(provider, model):
+    """Whether a model can look at a picture. A wrong guess only costs a tool."""
+    model = (model or "").lower()
+    if provider in ("claude", "gemini", "muse"):
+        return True
+    if provider == "grok":
+        return "build" not in model
+    if provider == "chatgpt":
+        return not (model in ("gpt-4", "gpt-3.5-turbo", "o1-mini", "o3-mini") or model.startswith("gpt-3"))
+    if provider == "mistral":
+        return any(word in model for word in ("ministral", "pixtral", "medium", "large", "small", "magistral"))
+    if provider == "local":
+        return any(word in model for word in ("vl", "vision", "llava", "gemma-3", "gemma-4", "pixtral", "minicpm-v", "-v-", "qwen3.5", "mistral-small-3", "ministral"))
+    return False
+
+
+def _plist(data):
+    return plistlib.dumps(data, fmt=plistlib.FMT_XML).decode()
 
 
 class ToolSession(object):
@@ -337,12 +419,19 @@ class ToolSession(object):
     that was asleep at the first request does not stay offline until restart.
     """
 
-    def __init__(self):
+    def __init__(self, run=None, options=None):
         self.config = load_shell_config()
         self.tools = None
         self.offline = ""
+        self.offline_code = ""
         self.extra = Connections()
         self.client = {}
+        self.run = run if run is not None else runs.Run("local")
+        self.options = options or clean_options({})
+        self.side = []
+        self.last_context = 0
+
+    # ---- who we are talking to ----
 
     def set_client(self, info):
         """What Tiger Build reports about the Mac it runs on. Plain short
@@ -359,10 +448,10 @@ class ToolSession(object):
         return clean
 
     def machine(self):
-        return self.client.get("machine") or "a PowerPC Mac"
+        return self.client.get("machine") or "a Mac"
 
     def os_name(self):
-        return self.client.get("os") or "Mac OS X Tiger"
+        return self.client.get("os") or "Mac OS X"
 
     def account(self):
         return (self.config.get("TIGER_USER") or "").strip()
@@ -383,11 +472,42 @@ class ToolSession(object):
     def media_root(self):
         return self.home() + "/Library/Application Support/Tiger Build/media"
 
+    # ---- which tools this chat may use ----
+
+    def skip_keys(self):
+        """Tool groups the chat has switched off. Consulting another model
+        costs money, so it is off unless the chat turned it on."""
+        skip = set(key for key, value in self.options["servers"].items() if value is False)
+        if self.options["servers"].get("consult") is not True:
+            skip.add("consult")
+        return skip
+
+    def _tool_key(self, name):
+        if name in ("generate_image", "generate_video"):
+            return "media"
+        if name == CONSULT_TOOL:
+            return "consult"
+        if name in self.extra.owners:
+            return self.extra.owners[name]
+        return "commander"
+
+    def _needs_approval(self, key):
+        approve = self.options["approve"]
+        if key in approve:
+            return approve[key]
+        if "all" in approve:
+            return approve["all"]
+        return self.extra.approval_default(key)
+
+    # ---- the Tiger Mac's own tools ----
+
     def definitions(self):
         if self.tools is not None:
             return self.tools
         if not self.config.get("TIGER_HOST") or not self.account():
-            self.offline = "Tiger Mac tools are not configured. Set TIGER_HOST and TIGER_USER in config.sh."
+            code, message = connection.diagnose("", None, self.config)
+            self.offline = message
+            self.offline_code = code
             self.tools = []
             return self.tools
         with _TOOL_LOCK:
@@ -398,24 +518,29 @@ class ToolSession(object):
                 if age < keep:
                     self.tools = cached
                     self.offline = _TOOL_CACHE["offline"]
+                    self.offline_code = _TOOL_CACHE["code"]
                     return self.tools
         client = McpClient(ssh_command(self.config))
+        code = ""
         try:
             client.start()
             tools = xai_tools_from_mcp(client.request("tools/list", {}, timeout=30))
             offline = ""
         except Exception as exc:
             tools = []
-            offline = "Tiger Mac tools are offline (%s)." % exc
-            sys.stderr.write("tigerbuild-relay: %s\n" % offline)
+            code, message = connection.diagnose(client.stderr_text(), exc, self.config)
+            offline = "Tiger Mac tools are offline. %s" % (message or str(exc))
+            sys.stderr.write("tigerbuild-relay: %s (%s)\n" % (offline, exc))
         finally:
             client.close()
         with _TOOL_LOCK:
             _TOOL_CACHE["tools"] = tools
             _TOOL_CACHE["at"] = time.time()
             _TOOL_CACHE["offline"] = offline
+            _TOOL_CACHE["code"] = code
         self.tools = tools
         self.offline = offline
+        self.offline_code = code
         return tools
 
     def _cap_command_wait(self, args):
@@ -465,88 +590,253 @@ class ToolSession(object):
             return "Generating an image..."
         if name == "generate_video":
             return "Generating a video. This can take a minute..."
+        if name == CONSULT_TOOL:
+            return "Asking another model..."
         return ""
 
     def _tool_event(self, call, phase, output="", failed=False, elapsed=0):
         args = self._call_args(call)
         name = call.get("name") or "tool"
-        detail = args.get("command") or args.get("input") or args.get("query") or json.dumps(args,ensure_ascii=False)
-        return plistlib.dumps({"id":call.get("id") or call.get("call_id") or name,"name":name,"phase":phase,
-            "detail":str(detail)[:20000],"output":str(output)[:100000],
-            "failed":bool(failed),"elapsed":float(elapsed)},fmt=plistlib.FMT_XML).decode()
+        detail = args.get("command") or args.get("input") or args.get("query") or args.get("question") or json.dumps(args, ensure_ascii=False)
+        return _plist({"id": call.get("id") or call.get("call_id") or name, "name": name, "phase": phase,
+                       "detail": str(detail)[:20000], "output": str(output)[:100000],
+                       "failed": bool(failed), "elapsed": float(elapsed)})
+
+    # ---- model consult ----
+
+    def _consult_choices(self):
+        """[(provider, model, title)] for every working model, each
+        provider's default first."""
+        rows = []
+        disc = DISCOVERY
+        for provider, _title in CATALOG_PROVIDERS:
+            if provider == "local":
+                try:
+                    for item in cached_local_models():
+                        rows.append(("local", item["id"], item["id"]))
+                except Exception:
+                    pass
+                continue
+            if disc is None or not disc_has_key(provider):
+                continue
+            default = disc.default(provider)
+            usable = sorted(disc.usable(provider), key=lambda item: item["id"] != default)
+            for item in usable:
+                rows.append((provider, item["id"], item["title"]))
+        return rows
+
+    def _consult_definition(self):
+        rows = self._consult_choices()
+        if not rows:
+            return None
+        seen = {}
+        listing = []
+        for provider, model, title in rows:
+            seen[provider] = seen.get(provider, 0) + 1
+            if seen[provider] <= 6:
+                listing.append("%s/%s" % (provider, model))
+        return function_tool(
+            CONSULT_TOOL,
+            "Ask a different AI model for advice or a review: a second opinion on a plan, a bug, a design, or "
+            "a draft. The other model cannot use tools or see this chat, so put what it needs in question. "
+            "Its answer comes back as the tool result; weigh it, do not just repeat it. Available: "
+            + ", ".join(listing) + ".",
+            {
+                "provider": {"type": "string", "description": "grok, chatgpt, claude, mistral, muse, gemini or local"},
+                "model": {"type": "string", "description": "Model id from the list. Optional; the provider's default is used when blank."},
+                "question": {"type": "string", "description": "What to ask. Be specific and include any code or text to review."},
+            },
+            ("provider", "question"),
+        )
+
+    def _consult(self, args):
+        question = args.get("question")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError("Give a question.")
+        if len(question) > 60000:
+            raise ValueError("The question is too long; send the key parts.")
+        try:
+            provider = normalize_provider(args.get("provider"))
+        except RuntimeError as exc:
+            raise ValueError(str(exc))
+        model = args.get("model") if isinstance(args.get("model"), str) else None
+        choices = self._consult_choices()
+        pool = [row for row in choices if row[0] == provider]
+        if not pool:
+            raise ValueError("%s has no working models right now." % provider)
+        if model and model not in [row[1] for row in pool]:
+            raise ValueError("%s is not an available %s model." % (model, provider))
+        chosen = resolve_model(provider, model) if provider != "local" else (model or pool[0][1])
+        child = ToolSession(self.run, clean_options({}))
+        system = (
+            "Another AI assistant is consulting you for advice or a review. Answer directly and concisely. "
+            "Say plainly what you would change and why, and what you are unsure about. You have no tools."
+        )
+        parts = []
+        for kind, text in child.iter_turn([{"role": "user", "content": question}], False, provider, chosen, system):
+            if kind == "t":
+                parts.append(text)
+            elif kind == "u":
+                self.side.append(("u", text))
+        answer = "".join(parts).strip()
+        if not answer:
+            raise RuntimeError("%s returned no answer." % chosen)
+        return "Answer from %s/%s:\n\n%s" % (provider, chosen, answer)
+
+    # ---- running one tool call ----
+
+    def _client_for(self, client_holder):
+        if client_holder[0] is None:
+            client = McpClient(ssh_command(self.config, self.options["root"]))
+            self.run.on_abort(client.close)
+            client_holder[0] = client
+            client.start()
+        return client_holder[0]
 
     def _run_one_call(self, provider, call, client_holder):
+        """(summary, output, media, failed, images)"""
         name = call.get("name") or ""
         args = self._call_args({"arguments": call.get("arguments") or "{}"})
         if not args and isinstance(call.get("arguments"), dict):
             args = call.get("arguments")
         if name in ("start_process", "interact_with_process"):
             args = self._cap_command_wait(args)
-        if name == "generate_image":
+        if name in ("generate_image", "generate_video"):
+            label = "Generating an image..." if name == "generate_image" else "Generating a video. This can take a minute..."
+            kind = "image" if name == "generate_image" else "video"
             try:
                 info = create_media(provider, name, args.get("prompt") or "", ssl_context())
             except Exception as exc:
-                return "Generating an image...", "error: %s" % exc, None, True
-            return (
-                "Generating an image...",
-                self._saved_media_text("image", info["filename"]),
-                "image %s" % info["filename"],
-                False,
-            )
-        if name == "generate_video":
+                return label, "error: %s" % exc, None, True, []
+            return label, self._saved_media_text(kind, info["filename"]), "%s %s" % (kind, info["filename"]), False, []
+        if name == CONSULT_TOOL:
             try:
-                info = create_media(provider, name, args.get("prompt") or "", ssl_context())
+                return "Asking another model", self._consult(args), None, False, []
             except Exception as exc:
-                return "Generating a video. This can take a minute...", "error: %s" % exc, None, True
-            return (
-                "Generating a video. This can take a minute...",
-                self._saved_media_text("video", info["filename"]),
-                "video %s" % info["filename"],
-                False,
-            )
+                return "Asking another model", "error: %s" % exc, None, True, []
         if self.extra.handles(name):
             try:
-                return "Running " + name, self.extra.call(name, args), None, False
+                return "Running " + name, self.extra.call(name, args), None, False, []
             except Exception as exc:
-                return "Running " + name, "error: %s" % exc, None, True
+                return "Running " + name, "error: %s" % exc, None, True, []
         if not self.extra.config['ppc_enabled']:
-            return "PPC Commander disabled", "error: PPC Commander is disabled in relay tool configuration.", None, True
-        if client_holder[0] is None:
-            client_holder[0] = McpClient(ssh_command(self.config))
-            client_holder[0].start()
+            return "Commander disabled", "error: Commander is disabled in the relay's tool settings.", None, True, []
+        images = []
         try:
-            result = client_holder[0].request("tools/call", {"name": name, "arguments": args})
+            client = self._client_for(client_holder)
+            result = client.request("tools/call", {"name": name, "arguments": args})
             output = result_text(result)
             failed = bool(isinstance(result, dict) and result.get("isError"))
+            images = result_images(result)
         except Exception as exc:
-            output = "error: %s" % exc
+            self.run.check()
+            stderr = client_holder[0].stderr_text() if client_holder[0] is not None else ""
+            code, message = connection.diagnose(stderr, exc, self.config)
+            output = "error: %s" % (message or exc)
+            if code and code not in ("closed",):
+                output = "error: Commander could not run (%s). %s" % (exc, message)
             failed = True
-        return tool_summary(name, args), output, None, failed
+            # The next request should look at the link again.
+            invalidate_tools()
+        return tool_summary(name, args), output, None, failed, images
+
+    def _gate(self, call):
+        """Ask the person before a tool runs, when approval is on for it.
+        Yields the question for Tiger Build; returns "allow" or "deny"."""
+        key = self._tool_key(call.get("name") or "")
+        if not self._needs_approval(key):
+            return "allow"
+        call_id = call.get("id") or call.get("call_id") or call.get("name") or "call"
+        self.run.ask(call_id)
+        args = self._call_args(call)
+        detail = args.get("command") or args.get("path") or args.get("query") or args.get("question") or json.dumps(args, ensure_ascii=False)
+        yield ("q", _plist({"id": call_id, "name": call.get("name") or "tool", "server": key,
+                            "detail": str(detail)[:4000]}))
+        decision = self.run.wait(call_id)
+        return "allow" if decision in ("allow", "always") else "deny"
+
+    def _execute(self, provider, call, client_holder):
+        """Run one call and yield its events. Returns (output, failed, images)."""
+        self.run.check()
+        decision = yield from self._gate(call)
+        announced = self._media_status(call.get("name") or "")
+        if announced and decision == "allow":
+            yield ("s", announced)
+        yield ("a", self._tool_event(call, "start"))
+        started = time.monotonic()
+        if decision != "allow":
+            output = "The person declined to run this tool. Do not retry it; continue without it or explain what you need."
+            failed, media, images = True, None, []
+        else:
+            summary, output, media, failed, images = self._run_one_call(provider, call, client_holder)
+        self.run.check()
+        yield ("a", self._tool_event(call, "result", output, failed, time.monotonic() - started))
+        side, self.side = self.side, []
+        for event in side:
+            yield event
+        if media:
+            yield ("m", media)
+        return output, failed, images
+
+    def _screenshot_note(self, provider, model, images):
+        if images and supports_images(provider, model):
+            return {"role": "user", "content": "This is the screenshot that take_screenshot returned.", "images": images}
+        return None
+
+    # ---- usage and cost ----
+
+    def _usage_event(self, provider, model, usage):
+        usage = usage or {}
+        if not any(usage.get(name) for name in ("input", "cached", "written", "output")):
+            return None
+        row = {"provider": provider, "model": model}
+        for name in ("input", "cached", "written", "output"):
+            row[name] = int(usage.get(name) or 0)
+        amount = pricing.cost(provider, model, usage)
+        if amount is not None:
+            row["cost"] = float(amount)
+        self.last_context = row["input"] + row["cached"] + row["written"]
+        row["context"] = self.last_context
+        return ("u", _plist(row))
+
+    def _context_limit(self, provider, model):
+        live = DISCOVERY.context(provider, model) if DISCOVERY else 0
+        return live or context_for(provider, model)
+
+    # ---- one turn ----
 
     def iter_turn(self, messages, use_tools=True, provider="grok", model=None, system_override=None):
-        """Yield ('t', text) deltas and ('s', status) lines.
+        """Yield (kind, text) frames: t text, s status, a tool card, h thinking,
+        m media, u usage, q approval question, g guidance delivered, c context
+        compacted. Reasoning is shown only as 'h'. use_tools is per chat."""
+        try:
+            yield from self._iter_turn(messages, use_tools, provider, model, system_override)
+        except runs.Stopped:
+            return
 
-        Reasoning text from the model is never forwarded. Tool rounds use the
-        completed response, not the argument deltas. use_tools is per chat.
-        """
+    def _iter_turn(self, messages, use_tools, provider, model, system_override):
         refresh_settings()
-        if use_tools:
-            tools = self.definitions() if self.extra.config['ppc_enabled'] else []
-            tools = list(tools) + self.extra.definitions(provider)
-        else:
-            tools = []
+        chosen = resolve_model(provider, model)
+        skip = self.skip_keys()
+        tools = []
+        if use_tools and not system_override:
+            if self.extra.config['ppc_enabled'] and "commander" not in skip:
+                tools = list(self.definitions())
+                if not supports_images(provider, chosen):
+                    tools = [t for t in tools if t.get("name") != SCREENSHOT_TOOL]
+            tools = tools + self.extra.definitions(provider, skip)
+            if self.extra.config.get("consult_enabled") and "consult" not in skip:
+                consult = self._consult_definition()
+                if consult:
+                    tools.append(consult)
         if system_override:
             system = system_override
+            use_tools = False
         else:
             system = SYSTEM.replace("{machine}", self.machine()).replace("{os}", self.os_name())
-        if system_override:
-            use_tools = False
-            tools = []
-        else:
-            extra = media_tools(provider)
+            extra = media_tools(provider) if "media" not in skip else []
             if extra:
                 tools = list(tools) + extra
-                media_root = self.media_root()
                 system += (
                     " If the person asks for a picture, call generate_image. "
                     "If they ask for a video or animation, call generate_video. "
@@ -554,7 +844,7 @@ class ToolSession(object):
                     "Saved pictures and videos are files in %s on the Tiger Mac. "
                     "If the person asks to put one somewhere else, copy that file "
                     "with the shell. Do not invent a path."
-                ) % media_root
+                ) % self.media_root()
         if system_override:
             pass
         elif not use_tools:
@@ -563,67 +853,108 @@ class ToolSession(object):
                 "can read files or run commands on the Tiger Mac. If asked to, "
                 "say those tools are off for this chat."
             )
-        elif not tools:
+        elif "commander" in skip or not self.extra.config['ppc_enabled']:
+            system += (
+                " Commander is switched off for this chat. Do not claim you can read files "
+                "or run commands on the Tiger Mac."
+            )
+        elif not any(t.get("name") == "start_process" for t in tools):
             system += (
                 " The Tiger Mac tools are offline right now. If asked to touch "
                 "that computer, say you cannot reach it."
             )
+            if self.offline:
+                yield ("s", self.offline)
         else:
             system += (
                 " The account on that Mac is %s. Home is %s and the "
                 "Desktop is %s/Desktop. Do not look for other users "
                 "or call tools just to discover the home directory."
             ) % (self.account(), self.home(), self.home())
-        if not self.extra.config['ppc_enabled']:
-            system += " Built-in PPC Commander is disabled in the relay configuration. Only the other advertised tools may be used."
+            if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
+                system += " Use take_screenshot when you need to see what is on that Mac's screen."
+            if self.options["root"]:
+                system += (
+                    " This workspace is limited to the folder %s. File tools and shell commands "
+                    "cannot reach outside it; work inside it."
+                ) % self.options["root"]
+        if any(t.get("name") == CONSULT_TOOL for t in tools):
+            system += (
+                " You may use consult_model to get a second opinion from another model on hard "
+                "decisions or reviews. Do not use it for simple questions."
+            )
         if self.extra.errors:
             sys.stderr.write("tigerbuild-relay: custom MCP connection failures: %s\n" % "; ".join(self.extra.errors))
         if provider == "grok":
             system = system.replace("You are an assistant", "You are Grok", 1)
-        chosen = resolve_model(provider, model)
+        try:
+            if provider != "grok":
+                yield from self._iter_foreign(provider, messages, system, tools, chosen)
+            else:
+                yield from self._iter_grok(messages, system, tools, chosen, bool(system_override))
+        finally:
+            self.extra.close()
+
+    def _guidance_items(self):
+        """Notes the person typed while the model worked. Yields a frame for
+        each and returns their text, ready to add to the transcript."""
+        notes = self.run.take_guidance()
+        for note in notes:
+            yield ("g", note)
+        return notes
+
+    def _iter_grok(self, messages, system, tools, chosen, bare):
         payload = {
             "model": chosen,
             "store": True,
             "input": [{"role": "system", "content": system}] + messages,
         }
-        if provider == "grok" and not system_override and self.extra.config['grok_native_search']:
+        if not bare and self.extra.config['grok_native_search'] and "search" not in self.skip_keys():
             tools = list(tools) + [{"type": "web_search"}]
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        if provider != "grok":
-            try:
-                yield from self._iter_foreign(provider, messages, system, tools, chosen)
-            finally:
-                self.extra.close()
-            return
         client = None
         round_index = 0
         forced = False
         last_output = ""
         last_failed = False
+        client_holder = [None]
         try:
             while True:
+                self.run.check()
                 if round_index:
                     yield ("s", "Working on the next step...")
                 saw_text = False
                 completed = None
+                truncated = False
                 try:
-                    for event in iter_response_events(payload):
+                    for event in iter_response_events(payload, self.run):
+                        self.run.check()
                         etype = event.get("type") if isinstance(event, dict) else ""
                         delta = text_delta(event)
                         if delta:
                             saw_text = True
                             yield ("t", delta)
-                        elif etype == "response.completed" and isinstance(event.get("response"), dict):
+                        elif etype in ("response.completed", "response.incomplete") and isinstance(event.get("response"), dict):
                             completed = event["response"]
+                            truncated = etype == "response.incomplete"
                         elif etype in ("error", "response.failed", "response.error"):
                             raise RuntimeError(event_error_message(event))
                 except Exception as exc:
+                    self.run.check()
                     if saw_text or last_output:
                         yield ("t", self._stopped_early(last_output if last_failed else "", exc))
                         return
                     raise
+                self.run.check()
+                if isinstance(completed, dict):
+                    row = completed.get("usage") or {}
+                    holder = {}
+                    _openai_usage(holder, row)
+                    event = self._usage_event("grok", chosen, holder.get("usage"))
+                    if event:
+                        yield event
                 if not isinstance(completed, dict):
                     if saw_text:
                         return
@@ -633,24 +964,16 @@ class ToolSession(object):
                     raise RuntimeError("The model stream ended early.")
                 if completed.get("error"):
                     raise RuntimeError(event_error_message(completed))
+                if truncated:
+                    yield ("t", LIMIT_NOTE)
+                    return
                 calls = function_calls(completed) if tools else []
                 if calls and completed.get("id") and not forced and round_index < MAX_TOOL_ROUNDS:
-                    client_holder = [client]
                     outputs = []
+                    extra_input = []
                     for call in calls:
-                        announced = self._media_status(call.get("name") or "")
-                        if announced:
-                            yield ("s", announced)
-                        yield ("a", self._tool_event(call,"start"))
-                        started = time.monotonic()
-                        summary, output, media, failed = self._run_one_call(
-                            provider, call, client_holder
-                        )
-                        yield ("a", self._tool_event(call,"result",output,failed,time.monotonic()-started))
+                        output, failed, images = yield from self._execute("grok", call, client_holder)
                         client = client_holder[0]
-                        # Activity card already contains this tool summary.
-                        if media:
-                            yield ("m", media)
                         last_output = output
                         last_failed = failed
                         if round_index >= MAX_TOOL_ROUNDS - 3:
@@ -663,13 +986,19 @@ class ToolSession(object):
                             "call_id": call.get("call_id") or call.get("id"),
                             "output": output,
                         })
+                        shot = self._screenshot_note("grok", chosen, images)
+                        if shot:
+                            extra_input.extend(openai_responses_input([shot]))
+                    notes = yield from self._guidance_items()
+                    for note in notes:
+                        extra_input.append({"role": "user", "content": "Note from the person while you work: " + note})
                     payload = {
                         "model": chosen,
                         "store": True,
                         "previous_response_id": completed.get("id"),
                         "tools": tools,
                         "tool_choice": "auto",
-                        "input": outputs,
+                        "input": outputs + extra_input,
                     }
                     round_index += 1
                     continue
@@ -712,9 +1041,60 @@ class ToolSession(object):
                         raise RuntimeError("The model returned no text.")
                 return
         finally:
-            self.extra.close()
             if client is not None:
                 client.close()
+
+    # ---- keeping a long run inside the context window ----
+
+    @staticmethod
+    def _trim_tool_output(log, keep=6):
+        """Shorten old tool results. A long run piles up command output that the
+        model no longer needs word for word."""
+        trimmed = 0
+        tool_positions = [i for i, item in enumerate(log) if item.get("role") == "tool"]
+        for index in tool_positions[:-keep] if len(tool_positions) > keep else []:
+            text = log[index].get("content") or ""
+            if len(text) > 700:
+                log[index] = dict(log[index], content=text[:350] + "\n...[%d characters removed to save space]...\n" % (len(text) - 550) + text[-200:])
+                trimmed += 1
+        return trimmed
+
+    def _compact_log(self, provider, model, log):
+        """Make room in a long run. First shorten old tool output; if that is
+        not enough, replace the oldest part of the run with a summary. Returns
+        a sentence for the person, or "" when nothing changed."""
+        before = sum(len(item.get("content") or "") for item in log)
+        trimmed = self._trim_tool_output(log)
+        limit = self._context_limit(provider, model)
+        estimate = self.last_context
+        if trimmed:
+            after = sum(len(item.get("content") or "") for item in log)
+            estimate = int(estimate * (after / float(before or 1)))
+        if estimate < limit * COMPACT_AT:
+            return "Context was getting full, so older tool output was shortened." if trimmed else ""
+        # Keep the latest steps whole; summarize everything before them.
+        cut = len(log) - 6
+        while cut > 1 and log[cut].get("role") == "tool":
+            cut -= 1
+        if cut < 2:
+            return "Context was getting full, so older tool output was shortened." if trimmed else ""
+        older = []
+        for item in log[:cut]:
+            piece = item.get("content") or ""
+            if item.get("calls"):
+                piece += " [called %s]" % ", ".join(c.get("name") or "" for c in item["calls"])
+            if piece:
+                older.append("%s: %s" % (item.get("role"), piece[:3000]))
+        text = "\n\n".join(older)[:60000]
+        try:
+            summary = self.plain_complete(provider, model, (
+                "Summarize this conversation and the work done so far so the assistant can carry on. Keep names, "
+                "decisions, file paths, commands that worked, errors seen and unfinished work. Plain prose."
+            ), [{"role": "user", "content": text}])
+        except Exception:
+            return "Context was getting full, so older tool output was shortened." if trimmed else ""
+        log[:cut] = [{"role": "user", "content": "Summary of the earlier part of this conversation:\n" + summary}]
+        return "Context was full, so the earlier part of this run was summarized."
 
     def _iter_foreign(self, provider, messages, system, tools, model):
         log = []
@@ -727,15 +1107,21 @@ class ToolSession(object):
         any_text = False
         try:
             while True:
+                self.run.check()
                 if round_index:
                     yield ("s", "Working on the next step...")
-                holder = {}
+                    if self.last_context and self.last_context >= self._context_limit(provider, model) * COMPACT_AT:
+                        note = self._compact_log(provider, model, log)
+                        if note:
+                            yield ("c", note)
+                holder = {"run": self.run}
                 saw_text = False
                 spoken = []
                 try:
                     for delta in stream_round(
                         provider, system, log, tools, holder, ssl_context(), api_error_text, model
                     ):
+                        self.run.check()
                         if isinstance(delta, dict) and "thinking" in delta:
                             yield ("h", delta["thinking"])
                             continue
@@ -745,13 +1131,24 @@ class ToolSession(object):
                             spoken.append(delta)
                             yield ("t", delta)
                 except Exception as exc:
+                    self.run.check()
                     if any_text or last_output:
                         yield ("t", self._stopped_early(last_output if last_failed else "", exc))
                         return
                     raise
+                self.run.check()
+                event = self._usage_event(provider, model, holder.get("usage"))
+                if event:
+                    yield event
                 calls = holder.get("calls") or []
+                if holder.get("truncated"):
+                    if not holder.get("noted"):
+                        yield ("t", LIMIT_NOTE)
+                    return
                 if not calls or round_index >= MAX_TOOL_ROUNDS:
-                    if not saw_text and last_failed:
+                    if calls and round_index >= MAX_TOOL_ROUNDS:
+                        yield ("t", STEP_NOTE % MAX_TOOL_ROUNDS)
+                    elif not saw_text and last_failed:
                         yield ("t", self._stopped_early(last_output, None))
                     elif not saw_text and last_output and not any_text:
                         yield ("t", last_output)
@@ -766,27 +1163,26 @@ class ToolSession(object):
                     "calls": calls,
                     "claude_blocks": holder.get("claude_blocks"),
                 })
+                shots = []
                 for call in calls:
-                    announced = self._media_status(call.get("name") or "")
-                    if announced:
-                        yield ("s", announced)
-                    yield ("a", self._tool_event(call,"start"))
-                    started = time.monotonic()
-                    summary, output, media, failed = self._run_one_call(
-                        provider, call, client_holder
-                    )
-                    yield ("a", self._tool_event(call,"result",output,failed,time.monotonic()-started))
-                    # Activity card already contains this tool summary.
-                    if media:
-                        yield ("m", media)
+                    output, failed, images = yield from self._execute(provider, call, client_holder)
                     last_output = output
                     last_failed = failed
+                    shots.extend(images)
                     log.append({
                         "role": "tool",
                         "id": call.get("id") or call.get("name") or "",
                         "name": call.get("name") or "",
                         "content": output,
                     })
+                shot = self._screenshot_note(provider, model, shots)
+                if shot:
+                    log.append(shot)
+                elif shots:
+                    log.append({"role": "user", "content": "(A screenshot was taken, but this model cannot view images.)"})
+                notes = yield from self._guidance_items()
+                for note in notes:
+                    log.append({"role": "user", "content": "Note from the person while you work: " + note})
                 round_index += 1
         finally:
             if client_holder[0] is not None:
@@ -797,6 +1193,8 @@ class ToolSession(object):
         for kind, text in self.iter_turn(messages, False, provider, model, system):
             if kind == "t":
                 parts.append(text)
+            elif kind == "u":
+                self.side.append(("u", text))
         text = "".join(parts).strip()
         if not text:
             raise RuntimeError("The model returned no text.")
@@ -873,10 +1271,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _frame(self, kind, text):
         data = text.encode("utf-8")
-        self.wfile.write(("%s %d\n" % (kind, len(data))).encode("ascii"))
-        if data:
-            self.wfile.write(data)
-        self.wfile.flush()
+        # The keepalive thread writes too, so a frame must go out whole.
+        lock = self.__dict__.setdefault("_wlock", threading.Lock())
+        with lock:
+            self.wfile.write(("%s %d\n" % (kind, len(data))).encode("ascii"))
+            if data:
+                self.wfile.write(data)
+            self.wfile.flush()
 
     def _begin_stream(self):
         try:
@@ -1098,6 +1499,29 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/history":
             self._history_download()
             return
+        if path == "/v1/tools":
+            from integrations import catalogue
+            with _TOOL_LOCK:
+                offline = _TOOL_CACHE["offline"]
+                code = _TOOL_CACHE["code"]
+            payload = plistlib.dumps({"tools": catalogue(), "commander_problem": offline,
+                                      "commander_code": code}, fmt=plistlib.FMT_XML)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-plist")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        if path == "/v1/ssh":
+            self._ssh_state()
+            return
+        if path == "/v1/ssh/public-key":
+            try:
+                self._send(200, connection.ensure_key(load_shell_config()) + "\n")
+            except Exception as exc:
+                self._send(502, str(exc) + "\n")
+            return
         if path == "/v1/models":
             self._send(200, start_discovery(False).models_text())
             return
@@ -1186,6 +1610,12 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/v1/title", "/v1/summarize"):
             self._post_side_task(path)
             return
+        if path == "/v1/run":
+            self._post_run()
+            return
+        if path in ("/v1/ssh/connect", "/v1/ssh/settings", "/v1/ssh/forget", "/v1/ssh/test"):
+            self._post_ssh(path)
+            return
         if path != "/v1/chat":
             self._send(404, "not found\n")
             return
@@ -1213,7 +1643,8 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(requested_model, str):
             requested_model = None
         streaming = self.headers.get("X-TigerBuild-Protocol") == "frames"
-        session = ToolSession()
+        run = runs.start(incoming.get("run"))
+        session = ToolSession(run, clean_options(incoming))
         reported = session.set_client(incoming.get("client"))
         if reported:
             note_client(self.client_address[0] if self.client_address else "", reported)
@@ -1223,20 +1654,139 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send(502, str(exc))
                 return
+            finally:
+                runs.finish(run)
             self._send(200, reply)
             return
         self._begin_stream()
+        done = threading.Event()
+
+        def keepalive():
+            # A long tool run can go minutes without a frame. This tells Tiger
+            # Build the relay is still working, and notices when it has left.
+            while not done.wait(8):
+                try:
+                    self._frame("k", "")
+                except Exception:
+                    run.cancel()
+                    return
+
+        threading.Thread(target=keepalive, daemon=True).start()
+        turn = session.iter_turn(cleaned, use_tools, provider, requested_model)
         try:
-            for kind, text in session.iter_turn(cleaned, use_tools, provider, requested_model):
-                if kind in ("t", "s", "m", "a", "h"):
+            for kind, text in turn:
+                if kind in ("t", "s", "m", "a", "h", "u", "q", "g", "c"):
                     self._frame(kind, text)
             self._frame("d", "")
+        except (BrokenPipeError, ConnectionError, OSError):
+            run.cancel()
         except Exception as exc:
             try:
                 self._frame("e", str(exc))
                 self._frame("d", "")
             except Exception:
                 pass
+        finally:
+            done.set()
+            turn.close()
+            runs.finish(run)
+
+    def _post_run(self):
+        """Stop, guidance or an approval answer for a running turn."""
+        try:
+            incoming = self._read_json()
+        except RuntimeError as exc:
+            self._send(400, str(exc) + "\n")
+            return
+        run = runs.get(incoming.get("id"))
+        if run is None:
+            self._send(404, "That turn is not running.\n")
+            return
+        action = incoming.get("action")
+        if action == "stop":
+            run.cancel()
+        elif action == "guide":
+            if not run.add_guidance(incoming.get("text")):
+                self._send(400, "Could not take that note.\n")
+                return
+        elif action == "approve":
+            if not run.answer(str(incoming.get("call") or ""), str(incoming.get("decision") or "deny")):
+                self._send(404, "Nothing is waiting for that answer.\n")
+                return
+        else:
+            self._send(400, "Unknown action.\n")
+            return
+        self._send(200, "ok\n")
+
+    def _lines(self, rows):
+        self._send(200, "".join("%s=%s\n" % (key, str(value).replace("\n", " ")) for key, value in rows))
+
+    def _ssh_state(self):
+        config = load_shell_config()
+        info = connection.describe(config)
+        with _TOOL_LOCK:
+            offline = _TOOL_CACHE["offline"]
+            code = _TOOL_CACHE["code"]
+            known = _TOOL_CACHE["tools"] is not None
+        rows = [
+            ("host", info["host"]), ("user", info["user"]), ("home", info["home"]),
+            ("key_exists", "1" if info["key_exists"] else "0"),
+            ("host_key_saved", "1" if info["host_key_saved"] else "0"),
+            ("commander", "online" if known and not offline else ("offline" if offline else "unknown")),
+            ("code", code), ("problem", offline),
+        ]
+        self._lines(rows)
+
+    def _post_ssh(self, path):
+        global ALLOWED
+        try:
+            incoming = self._read_json() if int(self.headers.get("Content-Length", "0") or "0") else {}
+        except RuntimeError as exc:
+            self._send(400, str(exc) + "\n")
+            return
+        address = self.client_address[0] if self.client_address else ""
+        try:
+            if path == "/v1/ssh/connect":
+                # Tiger Build on the Tiger Mac asks to be reached. The address
+                # is the one the request came from, never one it names.
+                changes = {"TIGER_USER": incoming.get("user")}
+                if address not in ("127.0.0.1", "::1"):
+                    changes["TIGER_HOST"] = address[7:] if address.startswith("::ffff:") else address
+                elif incoming.get("host"):
+                    changes["TIGER_HOST"] = incoming.get("host")
+                home = incoming.get("home")
+                if isinstance(home, str) and home.startswith("/"):
+                    changes["TIGER_HOME"] = home
+                config = connection.update_config(changes)
+                connection.ensure_key(config)
+                connection.remember_host_key(config)
+            elif path == "/v1/ssh/settings":
+                changes = {}
+                for field, name in (("host", "TIGER_HOST"), ("user", "TIGER_USER"), ("home", "TIGER_HOME")):
+                    if field in incoming:
+                        changes[name] = incoming.get(field) or ""
+                config = connection.update_config(changes)
+                if incoming.get("remember_host_key") and config.get("TIGER_HOST"):
+                    connection.ensure_key(config)
+                    connection.remember_host_key(config)
+            elif path == "/v1/ssh/forget":
+                connection.forget_host_key()
+                config = load_shell_config()
+                connection.remember_host_key(config) if incoming.get("relearn") else None
+            else:
+                config = load_shell_config()
+            ALLOWED = reload_allowed(config)
+            invalidate_tools()
+            result = connection.test(load_shell_config())
+        except (ValueError, RuntimeError) as exc:
+            self._send(400, str(exc) + "\n")
+            return
+        except Exception as exc:
+            self._send(502, str(exc) + "\n")
+            return
+        self._lines([("ok", "1" if result["ok"] else "0"), ("code", result["code"]), ("message", result["message"])])
+
+
 
 
 def self_test():
@@ -1455,16 +2005,14 @@ def main(argv):
     if len(argv) > 1 and argv[1] == "--print-token":
         print(TOKEN)
         return
-    ALLOWED = allowed_clients(config)
     port = int(config.get("LISTEN_PORT") or "8765")
     address = listen_address(config)
     if len(argv) > 1 and argv[1] == "--print-address":
         print(address)
         return
+    ALLOWED = reload_allowed(config)
     start_discovery(True)
-    if address not in ("0.0.0.0", "::"):
-        # Let this Mac check its own relay on the address it listens on.
-        ALLOWED.add(address)
+    pricing.start(ssl_context())
     server = ThreadingHTTPServer((address, port), Handler)
     server.daemon_threads = True
     from paths import support_dir as _support

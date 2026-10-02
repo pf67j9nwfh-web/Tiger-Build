@@ -382,6 +382,14 @@ def openai_messages(system, log):
                 "tool_calls": tool_calls,
             })
             continue
+        images = image_parts(item) if role == "user" else []
+        if images:
+            parts = [{"type": "text", "text": item.get("content") or "(screenshot)"}]
+            for image in images:
+                parts.append({"type": "image_url", "image_url": {
+                    "url": "data:%s;base64,%s" % (image.get("mime") or "image/jpeg", image["data"])}})
+            messages.append({"role": role, "content": parts})
+            continue
         messages.append({"role": role, "content": item.get("content") or ""})
     return messages
 
@@ -418,6 +426,17 @@ def anthropic_messages(log):
                     "input": _parse_args(call.get("arguments")),
                 })
             messages.append({"role": "assistant", "content": blocks})
+            continue
+        if role == "user" and (image_parts(item) or (messages and messages[-1]["role"] == "user"
+                                                      and isinstance(messages[-1]["content"], list))):
+            blocks = [{"type": "text", "text": item.get("content") or "(screenshot)"}]
+            for image in image_parts(item):
+                blocks.append({"type": "image", "source": {
+                    "type": "base64", "media_type": image.get("mime") or "image/jpeg", "data": image["data"]}})
+            if messages and messages[-1]["role"] == "user" and isinstance(messages[-1]["content"], list):
+                messages[-1]["content"].extend(blocks)
+            else:
+                messages.append({"role": "user", "content": blocks})
             continue
         if role in ("user", "assistant"):
             messages.append({"role": role, "content": item.get("content") or ""})
@@ -471,7 +490,13 @@ def gemini_contents(log):
                 contents.append({"role": "model", "parts": parts})
             continue
         if role == "user":
-            contents.append({"role": "user", "parts": [{"text": item.get("content") or ""}]})
+            parts = [{"text": item.get("content") or "(screenshot)"}]
+            for image in image_parts(item):
+                parts.append({"inlineData": {"mimeType": image.get("mime") or "image/jpeg", "data": image["data"]}})
+            if contents and contents[-1]["role"] == "user" and any("functionResponse" in p for p in contents[-1]["parts"]):
+                contents[-1]["parts"].extend(parts)
+            else:
+                contents.append({"role": "user", "parts": parts})
     return contents
 
 
@@ -510,6 +535,54 @@ def _post_stream(url, payload, headers, ssl_context, api_error_text):
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")
         raise RuntimeError(api_error_text(detail, exc.code))
+
+
+def _open(holder, url, payload, headers, ssl_context, api_error_text):
+    """_post_stream, but a Stop from Tiger Build closes the response, which
+    wakes the read that is waiting on the model."""
+    response = _post_stream(url, payload, headers, ssl_context, api_error_text)
+    run = holder.get("run")
+    if run is not None:
+        run.on_abort(response.close)
+        holder["_abort"] = response.close
+    return response
+
+
+def _release(holder, response):
+    run = holder.get("run")
+    callback = holder.pop("_abort", None)
+    if run is not None and callback is not None:
+        run.off_abort(callback)
+    try:
+        response.close()
+    except Exception:
+        pass
+
+
+def _note_usage(holder, inputs=0, cached=0, written=0, output=0):
+    """Add one response's token counts. Services report them once per call."""
+    usage = holder.setdefault("usage", {"input": 0, "cached": 0, "written": 0, "output": 0})
+    usage["input"] += max(int(inputs or 0), 0)
+    usage["cached"] += max(int(cached or 0), 0)
+    usage["written"] += max(int(written or 0), 0)
+    usage["output"] += max(int(output or 0), 0)
+
+
+def _openai_usage(holder, usage):
+    if not isinstance(usage, dict):
+        return
+    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details") or {}
+    cached = int((details or {}).get("cached_tokens") or 0)
+    output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    _note_usage(holder, max(prompt - cached, 0), cached, 0, output)
+
+
+def image_parts(item):
+    return [
+        image for image in (item.get("images") or [])
+        if isinstance(image, dict) and image.get("data")
+    ]
 
 
 def _piece_text(value):
@@ -759,9 +832,13 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
         effort = OPENAI_EFFORT.get(model)
         if effort and url == OPENAI_URL:
             payload["reasoning_effort"] = effort
+    if url in (OPENAI_URL, MISTRAL_URL) or url.endswith("/chat/completions") and url not in (MUSE_URL,):
+        # Ask for the token counts the cost estimate uses. Services that do
+        # not know the option ignore it or reject it; see the retry below.
+        payload["stream_options"] = {"include_usage": True}
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "TigerBuild-relay/1.2",
+        "User-Agent": "TigerBuild-relay/1.3",
     }
     if key:
         headers["Authorization"] = "Bearer " + key
@@ -773,15 +850,21 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
     if ask_mistral:
         payload["reasoning_effort"] = "high"
     try:
-        response = _post_stream(url, payload, headers, ssl_context, api_error_text)
+        response = _open(holder, url, payload, headers, ssl_context, api_error_text)
     except RuntimeError as exc:
         # Retry only for the "not enabled / not supported" reply, not a 429 or outage.
-        if not ask_mistral or "reasoning_effort" not in str(exc):
+        text = str(exc)
+        if "stream_options" in text and "stream_options" in payload:
+            payload.pop("stream_options", None)
+            response = _open(holder, url, payload, headers, ssl_context, api_error_text)
+        elif ask_mistral and "reasoning_effort" in text:
+            payload.pop("reasoning_effort", None)
+            response = _open(holder, url, payload, headers, ssl_context, api_error_text)
+            MISTRAL_NO_REASONING.add(model)
+        else:
             raise
-        payload.pop("reasoning_effort", None)
-        response = _post_stream(url, payload, headers, ssl_context, api_error_text)
-        MISTRAL_NO_REASONING.add(model)
     slots = {}
+    finished = False
     answer = AnswerStream()
     try:
         raw_sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
@@ -794,6 +877,8 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
             failure = _stream_failure(item)
             if failure:
                 raise RuntimeError(failure)
+            if isinstance(item.get("usage"), dict):
+                _openai_usage(holder, item["usage"])
             choices = item.get("choices") or []
             if not choices:
                 continue
@@ -836,11 +921,17 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
                 if function.get("arguments"):
                     slot["arguments"] += function["arguments"]
             if choice.get("finish_reason"):
+                if choice.get("finish_reason") == "length":
+                    holder["truncated"] = True
+                finished = True
+                # Keep reading: the usage chunk follows the finish reason.
+                continue
+            if finished and not choices:
                 break
     except socket.timeout:
         pass
     finally:
-        response.close()
+        _release(holder, response)
     calls = [slot for slot in (slots[index] for index in sorted(slots)) if slot.get("name")]
     # Text held back as a possible tag start (for example "a<b" at the end).
     tail = answer.flush()
@@ -885,6 +976,14 @@ def openai_responses_input(log):
                     "arguments": arguments,
                 })
             continue
+        images = image_parts(item) if role == "user" else []
+        if images:
+            parts = [{"type": "input_text", "text": item.get("content") or "(screenshot)"}]
+            for image in images:
+                parts.append({"type": "input_image", "image_url": "data:%s;base64,%s" % (
+                    image.get("mime") or "image/jpeg", image["data"])})
+            items.append({"role": "user", "content": parts})
+            continue
         if role in ("user", "assistant"):
             items.append({"role": role, "content": item.get("content") or ""})
     return items
@@ -925,13 +1024,13 @@ def stream_openai_responses(key, model, system, log, tools, holder, ssl_context,
     headers = {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + key,
-        "User-Agent": "TigerBuild-relay/1.2",
+        "User-Agent": "TigerBuild-relay/1.3",
     }
     thinking = show_thinking() and not holder.get("probe")
     if thinking:
         payload["reasoning"] = {"summary": "auto"}
     try:
-        response = _post_stream(OPENAI_RESPONSES_URL, payload, headers, ssl_context, api_error_text)
+        response = _open(holder, OPENAI_RESPONSES_URL, payload, headers, ssl_context, api_error_text)
     except RuntimeError:
         if not thinking:
             raise
@@ -939,7 +1038,7 @@ def stream_openai_responses(key, model, system, log, tools, holder, ssl_context,
         # organization. Answer without them instead of failing the turn.
         payload.pop("reasoning", None)
         thinking = False
-        response = _post_stream(OPENAI_RESPONSES_URL, payload, headers, ssl_context, api_error_text)
+        response = _open(holder, OPENAI_RESPONSES_URL, payload, headers, ssl_context, api_error_text)
     completed = None
     try:
         for _event, item in iter_sse(response):
@@ -951,10 +1050,16 @@ def stream_openai_responses(key, model, system, log, tools, holder, ssl_context,
                     yield {"thinking": item["delta"]}
             elif kind == "response.reasoning_summary_part.done" and thinking:
                 yield {"thinking": "\n\n"}
-            elif kind == "response.completed" and isinstance(item.get("response"), dict):
+            elif kind in ("response.completed", "response.incomplete") and isinstance(item.get("response"), dict):
                 completed = item["response"]
+                if kind == "response.incomplete":
+                    holder["truncated"] = True
+            elif kind in ("error", "response.failed"):
+                raise RuntimeError(str((item.get("error") or (item.get("response") or {}).get("error") or {}).get("message")
+                                       or "The model failed."))
     finally:
-        response.close()
+        _release(holder, response)
+    _openai_usage(holder, (completed or {}).get("usage"))
     holder["calls"] = _response_calls(completed or {})
 
 
@@ -1001,21 +1106,24 @@ def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error
         # Adaptive thinking text is omitted unless display is "summarized".
         # Older models take a bounded enabled budget instead.
         payload["thinking"]={"type":"adaptive","display":"summarized"} if kind=="adaptive" else {"type":"enabled","budget_tokens":2048}
-    headers={"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","User-Agent":"TigerBuild-relay/1.2"}
+    headers={"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","User-Agent":"TigerBuild-relay/1.3"}
     workspace=os.environ.get("ANTHROPIC_WORKSPACE_ID","").strip()
     if workspace:headers["anthropic-workspace-id"]=workspace
     try:
-        response=_post_stream(ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
+        response=_open(holder,ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
     except RuntimeError as exc:
         limit=_claude_limit(str(exc))
         if not limit or limit>=payload["max_tokens"]:raise
         CLAUDE_LIMITS[model]=limit;payload["max_tokens"]=limit
-        response=_post_stream(ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
-    blocks={};arguments={};complete=set();stop=""
+        response=_open(holder,ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
+    blocks={};arguments={};complete=set();stop="";started={};ended={}
     try:
         for _event,item in iter_sse(response):
             kind=item.get("type");index=item.get("index",0)
             if kind=="error":raise RuntimeError(str((item.get("error") or {}).get("message") or "Claude stream error"))
+            if kind=="message_start":
+                u=(item.get("message") or {}).get("usage") or {}
+                started=u
             if kind=="content_block_start":
                 block=dict(item.get("content_block") or {})
                 blocks[index]=block
@@ -1035,13 +1143,18 @@ def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error
                 elif dt=="input_json_delta":arguments[index]=arguments.get(index,"")+(delta.get("partial_json") or "")
             elif kind=="message_delta":
                 stop=(item.get("delta") or {}).get("stop_reason") or stop
+                ended=item.get("usage") or ended
             elif kind=="content_block_stop":
                 block=blocks.get(index,{})
                 if block.get("type")=="tool_use" and arguments.get(index):
                     try:block["input"]=json.loads(arguments[index])
                     except ValueError:block["cut"]=True  # arguments ended at the length limit
                 complete.add(index)
-    finally:response.close()
+    finally:_release(holder,response)
+    _note_usage(holder,started.get("input_tokens"),started.get("cache_read_input_tokens"),
+                started.get("cache_creation_input_tokens"),ended.get("output_tokens") or started.get("output_tokens"))
+    if stop in ("max_tokens","model_context_window_exceeded"):
+        holder["truncated"]=True
     if stop=="max_tokens":
         # A tool call cut off mid-arguments must not run or be replayed.
         # Drop it, tell the user, and end the turn cleanly.
@@ -1076,26 +1189,31 @@ def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": key,
-        "User-Agent": "TigerBuild-relay/1.2",
+        "User-Agent": "TigerBuild-relay/1.3",
     }
     thinking = show_thinking() and not holder.get("probe")
     if thinking:
         payload["generationConfig"] = {"thinkingConfig": {"includeThoughts": True}}
     try:
-        response = _post_stream(GEMINI_URL % model, payload, headers, ssl_context, api_error_text)
+        response = _open(holder, GEMINI_URL % model, payload, headers, ssl_context, api_error_text)
     except RuntimeError:
         if not thinking:
             raise
         # Models without thinking reject thinkingConfig; answer without it.
         payload.pop("generationConfig", None)
         thinking = False
-        response = _post_stream(GEMINI_URL % model, payload, headers, ssl_context, api_error_text)
+        response = _open(holder, GEMINI_URL % model, payload, headers, ssl_context, api_error_text)
     calls = []
     seen = {}
     loose_signature = ""
+    meta = {}
     try:
         for _event, item in iter_sse(response):
+            if isinstance(item.get("usageMetadata"), dict):
+                meta = item["usageMetadata"]
             for candidate in item.get("candidates") or []:
+                if candidate.get("finishReason") == "MAX_TOKENS":
+                    holder["truncated"] = True
                 content = candidate.get("content") or {}
                 for part in content.get("parts") or []:
                     signature = part.get("thoughtSignature") or ""
@@ -1126,7 +1244,10 @@ def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error
                         seen[marker] = record
                         calls.append(record)
     finally:
-        response.close()
+        _release(holder, response)
+    cached = int(meta.get("cachedContentTokenCount") or 0)
+    _note_usage(holder, max(int(meta.get("promptTokenCount") or 0) - cached, 0), cached, 0,
+                int(meta.get("candidatesTokenCount") or 0) + int(meta.get("thoughtsTokenCount") or 0))
     if loose_signature:
         for record in calls:
             if not record.get("thought_signature"):

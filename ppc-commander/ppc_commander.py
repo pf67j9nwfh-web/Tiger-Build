@@ -37,7 +37,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
@@ -694,6 +694,8 @@ def resolve_existing(path):
 
 
 def path_allowed(path):
+    if not workspace_allows(path):
+        return False
     roots = CONFIG.get('allowedDirectories', [])
     if not roots:
         return True
@@ -713,6 +715,11 @@ def path_allowed(path):
 
 
 def denied_message(path):
+    if not workspace_allows(path):
+        return (
+            'path is outside this workspace\'s folder: %s. Work inside %s.'
+            % (path, WORKSPACE['root'])
+        )
     roots = CONFIG.get('allowedDirectories', [])
     shown = []
     if isinstance(roots, list):
@@ -732,6 +739,78 @@ def protected_paths():
         os.path.realpath(os.path.abspath(__file__)),
         POLICY_PATH,
     ]
+
+
+# A workspace can limit Commander to one folder. The relay passes the folder
+# in TB_WORKSPACE_ROOT when it starts this program over SSH, so the model, which
+# can only call tools, cannot change it. File tools are held to it exactly.
+# Shell commands are held to it as well as a plain command line can be: the
+# working folder is the root, and any path the command names must be inside it
+# (programs in the system folders may still be run). A determined script can
+# get around that, so use a separate account when the limit must be absolute.
+WORKSPACE = {'root': ''}
+SYSTEM_PROGRAM_DIRS = [
+    '/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/local/bin', '/usr/libexec',
+    '/usr/lib', '/usr/share', '/System/Library', '/Developer/usr',
+    '/Developer/SDKs', '/Developer/Library', '/dev/null', '/dev/tty', '/dev/zero',
+    '/usr/include', '/Library/Frameworks',
+]
+
+
+def apply_workspace_root():
+    root = os.environ.get('TB_WORKSPACE_ROOT', '').strip()
+    WORKSPACE['root'] = ''
+    if not root:
+        return
+    if not os.path.isabs(root):
+        log('ignoring TB_WORKSPACE_ROOT: it must be an absolute path')
+        return
+    WORKSPACE['root'] = resolve_existing(os.path.normpath(root))
+
+
+def inside(path, root):
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def workspace_allows(path):
+    root = WORKSPACE['root']
+    if not root:
+        return True
+    return inside(path, root)
+
+
+def command_paths(command):
+    """The path-like words in a shell command, split on spaces, quotes and
+    shell punctuation."""
+    found = []
+    for word in re.split(r'[\s;|&<>()=`$"\']+', command):
+        if word == '':
+            continue
+        if word[0] in '/~' or word == '..' or word.startswith('../') or '/../' in word or word.endswith('/..'):
+            found.append(word)
+    return found
+
+
+def workspace_command_problem(command):
+    """Why this command may not run in the workspace, or None."""
+    root = WORKSPACE['root']
+    if not root:
+        return None
+    for word in command_paths(command):
+        full = os.path.expanduser(word)
+        if not os.path.isabs(full):
+            full = os.path.join(root, full)
+        full = resolve_existing(os.path.normpath(full))
+        if inside(full, root):
+            continue
+        ok = 0
+        for system in SYSTEM_PROGRAM_DIRS:
+            if inside(full, system):
+                ok = 1
+                break
+        if not ok:
+            return 'the command uses %s, which is outside this workspace folder (%s)' % (word, root)
+    return None
 
 
 def check_writable(path):
@@ -1859,6 +1938,8 @@ def detach_command(command, shell):
             except OSError:
                 pass
             signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            if WORKSPACE['root']:
+                os.chdir(WORKSPACE['root'])
             devnull = os.open('/dev/null', os.O_RDWR)
             os.dup2(devnull, 0)
             os.dup2(devnull, 1)
@@ -1915,6 +1996,12 @@ def tool_start_process(args):
     why = command_blocked(command)
     if why:
         raise ToolError('blocked command (%s). Change blockedCommands only if you mean to.' % why)
+    if WORKSPACE['root'] and not os.path.isdir(WORKSPACE['root']):
+        raise ToolError('this workspace is limited to %s, which does not exist on this Mac. '
+                        'Change the folder in the workspace settings.' % WORKSPACE['root'])
+    why = workspace_command_problem(command)
+    if why:
+        raise ToolError('blocked by the workspace folder limit: %s' % why)
     if opt_bool(args, 'detach', False):
         child = detach_command(command, shell)
         lines = [
@@ -1927,6 +2014,8 @@ def tool_start_process(args):
     pid, fd = pty.fork()
     if pid == 0:
         try:
+            if WORKSPACE['root']:
+                os.chdir(WORKSPACE['root'])
             os.environ['TERM'] = 'vt100'
             os.environ['LANG'] = 'C'
             os.environ['LC_ALL'] = 'C'
@@ -2072,6 +2161,46 @@ def shutdown_sessions():
                     os.kill(pid, signal.SIGTERM)
                 except OSError:
                     pass
+
+
+# --- screenshot ---
+
+def tool_take_screenshot(args):
+    """A picture of the main display, as a small JPEG the model can look at."""
+    import base64
+    width = opt_int(args, 'max_width', 1024)
+    if width < 320:
+        width = 320
+    if width > 2048:
+        width = 2048
+    stamp = '%d-%d' % (os.getpid(), int(time.time() * 1000))
+    png = '/tmp/ppc-shot-%s.png' % stamp
+    jpg = '/tmp/ppc-shot-%s.jpg' % stamp
+    try:
+        # Tiger's screencapture writes PNG only; sips shrinks it and makes the JPEG.
+        status = os.system('/usr/sbin/screencapture -x %s >/dev/null 2>&1' % png)
+        if status != 0 or not os.path.isfile(png) or os.path.getsize(png) == 0:
+            raise ToolError('could not capture the screen. Someone must be logged in at this Mac, '
+                            'and the display must be awake.')
+        os.system('/usr/bin/sips -Z %d -s format jpeg -s formatOptions 60 %s --out %s >/dev/null 2>&1' % (width, png, jpg))
+        if not os.path.isfile(jpg) or os.path.getsize(jpg) == 0:
+            raise ToolError('could not shrink the screenshot')
+        f = open(jpg, 'rb')
+        try:
+            data = f.read()
+        finally:
+            f.close()
+        return {
+            'text': 'Screenshot of the main display (%d bytes, JPEG).' % len(data),
+            'image': base64.encodestring(data).replace('\n', ''),
+            'mime': 'image/jpeg',
+        }
+    finally:
+        for path in (png, jpg):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 # --- config and history tools ---
@@ -2220,6 +2349,18 @@ def prop(kind, description):
 
 def tool_defs():
     return [
+        {
+            'name': 'take_screenshot',
+            'description': (
+                'Take a screenshot of this Mac\'s main display and return it as an image, to see what an '
+                'application or window looks like. It needs someone logged in at the console.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {'max_width': prop('number', 'Widest the picture may be, in pixels. Default 1024.')},
+                'additionalProperties': True,
+            },
+        },
         {
             'name': 'get_config',
             'description': 'Show ppc-commander configuration and what this Mac is running.',
@@ -2542,6 +2683,7 @@ HANDLERS = {
     'list_sessions': tool_list_sessions,
     'list_processes': tool_list_processes,
     'kill_process': tool_kill_process,
+    'take_screenshot': tool_take_screenshot,
     'get_usage_stats': tool_get_usage_stats,
     'get_recent_tool_calls': tool_get_recent_tool_calls,
 }
@@ -2572,6 +2714,10 @@ def call_tool(params):
         text = 'error: %s' % exc
         ok = False
     dur = int((time.time() - started) * 1000)
+    image = None
+    if isinstance(text, dict):
+        image = text
+        text = image.get('text', '')
     record(name, args, text, ok, dur)
     if not isinstance(text, str):
         text = str(text)
@@ -2579,8 +2725,11 @@ def call_tool(params):
         is_error = False
     else:
         is_error = True
+    content = [{'type': 'text', 'text': text}]
+    if image is not None and ok:
+        content.insert(0, {'type': 'image', 'data': image['image'], 'mimeType': image['mime']})
     return {
-        'content': [{'type': 'text', 'text': text}],
+        'content': content,
         'isError': is_error,
     }
 
@@ -2794,6 +2943,36 @@ def run_self_test():
     except ToolError:
         expect('self protected', True, failures, '')
 
+    # Workspace folder limit.
+    import tempfile
+    work = os.path.realpath(tempfile.mkdtemp())
+    WORKSPACE['root'] = work
+    try:
+        try:
+            check_path(os.path.join(work, 'a.txt'))
+            expect('workspace inside', True, failures, '')
+        except ToolError:
+            expect('workspace inside', False, failures, 'a file inside the folder was refused')
+        for outside in ('/etc/hosts', os.path.join(work, '..', 'x'), '~/Desktop'):
+            try:
+                check_path(outside)
+                expect('workspace outside %s' % outside, False, failures, 'was allowed')
+            except ToolError:
+                expect('workspace outside %s' % outside, True, failures, '')
+        expect('workspace cmd ok', workspace_command_problem('ls -la; cat notes.txt > out.txt') is None, failures,
+               str(workspace_command_problem('ls -la; cat notes.txt > out.txt')))
+        expect('workspace cmd system program', workspace_command_problem('/usr/bin/gcc -o app app.c') is None, failures, '')
+        expect('workspace cmd abs path', workspace_command_problem('cat /etc/passwd') is not None, failures, '')
+        expect('workspace cmd home', workspace_command_problem('ls ~') is not None, failures, '')
+        expect('workspace cmd dotdot', workspace_command_problem('cat ../secret') is not None, failures, '')
+        expect('workspace cmd redirect', workspace_command_problem('echo x >/etc/foo') is not None, failures, '')
+        expect('workspace cmd inside abs', workspace_command_problem('cat %s/a.txt' % work) is None, failures, '')
+    finally:
+        WORKSPACE['root'] = ''
+        os.rmdir(work)
+    expect('screenshot tool listed', 'take_screenshot' in [spec['name'] for spec in tool_defs()], failures, '')
+    expect('screenshot handler', 'take_screenshot' in HANDLERS, failures, '')
+
     names = []
     for spec in tool_defs():
         names.append(spec['name'])
@@ -2933,6 +3112,7 @@ def main(argv):
     except OSError:
         pass
     load_config()
+    apply_workspace_root()
     load_usage()
     collect_sysinfo()
     if len(argv) > 1 and argv[1] == '--self-test':
