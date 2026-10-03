@@ -198,6 +198,11 @@ static NSString *safeFileStem(NSString *title)
     /* The export numbered the file ("3-report.md"); take the number off. */
     if (dash.location != NSNotFound && dash.location < 6)
         base = [name substringFromIndex:dash.location + 1];
+    /* The name comes from the file being imported, so it is never trusted as a path. */
+    base = [[[base componentsSeparatedByString:@"/"] lastObject] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@". "]];
+    base = [[base componentsSeparatedByString:@":"] componentsJoinedByString:@"-"];
+    if ([base length] == 0)
+        base = @"file";
     [[NSFileManager defaultManager] createDirectoryAtPath:dir attributes:nil];
     if ([directory isEqualToString:@"media"] && [base length] > 17 && [base characterAtIndex:16] == '-')
         path = [dir stringByAppendingPathComponent:base];

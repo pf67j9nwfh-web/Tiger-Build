@@ -90,6 +90,7 @@
     [self reloadTableSelect:0 show:YES];[self refillWorkspacePopup];
     [input setStringValue:@""];
     [window setTitle:[NSString stringWithFormat:@"Tiger Build - %@",next]];
+    [self sweepStoredFiles];
 }
 /* Workspaces that have a saved file, without the Default placeholder. */
 - (NSArray *)workspaceNamesOnDisk

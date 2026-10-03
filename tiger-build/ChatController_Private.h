@@ -82,7 +82,8 @@
 @interface ChatController (Attachments)
 - (IBAction)attachFile:(id)sender;
 - (void)attachPaths:(NSArray *)paths;
-- (NSMutableDictionary *)attachmentForPath:(NSString *)path problem:(NSString **)problem;
+- (NSArray *)attachmentsForPath:(NSString *)path problem:(NSString **)problem;
+- (void)sweepStoredFiles;
 - (NSArray *)imageAttachmentsForChat:(NSDictionary *)chat;
 @end
 

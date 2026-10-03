@@ -1971,6 +1971,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self saveStore];
     [self reloadTableSelect:row show:YES];
     [window makeFirstResponder:input];
+    [self sweepStoredFiles];
 }
 
 - (IBAction)newChat:(id)sender

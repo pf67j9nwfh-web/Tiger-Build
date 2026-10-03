@@ -392,8 +392,8 @@ NSString *TBMessageContent(NSDictionary *message)
     name = [file objectForKey:@"name"];
     kind = [file objectForKey:@"kind"];
     if ([kind isEqualToString:@"image"])
-        return [NSString stringWithFormat:@"[The person attached a picture named \"%@\". A copy is on their Mac at %@.]",
-            name, [file objectForKey:@"path"]];
+        return [NSString stringWithFormat:@"[The person attached a picture named \"%@\". A copy is on their Mac at %@.%@]",
+            name, [file objectForKey:@"path"], [file objectForKey:@"note"] ? [@" " stringByAppendingString:[file objectForKey:@"note"]] : @""];
     body = TBReadTextFile([file objectForKey:@"path"], TB_ATTACH_TEXT_MAX, &truncated);
     if (!body)
         return [NSString stringWithFormat:@"[The person attached a file named \"%@\", but it is no longer available on this Mac.]", name];

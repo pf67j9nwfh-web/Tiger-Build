@@ -94,6 +94,7 @@
     [self reloadTableSelect:0 show:YES];
     [self refillWorkspacePopup];
     [window setTitle:@"Tiger Build - Default"];
+    [self sweepStoredFiles];
 }
 
 - (void)exportHistory:(id)sender
