@@ -89,8 +89,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         ("Anthropic / Claude", "anthropic_api_key", true), ("Workspace ID (optional)", "anthropic_workspace_id", false),
         ("Mistral", "mistral_api_key", true), ("Muse", "muse_api_key", true), ("Google / Gemini", "gemini_api_key", true),
         ("Local LLM server URL", "local_url", false), ("Local API key (optional)", "local_api_key", true)]
+    @objc func showAbout(_ sender: Any?) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3"
+        let alert = NSAlert()
+        alert.messageText = "About Tiger Build Relay"
+        alert.informativeText = "Version \(version)\nLicensed under the MIT License."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = NSMenu(), appMenu = NSMenu(), slot = NSMenuItem()
+        let aboutItem = appMenu.addItem(withTitle: "About Tiger Build Relay", action: #selector(showAbout(_:)), keyEquivalent: "")
+        aboutItem.target = self
+        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit Tiger Build Relay", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         slot.submenu = appMenu; menu.addItem(slot)
         let edit = NSMenu(), e = NSMenuItem(); e.title = "Edit"; e.submenu = edit
