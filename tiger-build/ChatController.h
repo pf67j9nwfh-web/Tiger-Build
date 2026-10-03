@@ -19,6 +19,8 @@
     NSButton *retryButton;
     NSButton *attachButton;
     NSMutableArray *attachQueue;
+    RelayRequest *attachRequest;
+    int attachGeneration;
     NSTextView *fieldEditor;
     id finder;
     double lastPartialSave;

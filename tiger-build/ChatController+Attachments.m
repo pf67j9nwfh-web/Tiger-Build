@@ -380,7 +380,8 @@ static unsigned pdfPageCount(NSString *path)
         unsigned p;
         for (p = want; p > 0; p--) {
             [attachQueue insertObject:[NSDictionary dictionaryWithObjectsAndKeys:path, @"path", [job objectForKey:@"chat"], @"chat",
-                @"pdfpage", @"kind", [NSNumber numberWithUnsignedInt:p], @"page", [NSNumber numberWithUnsignedInt:pages], @"pages",
+                [job objectForKey:@"generation"] ? [job objectForKey:@"generation"] : [NSNumber numberWithInt:attachGeneration],
+                @"generation", @"pdfpage", @"kind", [NSNumber numberWithUnsignedInt:p], @"page", [NSNumber numberWithUnsignedInt:pages], @"pages",
                 [NSNumber numberWithBool:(p == want && pages > want)], @"more", nil] atIndex:0];
         }
     }
@@ -514,8 +515,10 @@ static unsigned pdfPageCount(NSString *path)
     if (!attachProblems)
         attachProblems = [[NSMutableArray alloc] init];
     for (i = 0; i < [paths count]; i++)
-        [attachQueue addObject:[NSDictionary dictionaryWithObjectsAndKeys:[paths objectAtIndex:i], @"path", current, @"chat", @"file", @"kind", nil]];
+        [attachQueue addObject:[NSDictionary dictionaryWithObjectsAndKeys:[paths objectAtIndex:i], @"path", current, @"chat", @"file", @"kind",
+            [NSNumber numberWithInt:attachGeneration], @"generation", nil]];
     [self forgetEdit];
+    [self syncRunButtons];
     if (!attachWorking) {
         attachWorking = YES;
         [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.0];
@@ -541,6 +544,10 @@ static unsigned pdfPageCount(NSString *path)
     }
     job = [[[attachQueue objectAtIndex:0] retain] autorelease];
     [attachQueue removeObjectAtIndex:0];
+    if ([[job objectForKey:@"generation"] intValue] != attachGeneration) {
+        [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.0];
+        return;
+    }
     chat = [job objectForKey:@"chat"];
     if ([chats indexOfObjectIdenticalTo:chat] == NSNotFound) {
         [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.0];
@@ -564,6 +571,8 @@ static unsigned pdfPageCount(NSString *path)
 
 - (void)attachRun:(NSDictionary *)job
 {
+    if ([[job objectForKey:@"generation"] intValue] != attachGeneration)
+        return;
     NSString *path = [job objectForKey:@"path"];
     NSString *ext = [[path pathExtension] lowercaseString];
     NSString *problem = nil;
@@ -586,6 +595,38 @@ static unsigned pdfPageCount(NSString *path)
         made = [self attachmentsForPath:path problem:&problem];
     }
     [self finishJob:job made:made problem:problem];
+}
+
+/* Stop while files are being read: forget what is waiting, drop the notes, and let the relay's answer go unread. */
+- (BOOL)cancelAttachments
+{
+    unsigned c;
+    if (!attachWorking)
+        return NO;
+    attachGeneration++;
+    [attachQueue removeAllObjects];
+    [attachProblems removeAllObjects];
+    if (attachRequest)
+        [attachRequest cancel];
+    attachRequest = nil;
+    attachWorking = NO;
+    for (c = 0; c < [chats count]; c++) {
+        NSMutableArray *list = [[chats objectAtIndex:c] objectForKey:@"messages"];
+        int m;
+        for (m = (int)[list count] - 1; m >= 0; m--) {
+            if ([[list objectAtIndex:m] objectForKey:@"converting"])
+                [list removeObjectAtIndex:m];
+        }
+    }
+    [self saveStore];
+    [self refreshTranscriptIfCurrent:current];
+    [self syncRunButtons];
+    return YES;
+}
+
+- (BOOL)attachmentsRunning
+{
+    return attachWorking;
 }
 
 /* The job is over: its "Reading..." note becomes the files, after a check that they fit. */
@@ -730,7 +771,8 @@ static unsigned pdfPageCount(NSString *path)
         attachProblems = [[NSMutableArray alloc] init];
     for (i = 0; i < [wanted count] && i < 12; i++)
         [attachQueue addObject:[NSDictionary dictionaryWithObjectsAndKeys:path, @"path", current, @"chat", @"pdfpage", @"kind",
-            [wanted objectAtIndex:i], @"page", [NSNumber numberWithUnsignedInt:pages], @"pages", nil]];
+            [wanted objectAtIndex:i], @"page", [NSNumber numberWithUnsignedInt:pages], @"pages",
+            [NSNumber numberWithInt:attachGeneration], @"generation", nil]];
     [self forgetEdit];
     if (!attachWorking) {
         attachWorking = YES;
@@ -897,13 +939,16 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
     [self refreshTranscriptIfCurrent:[job objectForKey:@"chat"]];
     info = [NSMutableDictionary dictionaryWithDictionary:job];
     [info setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
-    [RelayRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
+    attachRequest = [RelayRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
     return YES;
 }
 
 - (void)conversionArrived:(RelayRequest *)request
 {
     NSDictionary *info = [request context];
+    if ([[info objectForKey:@"generation"] intValue] != attachGeneration)
+        return;
+    attachRequest = nil;
     NSString *path = [info objectForKey:@"path"];
     NSString *name = [path lastPathComponent];
     double size = [[info objectForKey:@"size"] doubleValue];

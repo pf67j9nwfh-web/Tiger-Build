@@ -382,8 +382,10 @@ static NSString *newRunId(void)
 {
     NSMutableDictionary *chat;
     (void)sender;
-    if (!busy)
+    if (!busy) {
+        [self cancelAttachments];
         return;
+    }
     stopping = YES;
     if (sideRequest) {
         /* Still compacting, before the chat stream started. */
@@ -556,7 +558,7 @@ static NSString *newRunId(void)
     BOOL guide = [self guidanceAvailable];
     if (!sendButton)
         return;
-    [stopButton setEnabled:busy && !stopping];
+    [stopButton setEnabled:(busy && !stopping) || [self attachmentsRunning]];
     if (!busy) {
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];

@@ -2090,7 +2090,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [item setState:(win && [win level] > NSNormalWindowLevel) ? NSOnState : NSOffState];
     }
     if ([item action] == @selector(stopRun:))
-        return busy && !stopping;
+        return (busy && !stopping) || [self attachmentsRunning];
     if ([item action] == @selector(editLast:))
         return !busy && (editBackup || [self lastUserIndex] >= 0);
     if ([item action] == @selector(retryLast:))
