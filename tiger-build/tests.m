@@ -261,6 +261,12 @@ int main(void)
         tbcheck([TBSplitBlocks(@"a | b without a separator row\nnext") count] == 1, @"pipes alone are not a table");
         tbcheck([TBLanguageTitle(@"table", @"") isEqualToString:@"Table"] && [TBLanguageExtension(@"Table") isEqualToString:@"tsv"], @"table title and extension");
     }
+    {
+        NSString *shown = TBDisplayText([NSString stringWithFormat:@"Done %C%C!%C", (unichar)0xD83D, (unichar)0xDE80, (unichar)0x2705]);
+        tbcheck([shown isEqualToString:@"Done (rocket)! (check)"] || TBSystemMinor() >= 7, @"emoji become words");
+        tbcheck([TBDisplayText(@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713") isEqualToString:@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713"], @"other characters are untouched");
+        tbcheck(![TBDisplayText([NSString stringWithFormat:@"a%C%C%Cb", (unichar)0xD83E, (unichar)0xDD2F, (unichar)0xFE0F]) hasPrefix:@"a\xed"], @"unknown pictographs dropped");
+    }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 
     tbcheck(TBEstimateTokens(chat, NO) == 406, @"token estimate");

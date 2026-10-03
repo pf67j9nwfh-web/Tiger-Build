@@ -90,6 +90,10 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn);
    message; a picture is sent alongside it. */
 #define TB_ATTACH_TEXT_MAX 300000
 NSString *TBMessageContent(NSDictionary *message);
+void TBRollingBackup(NSString *path);
+/* The text as it can be drawn on this Mac. Mac OS X before Lion has no emoji font, so emoji would show as
+   boxes; common ones become words or emoticons and the rest are left out. The stored message is unchanged. */
+NSString *TBDisplayText(NSString *text);
 /* While a request is built: the directory the workspace is limited to, or nil. A copy of an
    attachment outside it is not mentioned to the model, whose file tools could not reach it. */
 void TBSetPathHintRoot(NSString *root);

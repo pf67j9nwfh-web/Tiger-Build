@@ -1035,6 +1035,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         float fileH = 0;
         if (!text)
             text = @"";
+        text = TBDisplayText(text);
         if (open && [text length] == 0
             && (!imagePath || [imagePath length] == 0)
             && (!videoPath || [videoPath length] == 0))

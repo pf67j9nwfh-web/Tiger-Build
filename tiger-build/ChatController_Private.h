@@ -81,6 +81,8 @@
 /* ChatController+Run.m */
 @interface ChatController (Attachments)
 - (IBAction)attachFile:(id)sender;
+- (BOOL)chatHasAttachments:(NSDictionary *)chat;
+- (BOOL)confirmCloudAttach;
 - (IBAction)attachPDFPages:(id)sender;
 - (void)attachPaths:(NSArray *)paths;
 - (NSArray *)attachmentsForPath:(NSString *)path problem:(NSString **)problem;

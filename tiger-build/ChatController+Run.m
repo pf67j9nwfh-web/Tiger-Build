@@ -96,6 +96,8 @@ static NSString *newRunId(void)
     value = [approve isKindOfClass:[NSDictionary class]] ? [approve objectForKey:@"all"] : nil;
     if (value)
         return [value boolValue];
+    if (([key isEqualToString:@"commander"] || [key hasPrefix:@"mcp_"]) && [self chatHasAttachments:chat])
+        return YES;
     return [[[self catalogEntry:key] objectForKey:@"approval"] boolValue];
 }
 
@@ -123,6 +125,24 @@ static NSString *newRunId(void)
         [out appendFormat:@"%@\"%@\":%s", i ? @"," : @"", TBJSONEscape(key), [self serverEnabled:key chat:chat] ? "true" : "false"];
     }
     [out appendString:@"},\"approve\":{"];
+    {
+        /* A document, web page or search result can contain instructions aimed at the model. In a chat that has
+           attached files, tools that can act on the Mac ask first unless the person has chosen otherwise for them. */
+        BOOL attached = NO;
+        NSArray *messages = [chat objectForKey:@"messages"];
+        unsigned m;
+        for (m = 0; m < [messages count] && !attached; m++)
+            attached = [[messages objectAtIndex:m] objectForKey:@"attachment"] != nil;
+        if (attached) {
+            NSMutableDictionary *merged = [NSMutableDictionary dictionaryWithDictionary:[approve isKindOfClass:[NSDictionary class]] ? approve : [NSDictionary dictionary]];
+            for (i = 0; i < [list count]; i++) {
+                NSString *key = [[list objectAtIndex:i] objectForKey:@"id"];
+                if (([key isEqualToString:@"commander"] || [key hasPrefix:@"mcp_"]) && ![merged objectForKey:key] && ![merged objectForKey:@"all"])
+                    [merged setObject:[NSNumber numberWithBool:YES] forKey:key];
+            }
+            approve = merged;
+        }
+    }
     if ([approve isKindOfClass:[NSDictionary class]]) {
         NSEnumerator *keys = [approve keyEnumerator];
         NSString *key;

@@ -463,6 +463,106 @@ NSString *TBBase64(NSData *data)
     return result;
 }
 
+typedef struct { unsigned long code; const char *name; } EmojiName;
+
+static const EmojiName emojiTable[] = {
+    {0x1F600, ":D"}, {0x1F603, ":D"}, {0x1F604, ":D"}, {0x1F601, ":D"}, {0x1F60A, ":)"}, {0x1F642, ":)"}, {0x1F609, ";)"},
+    {0x1F641, ":("}, {0x1F61E, ":("}, {0x1F622, ":'("}, {0x1F62D, ":'("}, {0x1F62E, ":O"}, {0x1F61B, ":P"},
+    {0x1F602, "(laughing)"}, {0x1F923, "(laughing)"}, {0x1F914, "(thinking)"}, {0x1F60E, "(cool)"}, {0x1F60D, "(love)"},
+    {0x1F680, "(rocket)"}, {0x1F44D, "(+1)"}, {0x1F44E, "(-1)"}, {0x1F44F, "(clap)"}, {0x1F44B, "(wave)"}, {0x1F64F, "(thanks)"},
+    {0x1F389, "(party)"}, {0x1F525, "(fire)"}, {0x1F4A1, "(idea)"}, {0x1F4DD, "(note)"}, {0x1F4C4, "(file)"}, {0x1F4C1, "(folder)"},
+    {0x1F50D, "(search)"}, {0x1F527, "(tool)"}, {0x1F4CA, "(chart)"}, {0x1F4D6, "(book)"}, {0x1F4BB, "(computer)"}, {0x1F512, "(lock)"},
+    {0x1F41B, "(bug)"}, {0x1F4AF, "(100)"}, {0x2705, "(check)"}, {0x274C, "(x)"}, {0x26A0, "(warning)"}, {0x2728, "*"}, {0x2B50, "*"},
+    {0x1F31F, "*"}, {0x2600, "(sun)"}, {0x26A1, "(zap)"}, {0x1F496, "(heart)"}, {0x1F499, "<3"}, {0x1F49A, "<3"}, {0x2139, "(info)"},
+    {0, NULL}
+};
+
+static BOOL isPictograph(unichar c)
+{
+    return c == 0x2705 || c == 0x274C || c == 0x26A0 || c == 0x2728 || c == 0x2600 || c == 0x26A1 || c == 0x2139 || (c >= 0x2B00 && c <= 0x2BFF);
+}
+
+NSString *TBDisplayText(NSString *text)
+{
+    NSMutableString *out;
+    unsigned n = [text length];
+    unsigned i;
+    BOOL needed = NO;
+    if (n == 0 || TBSystemMinor() >= 7)
+        return text;
+    for (i = 0; i < n; i++) {
+        unichar c = [text characterAtIndex:i];
+        if ((c >= 0xD800 && c <= 0xDFFF) || c == 0xFE0F || c == 0x200D || isPictograph(c)) {
+            needed = YES;
+            break;
+        }
+    }
+    if (!needed)
+        return text;
+    out = [NSMutableString stringWithCapacity:n];
+    i = 0;
+    while (i < n) {
+        unichar c = [text characterAtIndex:i];
+        if (c == 0xFE0F || c == 0x200D) {
+            i++;
+        } else if ((c >= 0xD800 && c <= 0xDBFF && i + 1 < n) || isPictograph(c)) {
+            unsigned long code = c;
+            const EmojiName *row;
+            if (c >= 0xD800 && c <= 0xDBFF) {
+                unichar low = [text characterAtIndex:i + 1];
+                code = 0x10000 + (((unsigned long)c - 0xD800) << 10) + ((unsigned long)low - 0xDC00);
+                i += 2;
+            } else {
+                i++;
+            }
+            for (row = emojiTable; row->name; row++) {
+                if (row->code == code) {
+                    NSString *name = [NSString stringWithUTF8String:row->name];
+                    unsigned have = [out length];
+                    if (have > 0 && row->name[0] == '(' && [out characterAtIndex:have - 1] != ' ')
+                        [out appendString:@" "];
+                    [out appendString:name];
+                    break;
+                }
+            }
+            /* skin tones and the rest of the pictographs have no text form, and are left out */
+        } else {
+            [out appendFormat:@"%C", c];
+            i++;
+        }
+    }
+    return out;
+}
+
+/* Before a workspace file is replaced, keep the old one: five copies in a ring, one slot for each half hour, and one
+   at the first save of every session. A bad write or a bug then costs at most half an hour of chats. */
+void TBRollingBackup(NSString *path)
+{
+    static NSMutableDictionary *last = nil;
+    NSFileManager *manager = [NSFileManager defaultManager];
+    double now = CFAbsoluteTimeGetCurrent();
+    NSNumber *before;
+    NSString *dir;
+    NSString *target;
+    int slot;
+    if (!last)
+        last = [[NSMutableDictionary alloc] init];
+    if (![manager fileExistsAtPath:path])
+        return;
+    before = [last objectForKey:path];
+    if (before && now - [before doubleValue] < 1800)
+        return;
+    if ([[[manager fileAttributesAtPath:path traverseLink:YES] objectForKey:NSFileSize] doubleValue] < 200)
+        return;
+    dir = [[path stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"backups"];
+    [manager createDirectoryAtPath:dir attributes:nil];
+    slot = (int)(now / 1800.0) % 5;
+    target = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%d.plist", [[path lastPathComponent] stringByDeletingPathExtension], slot]];
+    [manager removeFileAtPath:target handler:nil];
+    if ([manager copyPath:path toPath:target handler:nil])
+        [last setObject:[NSNumber numberWithDouble:now] forKey:path];
+}
+
 NSString *TBStoreChangedNotification = @"TBStoreChanged";
 static NSMutableDictionary *openStores = nil;
 
@@ -607,7 +707,9 @@ static NSMutableDictionary *openStores = nil;
         [error release];
     }
     if (data) {
-        [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+        NSFileManager *manager = [NSFileManager defaultManager];
+        [manager createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+        TBRollingBackup(path);
         [data writeToFile:path atomically:YES];
     }
 }

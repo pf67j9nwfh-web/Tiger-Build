@@ -29,6 +29,8 @@ static NSMutableArray *extraWindows = nil;
 - (void)layoutPanes;
 - (void)updateContextReadout;
 - (BOOL)startCompactionIfNeeded;
+- (BOOL)chatHasAttachments:(NSDictionary *)chat;
+- (BOOL)confirmCloudAttach;
 - (void)refreshRelayVersion;
 - (BOOL)relayTooOldForPictures:(NSDictionary *)chat;
 - (void)beginChatStream;
@@ -1415,6 +1417,17 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 
 /* Every 30 seconds: while the relay is unreachable or still testing models,
    ask again; otherwise refresh the model list every 10 minutes. */
+- (BOOL)chatHasAttachments:(NSDictionary *)chat
+{
+    NSArray *messages = [chat objectForKey:@"messages"];
+    unsigned i;
+    for (i = 0; i < [messages count]; i++) {
+        if ([[messages objectAtIndex:i] objectForKey:@"attachment"])
+            return YES;
+    }
+    return NO;
+}
+
 /* The relay's version, so a relay older than this app is not asked for what it cannot do. */
 - (void)refreshRelayVersion
 {
@@ -2878,6 +2891,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         else
             [self setRelayProblem:[NSString stringWithFormat:@"%@ cannot be used (%@). Pick another model or add its key in Preferences.",
                 [[ModelCatalog shared] titleForProvider:pid], note ? note : @"unavailable"]];
+        NSBeep();
+        return;
+    }
+    if ([self chatHasAttachments:current] && ![self confirmCloudAttach]) {
         NSBeep();
         return;
     }
