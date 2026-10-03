@@ -454,3 +454,21 @@ def create_media(provider, name, prompt, ssl_context):
         raise RuntimeError("The media service returned an empty file.")
     filename = save_bytes(data, ext)
     return {"kind": kind, "filename": filename}
+
+
+def prune_media(days=3):
+    """Delete files in the media folder older than this many days. The client downloads a
+    picture or file as soon as it is made, so the relay's copy is only a hand-off."""
+    import time
+    folder = media_dir()
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for name in os.listdir(folder):
+        path = os.path.join(folder, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        except OSError:
+            pass
+    return removed

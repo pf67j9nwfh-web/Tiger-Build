@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import zipfile
 from xml.etree import ElementTree as ET
 
@@ -25,6 +26,30 @@ IWORK_TYPES = ("pages", "numbers", "key")
 
 class Unsupported(Exception):
     pass
+
+
+class Busy(Exception):
+    pass
+
+
+MAX_PART = 64 * 1024 * 1024
+MAX_ALL = 400 * 1024 * 1024
+_SLOTS = threading.BoundedSemaphore(2)
+
+
+def _read(zf, name, limit=MAX_PART):
+    """One file from the archive, refusing one that unpacks to something huge."""
+    if zf.getinfo(name).file_size > limit:
+        raise ValueError("A part of this file is too large to read (%s)." % name)
+    return zf.read(name)
+
+
+def _xml(data):
+    """Parse XML from a file we did not write. Entity definitions are refused: they are
+    how a small file is made to expand into gigabytes."""
+    if re.search(rb"<!ENTITY", data[:200000], re.I):
+        raise ValueError("This file uses XML features the relay will not read.")
+    return ET.fromstring(data)
 
 
 def handles(name):
@@ -142,7 +167,7 @@ def docx_text(zf):
     for part in ("word/document.xml", "word/footnotes.xml", "word/endnotes.xml"):
         if part not in zf.namelist():
             continue
-        root = ET.fromstring(zf.read(part))
+        root = _xml(_read(zf, part))
         if part != "word/document.xml":
             lines.append("")
             lines.append("[" + part.split("/")[-1].split(".")[0].capitalize() + "]")
@@ -163,18 +188,18 @@ def pptx_text(zf):
     out = []
     for index, slide in enumerate(slides, 1):
         out.append("--- Slide %d ---" % index)
-        root = ET.fromstring(zf.read(slide))
+        root = _xml(_read(zf, slide))
         for paragraph in root.iter(namespace + "p"):
             text = "".join(node.text or "" for node in paragraph.iter(namespace + "t"))
             if text.strip():
                 out.append(text)
         relations = slide.replace("slides/", "slides/_rels/") + ".rels"
         if relations in zf.namelist():
-            for target in re.findall(r'Target="\.\./notesSlides/([^"]+)"', zf.read(relations).decode("utf-8", "replace")):
+            for target in re.findall(r'Target="\.\./notesSlides/([^"]+)"', _read(zf, relations).decode("utf-8", "replace")):
                 notes = "ppt/notesSlides/" + target
                 if notes in zf.namelist():
                     spoken = []
-                    for paragraph in ET.fromstring(zf.read(notes)).iter(namespace + "p"):
+                    for paragraph in _xml(_read(zf, notes)).iter(namespace + "p"):
                         text = "".join(node.text or "" for node in paragraph.iter(namespace + "t"))
                         if text.strip() and not text.strip().isdigit():
                             spoken.append(text)
@@ -196,11 +221,11 @@ def xlsx_text(zf):
     relationship = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
     shared = []
     if "xl/sharedStrings.xml" in zf.namelist():
-        for item in ET.fromstring(zf.read("xl/sharedStrings.xml")).iter(main + "si"):
+        for item in _xml(_read(zf, "xl/sharedStrings.xml")).iter(main + "si"):
             shared.append("".join(node.text or "" for node in item.iter(main + "t")))
     targets = {}
     if "xl/_rels/workbook.xml.rels" in zf.namelist():
-        for found in re.finditer(r"<Relationship\b[^>]*>", zf.read("xl/_rels/workbook.xml.rels").decode("utf-8", "replace")):
+        for found in re.finditer(r"<Relationship\b[^>]*>", _read(zf, "xl/_rels/workbook.xml.rels").decode("utf-8", "replace")):
             tag = found.group(0)
             identity = re.search(r'Id="([^"]+)"', tag)
             target = re.search(r'Target="([^"]+)"', tag)
@@ -209,7 +234,7 @@ def xlsx_text(zf):
                 targets[identity.group(1)] = path.lstrip("/") if path.startswith("/") else "xl/" + path
     out = []
     budget = MAX_TEXT
-    for sheet in ET.fromstring(zf.read("xl/workbook.xml")).iter(main + "sheet"):
+    for sheet in _xml(_read(zf, "xl/workbook.xml")).iter(main + "sheet"):
         name = sheet.get("name") or "Sheet"
         part = targets.get(sheet.get(relationship))
         if not part or part not in zf.namelist():
@@ -217,7 +242,7 @@ def xlsx_text(zf):
         out.append("--- Sheet: %s ---" % name)
         rows = 0
         total = 0
-        for row in ET.fromstring(zf.read(part)).iter(main + "row"):
+        for row in _xml(_read(zf, part)).iter(main + "row"):
             total += 1
             if rows >= 2000 or budget <= 0:
                 continue
@@ -248,7 +273,7 @@ def xlsx_text(zf):
 
 
 def odf_text(zf):
-    root = ET.fromstring(zf.read("content.xml"))
+    root = _xml(_read(zf, "content.xml"))
     lines = []
     for node in root.iter():
         if node.tag.endswith("}p") or node.tag.endswith("}h"):
@@ -415,7 +440,7 @@ def iwork_strings(zf):
         if any(word in low for word in ("stylesheet", "metadata", "masterslide", "viewstate", "annotation")):
             continue
         try:
-            records = list(_iwa_records(iwa_bytes(zf.read(name))))
+            records = list(_iwa_records(iwa_bytes(_read(zf, name))))
         except Exception:
             continue
         found = []
@@ -444,11 +469,11 @@ def iwork_old_text(zf):
     """iWork '09 and earlier keep a plain XML file (index.xml, maybe gzipped)."""
     for name in zf.namelist():
         if name in ("index.xml", "index.xml.gz"):
-            data = zf.read(name)
+            data = _read(zf, name)
             if name.endswith(".gz"):
                 data = gzip.decompress(data)
             try:
-                root = ET.fromstring(data)
+                root = _xml(data)
             except ET.ParseError:
                 return ""
             lines = []
@@ -466,12 +491,22 @@ def iwork_previews(zf):
     for name in zf.namelist():
         low = name.lower()
         if low in ("preview.jpg", "quicklook/thumbnail.jpg", "preview-web.jpg", "docprops/thumbnail.jpeg") and not found:
-            found.append(zf.read(name))
+            found.append(_read(zf, name))
     return found
 
 
 def extract(name, data):
-    """{"text": str, "images": [jpeg bytes], "note": str}. Raises Unsupported or ValueError."""
+    """{"text": str, "images": [jpeg bytes], "note": str}. Raises Unsupported, Busy or ValueError.
+    Two conversions at a time; another waits a moment, then is told to try again."""
+    if not _SLOTS.acquire(timeout=20):
+        raise Busy("The relay is busy converting other files. Try again in a moment.")
+    try:
+        return _extract(name, data)
+    finally:
+        _SLOTS.release()
+
+
+def _extract(name, data):
     ext = os.path.splitext(name)[1].lower().lstrip(".")
     if ext in ("jpg", "jpeg"):
         # Phone photos are stored sideways with a rotation tag the old Macs ignore.
@@ -484,6 +519,8 @@ def extract(name, data):
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise ValueError("This file is not in a form the relay can read. Save it again, or export it as PDF or text.")
+    if sum(info.file_size for info in zf.infolist()) > MAX_ALL:
+        raise ValueError("This file unpacks to more than 400 MB, which the relay will not read.")
     note = ""
     images = []
     if ext == "docx":
@@ -491,7 +528,7 @@ def extract(name, data):
     elif ext == "pptx":
         text = pptx_text(zf)
         if "docProps/thumbnail.jpeg" in zf.namelist():
-            images = [zf.read("docProps/thumbnail.jpeg")]
+            images = [_read(zf, "docProps/thumbnail.jpeg")]
     elif ext == "xlsx":
         text = xlsx_text(zf)
     elif ext in ("odt", "ods", "odp"):

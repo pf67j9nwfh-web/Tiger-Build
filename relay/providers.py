@@ -1105,9 +1105,38 @@ def _claude_limit(message):
     return int(found.group(1)) if found else 0
 
 
+def claude_cache_marks(system, messages):
+    """Mark where Claude may reuse what it has already read: the system prompt and tools, and
+    everything up to the last message. The attached files and earlier turns of a long chat are then
+    charged at the cache rate on the next turn instead of in full. Prompts too short to cache are
+    ignored by the service."""
+    marked = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}] if system else system
+    if messages:
+        last = messages[-1]
+        content = last.get("content")
+        if isinstance(content, str) and content.strip():
+            content = last["content"] = [{"type": "text", "text": content}]
+        if isinstance(content, list) and content and isinstance(content[-1], dict):
+            block = content[-1]
+            empty = block.get("type") == "text" and not (block.get("text") or "").strip()
+            if block.get("type") in ("text", "image", "tool_result", "tool_use") and not empty:
+                block["cache_control"] = {"type": "ephemeral"}
+    return marked
+
+
+def _without_cache_marks(payload):
+    payload["system"] = payload["system"][0]["text"] if isinstance(payload.get("system"), list) else payload.get("system")
+    for message in payload.get("messages") or []:
+        if isinstance(message.get("content"), list):
+            for block in message["content"]:
+                if isinstance(block, dict):
+                    block.pop("cache_control", None)
+
+
 def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error_text):
     info=live_info("claude",model)
-    payload = {"model":model,"max_tokens":claude_max_tokens(model,info),"stream":True,"system":system,"messages":anthropic_messages(log)}
+    messages=anthropic_messages(log)
+    payload = {"model":model,"max_tokens":claude_max_tokens(model,info),"stream":True,"system":claude_cache_marks(system,messages),"messages":messages}
     if tools: payload["tools"]=anthropic_tools(tools)
     kind=claude_thinking_type(model,info)
     if kind and show_thinking() and not holder.get("probe"):
@@ -1120,10 +1149,15 @@ def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error
     try:
         response=_open(holder,ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
     except RuntimeError as exc:
-        limit=_claude_limit(str(exc))
-        if not limit or limit>=payload["max_tokens"]:raise
-        CLAUDE_LIMITS[model]=limit;payload["max_tokens"]=limit
-        response=_open(holder,ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
+        if "cache_control" in str(exc):
+            # A model that does not take cache marks still answers without them.
+            _without_cache_marks(payload)
+            response=_open(holder,ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
+        else:
+            limit=_claude_limit(str(exc))
+            if not limit or limit>=payload["max_tokens"]:raise
+            CLAUDE_LIMITS[model]=limit;payload["max_tokens"]=limit
+            response=_open(holder,ANTHROPIC_URL,payload,headers,ssl_context,api_error_text)
     blocks={};arguments={};complete=set();stop="";started={};ended={}
     try:
         for _event,item in iter_sse(response):

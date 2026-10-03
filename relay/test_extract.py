@@ -103,6 +103,37 @@ class ExtractTests(unittest.TestCase):
         self.assertEqual(len(fixed), len(tagged))
         self.assertEqual(X.upright_tag(b"plain"), b"plain")
 
+    def test_hostile_files_are_refused(self):
+        evil = '<?xml version="1.0"?><!DOCTYPE d [<!ENTITY a "aaaaaaaaaa">]><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>&a;</w:t></w:r></w:p></w:body></w:document>'
+        with self.assertRaises(ValueError):
+            X.extract("a.docx", zipped({"word/document.xml": evil}))
+        old = X.MAX_PART
+        X.MAX_PART = 100
+        try:
+            with self.assertRaises(ValueError):
+                X.extract("a.docx", zipped({"word/document.xml": "<w:document xmlns:w='x'>" + "a" * 500 + "</w:document>"}))
+        finally:
+            X.MAX_PART = old
+
+    def test_busy_when_both_slots_are_taken(self):
+        import threading
+        slots = X._SLOTS
+        slots.acquire(); slots.acquire()
+        original = slots.acquire
+        try:
+            X._SLOTS = threading.BoundedSemaphore(1)
+            X._SLOTS.acquire()
+            class Quick:
+                def acquire(self, timeout=None): return X._real.acquire(blocking=False)
+                def release(self): X._real.release()
+            X._real = X._SLOTS
+            X._SLOTS = Quick()
+            with self.assertRaises(X.Busy):
+                X.extract("a.docx", b"x")
+        finally:
+            X._SLOTS = slots
+            slots.release(); slots.release()
+
     def test_bad_input(self):
         with self.assertRaises(ValueError):
             X.extract("a.docx", b"not a zip")

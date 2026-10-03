@@ -457,12 +457,19 @@ def cached_status(config):
     return entry["tools"] is not None, entry["code"], entry["detail"] or entry["offline"]
 
 
+def _CONTROL_CLEAN(text):
+    return "".join(c for c in text if c in "\n\t" or ord(c) >= 32)
+
+
 def clean_options(incoming):
     """The per-chat switches Tiger Build sends with a request. Anything that is
     not the expected shape is ignored."""
-    options = {"servers": {}, "approve": {}, "root": ""}
+    options = {"servers": {}, "approve": {}, "root": "", "instructions": ""}
     if not isinstance(incoming, dict):
         return options
+    instructions = incoming.get("instructions")
+    if isinstance(instructions, str):
+        options["instructions"] = _CONTROL_CLEAN(instructions.strip())[:4000]
     for name in ("servers", "approve"):
         table = incoming.get(name)
         if isinstance(table, dict):
@@ -865,7 +872,7 @@ class ToolSession(object):
             try:
                 if name not in self.extra.offered:
                     raise ValueError("Tool was not enabled or advertised for this request.")
-                stored = save_output_file(args.get("name"), args.get("content"))
+                stored = save_output_file(args.get("name"), args.get("content"), content_base64=args.get("content_base64"))
             except Exception as exc:
                 return "Saving a file", "error: %s" % exc, None, True, []
             return "Saving a file", "The file is now in the chat with a Save As button. Do not paste it again.", "file " + stored, False, []
@@ -1051,10 +1058,6 @@ class ToolSession(object):
             ) % (self.account(), self.home(), self.home())
             if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
-            if any(t.get("name") == "agent_save_file" for t in tools):
-                system += (" Files the person attaches are given to you in the conversation (text, PDF and document contents as text, "
-                           "pictures as pictures). To give them a new or changed file, call agent_save_file with the whole content; "
-                           "they get a Save As button.")
             if any(t.get("name") == "view_image" for t in tools):
                 system += (" To look at a picture file on that Mac (JPEG, PNG, GIF, TIFF, PDF and so on), call view_image "
                            "with its path; read_file only returns text.")
@@ -1063,6 +1066,11 @@ class ToolSession(object):
                     " This workspace is restricted to the directory %s. File tools and shell commands "
                     "cannot reach outside it; work inside it."
                 ) % self.options["root"]
+        if not system_override and any(t.get("name") == "agent_save_file" for t in tools):
+            system += (" Files the person attaches are given to you in the conversation (text, PDF, Word, Excel, PowerPoint and "
+                       "Pages/Numbers/Keynote contents as text, pictures as pictures). To give them a new or changed file, call "
+                       "agent_save_file with the whole content; they get a Save As button. A name ending in .docx, .xlsx or .pdf "
+                       "makes a real Word, Excel or PDF file from plain text (for .xlsx give tab or comma separated rows).")
         if any(t.get("name") == CONSULT_TOOL for t in tools):
             system += (
                 " You may use consult_model to get a second opinion from another model on hard "
@@ -1070,6 +1078,8 @@ class ToolSession(object):
             )
         if self.extra.errors:
             sys.stderr.write("tigerbuild-relay: custom MCP connection failures: %s\n" % "; ".join(self.extra.errors))
+        if not system_override and self.options.get("instructions"):
+            system += " The person's own instructions for this chat, which you follow: " + self.options["instructions"]
         if provider == "grok":
             system = system.replace("You are an assistant", "You are Grok", 1)
         try:
@@ -1490,7 +1500,8 @@ class Handler(BaseHTTPRequestHandler):
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
         if length < 0 or length > 40000000:
-            raise RuntimeError("request is too large")
+            raise RuntimeError("The conversation with its attached files is %.0f MB, more than the relay accepts (%.0f MB). "
+                               "Remove some attachments, or start a new chat." % (length / 1048576.0, 40000000 / 1048576.0))
         raw = self.rfile.read(length) if length else b""
         try:
             incoming = json.loads(raw.decode("utf-8")) if raw else {}
@@ -1806,6 +1817,9 @@ class Handler(BaseHTTPRequestHandler):
             if not converter.handles(name):
                 raise ValueError("The relay does not convert this kind of file.")
             result = converter.extract(name, data)
+        except converter.Busy as exc:
+            self._send(503, str(exc) + "\n")
+            return
         except (ValueError, converter.Unsupported) as exc:
             self._send(422, str(exc) + "\n")
             return
@@ -2300,6 +2314,16 @@ def main(argv):
     pricing.start(ssl_context())
     # The default queue holds 5 waiting connections, so a burst of chats from
     # several computers had some of them reset before the relay accepted them.
+    def prune_loop():
+        import time
+        from media import prune_media
+        while True:
+            try:
+                prune_media(3)
+            except Exception:
+                pass
+            time.sleep(6 * 3600)
+    threading.Thread(target=prune_loop, daemon=True).start()
     ThreadingHTTPServer.request_queue_size = 128
     server = ThreadingHTTPServer((address, port), Handler)
     server.daemon_threads = True

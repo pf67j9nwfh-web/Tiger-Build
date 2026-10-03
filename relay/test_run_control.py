@@ -307,10 +307,6 @@ class RunTests(unittest.TestCase):
             run.wait("c1", 5)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class HttpTests(unittest.TestCase):
     """The new HTTP routes, through a real server."""
 
@@ -356,6 +352,24 @@ class HttpTests(unittest.TestCase):
         status, data = self.call("GET", "/v1/ssh")
         self.assertEqual(status, 200)
         self.assertIn(b"host=", data)
+
+    def test_extract_route(self):
+        import io, zipfile, urllib.parse
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello from Word</w:t></w:r></w:p></w:body></w:document>')
+        def post(name, body, token="tok"):
+            conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=20)
+            conn.request("POST", "/v1/extract", body, {"X-TigerBuild-Token": token, "X-Filename": urllib.parse.quote(name),
+                                                        "Content-Type": "application/octet-stream"})
+            response = conn.getresponse()
+            return response.status, response.read()
+        status, data = post("My File.docx", buffer.getvalue())
+        self.assertEqual(status, 200)
+        self.assertEqual(plistlib.loads(data)["text"], "Hello from Word")
+        self.assertEqual(post("x.docx", b"not a zip")[0], 422)
+        self.assertEqual(post("x.exe", b"abc")[0], 422)
+        self.assertEqual(post("x.docx", buffer.getvalue(), token="wrong")[0], 401)
 
     def test_auth_required(self):
         conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
@@ -468,3 +482,7 @@ class ConcurrencyTests(unittest.TestCase):
         self.assertEqual(len(starts), 1)
         self.assertEqual(results, [2] * 8)
         C.invalidate_tools()
+
+
+if __name__ == "__main__":
+    unittest.main()

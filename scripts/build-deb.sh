@@ -18,6 +18,7 @@ Section: net
 Priority: optional
 Architecture: all
 Depends: python3 (>= 3.8), python3-tk, openssh-client (>= 1:9.1)
+Recommends: python3-pil, python3-pillow-heif | imagemagick
 Maintainer: Tiger Build <tigerbuild@localhost>
 Description: Tiger Build Relay
  Connects Mac OS X Tiger to current AI services. No API keys are included.
