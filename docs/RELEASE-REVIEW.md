@@ -1,4 +1,4 @@
-# Tiger Build 1.3 — release review
+# Tiger Build 1.3.1 — release review
 
 ## What changed
 - **Platforms.** One universal app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard: `ppc` and `i386` (10.4 SDK) joined with `ppc64` and `x86_64` (10.6 SDK when installed, else 10.5) when built on Leopard or Snow Leopard. Brushed metal stays on Tiger; Leopard and Snow Leopard use their native textured look. 64-bit-safe delegate types (`TBCompat.h`), 64-bit CoreGraphics callbacks, inline QuickTime playback in the 32-bit slices and in x86_64 on 10.6+ (QTKit weak-linked, checked at run time; other 64-bit cases open the default player), Quick Look on 10.5+ for pictures, Tiger-only private menu calls skipped on 10.5+.
