@@ -461,6 +461,24 @@ def _CONTROL_CLEAN(text):
     return "".join(c for c in text if c in "\n\t" or ord(c) >= 32)
 
 
+def local_addresses():
+    """The addresses of this computer, for telling a tunnelled request from a remote one."""
+    found = set(["127.0.0.1", "::1"])
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            found.add(info[4][0].split("%")[0])
+    except OSError:
+        pass
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("10.255.255.255", 1))
+        found.add(probe.getsockname()[0])
+        probe.close()
+    except OSError:
+        pass
+    return found
+
+
 def clean_options(incoming):
     """The per-chat switches Tiger Build sends with a request. Anything that is
     not the expected shape is ignored."""
@@ -1908,10 +1926,10 @@ class Handler(BaseHTTPRequestHandler):
             requested_model = None
         streaming = self.headers.get("X-TigerBuild-Protocol") == "frames"
         run = runs.start(incoming.get("run"))
-        session = ToolSession(run, clean_options(incoming), self.client_address[0] if self.client_address else "")
+        session = ToolSession(run, clean_options(incoming), self._caller_address())
         reported = session.set_client(incoming.get("client"))
         if reported:
-            note_client(self.client_address[0] if self.client_address else "", reported)
+            note_client(self._caller_address(), reported)
         if not streaming:
             try:
                 reply = session.run_turn(cleaned, use_tools, provider, requested_model)
@@ -1985,10 +2003,24 @@ class Handler(BaseHTTPRequestHandler):
     def _lines(self, rows):
         self._send(200, "".join("%s=%s\n" % (key, str(value).replace("\n", " ")) for key, value in rows))
 
+    def _caller_address(self):
+        """Who is asking. Normally the address the connection came from. A client reaching the relay
+        through an SSH tunnel arrives from the relay computer itself, so it says which Mac it is in
+        X-TigerBuild-Client (its own addresses, comma separated); that is believed only when the
+        connection is from this computer and one of the addresses is on the allowed list."""
+        address = self.client_address[0] if self.client_address else ""
+        claimed = self.headers.get("X-TigerBuild-Client", "")
+        if claimed and (address in ("127.0.0.1", "::1") or address == self.server.server_address[0] or address in local_addresses()):
+            for piece in claimed.split(","):
+                piece = piece.strip()
+                if piece and piece in ALLOWED and piece not in ("127.0.0.1", "::1"):
+                    return piece
+        return address
+
     def _client_target(self):
         """(config, is_relay_itself): the Commander settings for whoever is asking."""
         config = load_shell_config()
-        address = self.client_address[0] if self.client_address else ""
+        address = self._caller_address()
         return connection.target_config(config, address), address
 
     def _ssh_state(self):

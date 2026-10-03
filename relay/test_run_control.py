@@ -330,6 +330,21 @@ class HttpTests(unittest.TestCase):
         response = conn.getresponse()
         return response.status, response.read()
 
+    def test_tunnelled_client_is_recognised_only_from_this_computer(self):
+        C.ALLOWED = {"127.0.0.1", "10.9.9.9", "10.9.9.10"}
+        class Fake(C.Handler):
+            def __init__(self, address, claimed):
+                self.client_address = (address, 1)
+                self.headers = {"X-TigerBuild-Client": claimed} if claimed else {}
+                self.server = type("S", (), {"server_address": ("10.0.1.105", 8765)})()
+            def _x(self):
+                return self._caller_address()
+        self.assertEqual(Fake("127.0.0.1", "10.9.9.10, 10.9.9.9")._x(), "10.9.9.10")
+        self.assertEqual(Fake("10.0.1.105", "10.9.9.9")._x(), "10.9.9.9")
+        self.assertEqual(Fake("127.0.0.1", "10.7.7.7")._x(), "127.0.0.1")       # not an allowed client
+        self.assertEqual(Fake("10.9.9.10", "10.9.9.9")._x(), "10.9.9.10")       # a remote Mac cannot pretend
+        self.assertEqual(Fake("127.0.0.1", None)._x(), "127.0.0.1")
+
     def test_version_route(self):
         from version import VERSION
         status, data = self.call("GET", "/v1/version")

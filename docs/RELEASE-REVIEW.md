@@ -10,6 +10,13 @@
 - **Code blocks.** Dark panels with the language named, syntax colours for about 30 languages and aliases, wrapping, selectable text; bold, inline code, headings and bullets in prose.
 - **One chat to a file and back.** Export This Chat (⌥⌘E): a Tiger Build file with its attachments and pictures inside, Markdown, or plain text. Import Chat (⌥⌘I) adds it to the current workspace. No relay involved.
 
+### Added after the first 1.4 review
+- **Attach:** queued with progress notes, consent notice per service, context-fit check with a shortened copy, ~ paths and workspace-restriction awareness, pasted pictures and files, Attach PDF Pages, page pictures as separate steps, per-picture token estimate, picture and payload caps, relay-version check (`/v1/version`), stored files kept for import backups.
+- **Chats:** edit from any message, branch from any message, retry/edit keep later attachments, compaction keeps small attachments and stubs large ones, History export carries attachments, Find in Chats, Custom Instructions (also appended to the system prompt by the relay), text size, partial replies saved while streaming.
+- **Replies:** italics, links, tables; Save for tables and code.
+- **Models:** `agent_save_file` makes real Word/Excel/PDF files and takes base64; Claude prompt caching (a second turn over a 31k-token attachment cost $0.006 instead of $0.077).
+- **Relay:** conversion limits, entity refusal, two at a time (busy answer), media pruning, tunnel identification header, clearer too-large error, `/v1/version`; the HTTP tests in `test_run_control.py` had never run (the file ended its test run before them) and now do.
+
 ### Verified
 - `make test` on Tiger 10.4.11 PowerPC and Snow Leopard 10.6.8 (new checks: fence splitting, language names, colouring, attachment text, base64, file names); relay tests and self-test.
 - On both Macs, in the app: attaching text, RTF and pictures (Snow Leopard also PDF), a model reading them, Grok fixing an attached script through Commander and viewing the attached picture, `agent_save_file` giving a Save As file, export and import of a chat with a picture and a file, code blocks on PowerPC (including a long streamed answer). Pictures reach Claude, Grok, Gemini, ChatGPT and Mistral; the local model without vision is told.

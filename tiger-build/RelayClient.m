@@ -1,6 +1,42 @@
 #import "RelayClient.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 NSString *TBRelayTokenHeader = @"X-TigerBuild-Token";
+
+/* This Mac's IPv4 addresses, comma separated, for a relay reached through an SSH tunnel: the relay then
+   sees the connection come from itself and needs to be told which Mac is asking. */
+static NSString *myAddresses(void)
+{
+    static NSString *cached = nil;
+    static double when = 0;
+    double now = CFAbsoluteTimeGetCurrent();
+    struct ifaddrs *list = NULL;
+    struct ifaddrs *item;
+    NSMutableArray *found;
+    if (cached && now - when < 300)
+        return cached;
+    found = [NSMutableArray array];
+    if (getifaddrs(&list) == 0) {
+        for (item = list; item; item = item->ifa_next) {
+            if (item->ifa_addr && item->ifa_addr->sa_family == AF_INET && !(item->ifa_flags & IFF_LOOPBACK)) {
+                struct sockaddr_in *address = (struct sockaddr_in *)item->ifa_addr;
+                NSString *text = [NSString stringWithUTF8String:inet_ntoa(address->sin_addr)];
+                if (text && ![found containsObject:text])
+                    [found addObject:text];
+            }
+        }
+        freeifaddrs(list);
+    }
+    [cached release];
+    cached = [[found componentsJoinedByString:@","] retain];
+    when = now;
+    return cached;
+}
 
 @interface RelayRequest (Private)
 - (BOOL)startMethod:(NSString *)method body:(NSString *)body timeout:(double)seconds;
@@ -94,6 +130,8 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     CFHTTPMessageSetHeaderFieldValue(message, CFSTR("User-Agent"), CFSTR("TigerBuild/1.2"));
     if ([token length] > 0)
         CFHTTPMessageSetHeaderFieldValue(message, (CFStringRef)TBRelayTokenHeader, (CFStringRef)token);
+    if ([base rangeOfString:@"127.0.0.1"].location != NSNotFound || [base rangeOfString:@"localhost"].location != NSNotFound)
+        CFHTTPMessageSetHeaderFieldValue(message, CFSTR("X-TigerBuild-Client"), (CFStringRef)myAddresses());
     if (body) {
         CFHTTPMessageSetBody(message, (CFDataRef)body);
         CFHTTPMessageSetHeaderFieldValue(message, CFSTR("Content-Type"), CFSTR("application/json; charset=utf-8"));
