@@ -16,6 +16,7 @@
     NSMutableDictionary *sizeCache;
     NSMutableDictionary *richCache;
     NSString *copiedKey;
+    id dropTarget;
 }
 
 + (NSColor *)backgroundColor;
@@ -23,5 +24,7 @@
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible;
 - (void)scrollToEnd;
 - (void)setActivitiesExpanded:(BOOL)expanded;
+/* Files dropped on the chat are handed to the target's attachPaths:. */
+- (void)setDropTarget:(id)target;
 
 @end

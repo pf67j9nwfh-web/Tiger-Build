@@ -279,6 +279,11 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
         unsigned wide = 0;
         if ([[message objectForKey:@"status"] boolValue])
             continue;
+        if ([message objectForKey:@"attachment"]) {
+            /* Counted when the file was attached, so a long text is not read again on every update. */
+            tokens += [[[message objectForKey:@"attachment"] objectForKey:@"tokens"] intValue] + 12;
+            continue;
+        }
         text = [message objectForKey:@"text"];
         n = [text length];
         for (j = 0; j < n; j++) {
@@ -294,6 +299,141 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
     /* The relay adds a system prompt, and the tool list when Commander is on. */
     tokens += toolsOn ? 3500 : 400;
     return (int)tokens;
+}
+
+/* ---- attached files ---- */
+
+NSString *TBHumanSize(double bytes)
+{
+    if (bytes < 1024)
+        return [NSString stringWithFormat:@"%.0f bytes", bytes];
+    if (bytes < 1024 * 1024)
+        return [NSString stringWithFormat:@"%.0f KB", bytes / 1024.0];
+    return [NSString stringWithFormat:@"%.1f MB", bytes / (1024.0 * 1024.0)];
+}
+
+NSString *TBImageMime(NSString *path)
+{
+    NSString *ext = [[path pathExtension] lowercaseString];
+    if ([ext isEqualToString:@"png"])
+        return @"image/png";
+    if ([ext isEqualToString:@"gif"])
+        return @"image/gif";
+    return @"image/jpeg";
+}
+
+/* The text of a file, or nil when it is not text. Reads at most maxBytes; the
+   flag says whether there was more. UTF-8 first, then the Mac's own encoding. */
+NSString *TBReadTextFile(NSString *path, unsigned maxBytes, BOOL *truncated)
+{
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+    NSData *data;
+    NSString *text;
+    const unsigned char *bytes;
+    unsigned n;
+    unsigned i;
+    unsigned cut;
+    if (truncated)
+        *truncated = NO;
+    if (!handle)
+        return nil;
+    data = [handle readDataOfLength:maxBytes + 1];
+    [handle closeFile];
+    n = [data length];
+    bytes = (const unsigned char *)[data bytes];
+    if (n > maxBytes) {
+        n = maxBytes;
+        if (truncated)
+            *truncated = YES;
+    }
+    for (i = 0; i < n && i < 8192; i++) {
+        if (bytes[i] == 0)
+            return nil;
+    }
+    cut = n;
+    /* Do not cut a UTF-8 character in two. */
+    if (truncated && *truncated) {
+        while (cut > 0 && (bytes[cut - 1] & 0xC0) == 0x80)
+            cut--;
+        if (cut > 0 && bytes[cut - 1] >= 0xC0)
+            cut--;
+    }
+    text = [[[NSString alloc] initWithBytes:bytes length:cut encoding:NSUTF8StringEncoding] autorelease];
+    if (!text)
+        text = [[[NSString alloc] initWithBytes:bytes length:n encoding:NSMacOSRomanStringEncoding] autorelease];
+    return text;
+}
+
+NSString *TBDisplayFileName(NSString *stored)
+{
+    NSString *name = [stored lastPathComponent];
+    unsigned i;
+    if ([name length] > 17 && [name characterAtIndex:16] == '-') {
+        for (i = 0; i < 16; i++) {
+            unichar c = [name characterAtIndex:i];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+                return name;
+        }
+        return [name substringFromIndex:17];
+    }
+    return name;
+}
+
+/* What a message says to the model: for an attached text file, the file. */
+NSString *TBMessageContent(NSDictionary *message)
+{
+    NSDictionary *file = [message objectForKey:@"attachment"];
+    NSString *name;
+    NSString *kind;
+    NSString *body;
+    BOOL truncated = NO;
+    if (!file)
+        return [message objectForKey:@"text"];
+    name = [file objectForKey:@"name"];
+    kind = [file objectForKey:@"kind"];
+    if ([kind isEqualToString:@"image"])
+        return [NSString stringWithFormat:@"[The person attached a picture named \"%@\". A copy is on their Mac at %@.]",
+            name, [file objectForKey:@"path"]];
+    body = TBReadTextFile([file objectForKey:@"path"], TB_ATTACH_TEXT_MAX, &truncated);
+    if (!body)
+        return [NSString stringWithFormat:@"[The person attached a file named \"%@\", but it is no longer available on this Mac.]", name];
+    return [NSString stringWithFormat:@"[The person attached a file named \"%@\". Its contents%@ follow. A text copy is on their Mac at %@.]\n\n%@\n\n[End of \"%@\".]",
+        name, truncated ? @" (only the first part; the file is longer)" : @"", [file objectForKey:@"path"], body, name];
+}
+
+static const char base64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+NSString *TBBase64(NSData *data)
+{
+    const unsigned char *in = (const unsigned char *)[data bytes];
+    unsigned n = [data length];
+    unsigned i;
+    unsigned o = 0;
+    char *out = (char *)malloc(((n + 2) / 3) * 4 + 1);
+    NSString *result;
+    if (!out)
+        return @"";
+    for (i = 0; i + 2 < n; i += 3) {
+        out[o++] = base64Table[in[i] >> 2];
+        out[o++] = base64Table[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+        out[o++] = base64Table[((in[i + 1] & 15) << 2) | (in[i + 2] >> 6)];
+        out[o++] = base64Table[in[i + 2] & 63];
+    }
+    if (i < n) {
+        out[o++] = base64Table[in[i] >> 2];
+        if (i + 1 < n) {
+            out[o++] = base64Table[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+            out[o++] = base64Table[(in[i + 1] & 15) << 2];
+        } else {
+            out[o++] = base64Table[(in[i] & 3) << 4];
+            out[o++] = '=';
+        }
+        out[o++] = '=';
+    }
+    out[o] = 0;
+    result = [NSString stringWithUTF8String:out];
+    free(out);
+    return result;
 }
 
 NSString *TBStoreChangedNotification = @"TBStoreChanged";

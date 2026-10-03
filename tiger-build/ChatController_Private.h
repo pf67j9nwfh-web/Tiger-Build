@@ -79,6 +79,18 @@
 @end
 
 /* ChatController+Run.m */
+@interface ChatController (Attachments)
+- (IBAction)attachFile:(id)sender;
+- (void)attachPaths:(NSArray *)paths;
+- (NSMutableDictionary *)attachmentForPath:(NSString *)path problem:(NSString **)problem;
+- (NSArray *)imageAttachmentsForChat:(NSDictionary *)chat;
+@end
+
+@interface ChatController (ChatFile)
+- (IBAction)exportChat:(id)sender;
+- (IBAction)importChat:(id)sender;
+@end
+
 @interface ChatController (Run)
 - (NSArray *)currentToolCatalog;
 - (BOOL)serverEnabled:(NSString *)key chat:(NSDictionary *)chat;

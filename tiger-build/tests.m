@@ -211,6 +211,37 @@ int main(void)
         tbcheck(k[5] == TBTokProperty && k[11] == TBTokComment, @"shell variable and comment");
         tbcheck([TBHighlight(@"", @"python") length] == 0 && [TBHighlight(@"x = 'unterminated", @"python") length] == 17, @"empty and unterminated input");
     }
+    {
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tb-attach-test.txt"];
+        NSDictionary *attach = [NSDictionary dictionaryWithObjectsAndKeys:@"notes.txt", @"name", file, @"path", @"text", @"kind",
+            [NSNumber numberWithInt:100], @"tokens", nil];
+        NSDictionary *message = [NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role", @"Attached: notes.txt", @"text", attach, @"attachment", nil];
+        BOOL cut = YES;
+        NSString *back;
+        NSData *three = [NSData dataWithBytes:"abc" length:3];
+        [@"first line\nsecond \xc3\xa9" writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        back = TBReadTextFile(file, 1000, &cut);
+        tbcheck(back && !cut && [back hasPrefix:@"first line"], @"text file read");
+        back = TBReadTextFile(file, 5, &cut);
+        tbcheck(back && cut && [back isEqualToString:@"first"], @"long text file cut at the limit");
+        tbcheck([TBMessageContent(message) rangeOfString:@"second"].location != NSNotFound
+            && [TBMessageContent(message) rangeOfString:@"notes.txt"].location != NSNotFound, @"attachment goes to the model as its text");
+        tbcheck([TBMessageContent([NSDictionary dictionaryWithObject:@"hi" forKey:@"text"]) isEqualToString:@"hi"], @"plain message unchanged");
+        tbcheck(TBEstimateTokens([NSArray arrayWithObject:message], NO) == 400 + 100 + 12, @"attachment counted by its saved size");
+        [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+        tbcheck([TBMessageContent(message) rangeOfString:@"no longer available"].location != NSNotFound, @"missing attachment explained");
+        [[NSData dataWithBytes:"ab\0cd" length:5] writeToFile:file atomically:YES];
+        tbcheck(TBReadTextFile(file, 1000, NULL) == nil, @"binary file is not text");
+        [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+        tbcheck([TBBase64(three) isEqualToString:@"YWJj"] && [TBBase64([NSData dataWithBytes:"ab" length:2]) isEqualToString:@"YWI="]
+            && [TBBase64([NSData dataWithBytes:"a" length:1]) isEqualToString:@"YQ=="] && [TBBase64([NSData data]) isEqualToString:@""], @"base64");
+        tbcheck([TBDisplayFileName(@"0123456789abcdef-report.md") isEqualToString:@"report.md"]
+            && [TBDisplayFileName(@"/x/0123456789abcdeg-report.md") isEqualToString:@"0123456789abcdeg-report.md"]
+            && [TBDisplayFileName(@"cat.jpg") isEqualToString:@"cat.jpg"], @"stored file name shown without its id");
+        tbcheck([TBLanguageExtension(@"Python") isEqualToString:@"py"] && [TBLanguageExtension(@"Haskell") isEqualToString:@"txt"]
+            && [TBLanguageExtension(@"C++") isEqualToString:@"cpp"], @"file extension for a language");
+        tbcheck([TBHumanSize(500) isEqualToString:@"500 bytes"] && [TBHumanSize(2048) isEqualToString:@"2 KB"], @"file sizes");
+    }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 
     tbcheck(TBEstimateTokens(chat, NO) == 406, @"token estimate");

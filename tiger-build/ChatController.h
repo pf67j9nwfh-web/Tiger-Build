@@ -17,6 +17,7 @@
     NSButton *stopButton;
     NSButton *editButton;
     NSButton *retryButton;
+    NSButton *attachButton;
     NSTextField *thinkingField;
     NSString *runId;
     NSMutableDictionary *workspaceSettings;

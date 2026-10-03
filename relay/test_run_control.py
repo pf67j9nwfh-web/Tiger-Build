@@ -191,6 +191,29 @@ class TurnTests(unittest.TestCase):
             list(session.iter_turn([{"role": "user", "content": "go"}], True, "mistral", "codestral-latest"))
         self.assertNotIn("take_screenshot", tools_seen[0])
 
+    def test_attached_pictures_reach_vision_models_only(self):
+        pictures = [{"mime": "image/png", "data": "QUJD"}]
+        for provider, model, shown in (("claude", "claude-haiku-4-5-20251001", True), ("mistral", "codestral-latest", False)):
+            session = self.session()
+            logs = []
+
+            def fake(provider, system, log, tools, holder, ctx, err, model=None, **kw):
+                logs.append([dict(m) for m in log])
+                yield "x"
+            with patch.object(C, "stream_round", fake):
+                list(session.iter_turn([{"role": "user", "content": "what is this?", "images": pictures}], False, provider, model))
+            first = logs[0][0]
+            self.assertEqual(bool(first.get("images")), shown)
+            if not shown:
+                self.assertIn("cannot view pictures", first["content"])
+
+    def test_picture_field_is_validated(self):
+        clean = C.Handler._clean_pictures if hasattr(C, "Handler") else None
+        if clean is None:
+            return
+        self.assertEqual(clean([{"mime": "text/html", "data": "QUJD"}, {"mime": "image/png", "data": ""}, "x"]), [])
+        self.assertEqual(clean([{"mime": "image/gif", "data": "QUJD"}]), [{"mime": "image/gif", "data": "QUJD"}])
+
     def test_stop_ends_turn_quietly(self):
         session = self.session()
 

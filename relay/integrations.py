@@ -62,6 +62,7 @@ FLAGS = (
 )
 TEXT = {"type": "string"}
 AUXILIARY = (
+    "agent_save_file",
     "agent_web_search",
     "agent_image_search",
     "agent_show_image",
@@ -218,6 +219,16 @@ def function(name, desc, props, required=()):
 
 def auxiliary(provider, config, skip=()):
     tools = []
+    if "toolbox" not in skip:
+        tools.append(function(
+            "agent_save_file",
+            "Hand the person a file to save on their Mac: a new document, script, data file, or the complete changed "
+            "version of a file they attached. Give the whole content. They get a Save As button in the chat. "
+            "Use this instead of pasting long files into the reply when they ask for a file.",
+            {"name": {"type": "string", "description": "File name with extension, for example report.md or fixed.py."},
+             "content": {"type": "string", "description": "The complete text of the file."}},
+            ("name", "content"),
+        ))
     if config["toolbox_enabled"] and "toolbox" not in skip:
         tools.append(function("agent_current_time", "Current UTC date and time.", {}))
         tools.append(function("agent_notes_read", "Read persistent agent scratch notes on the relay host.", {}))
@@ -415,6 +426,29 @@ def _check_url(url):
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("Give a full http or https picture address.")
     _public_host(parts.hostname)
+
+
+def save_output_file(name, content, limit=2000000):
+    """Store a file a model wrote, for the client to fetch. Returns the stored name:
+    sixteen hex digits, a dash, then the cleaned file name."""
+    import uuid
+    from media import media_dir
+    if not isinstance(name, str) or not isinstance(content, str):
+        raise ValueError("Give a file name and the file's text.")
+    base = os.path.basename(name.replace("\\", "/")).strip()
+    clean = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "file.txt"
+    clean = clean[:80]
+    data = content.encode("utf-8")
+    if not data:
+        raise ValueError("The file is empty.")
+    if len(data) > limit:
+        raise ValueError("The file is larger than 2 MB.")
+    if "." not in clean:
+        clean += ".txt"
+    stored = "%s-%s" % (uuid.uuid4().hex[:16], clean)
+    with open(os.path.join(media_dir(), stored), "wb") as handle:
+        handle.write(data)
+    return stored
 
 
 def sniff_image(data):

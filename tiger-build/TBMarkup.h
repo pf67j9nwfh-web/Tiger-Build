@@ -30,5 +30,9 @@ NSString *TBLanguageTitle(NSString *tag, NSString *code);
 /* One byte per UTF-16 unit of code, each a TBTok value. */
 NSData *TBHighlight(NSString *code, NSString *tag);
 
+/* The file extension to suggest when saving a block of this language, from the
+   title TBLanguageTitle gives: "py" for "Python", "txt" when unknown. */
+NSString *TBLanguageExtension(NSString *title);
+
 /* Whether the tag names a language the highlighter has rules for. */
 BOOL TBLanguageKnown(NSString *tag);

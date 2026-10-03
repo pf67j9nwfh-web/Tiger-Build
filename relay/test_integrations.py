@@ -80,4 +80,22 @@ class IntegrationsTest(unittest.TestCase):
         for bad in ('http://127.0.0.1:8765/x.png','http://localhost/x.png','http://10.0.1.23/x.png','file:///etc/hosts','ftp://example.com/a.png'):
             with self.assertRaises(ValueError):I.fetch_image(bad)
 
+    def test_model_files_are_saved_for_the_client(self):
+        names=[t['name'] for t in I.auxiliary('claude',dict(I.read(),toolbox_enabled=True))]
+        self.assertIn('agent_save_file',names)
+        self.assertIn('agent_save_file',[t['name'] for t in I.auxiliary('claude',dict(I.read(),toolbox_enabled=False))])
+        self.assertNotIn('agent_save_file',[t['name'] for t in I.auxiliary('claude',I.read(),skip=('toolbox',))])
+        self.assertNotIn('agent_current_time',[t['name'] for t in I.auxiliary('claude',dict(I.read(),toolbox_enabled=False))])
+        import media
+        old=media.media_dir
+        media.media_dir=lambda:self.d
+        try:
+            stored=I.save_output_file('../../etc/my report (1).md','# Hi\n')
+            self.assertRegex(stored,r'^[0-9a-f]{16}-my_report_1_.md$')
+            self.assertEqual(open(os.path.join(self.d,stored)).read(),'# Hi\n')
+            self.assertTrue(I.save_output_file('notes','x').endswith('-notes.txt'))
+            for bad in (('a.txt',''),('a.txt','x'*2000001),(None,'x')):
+                with self.assertRaises(ValueError):I.save_output_file(*bad)
+        finally:media.media_dir=old
+
 if __name__=='__main__':unittest.main()

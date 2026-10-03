@@ -35,7 +35,7 @@ from security import relay_token
 from security import token_ok
 from security import token_path
 from version import VERSION
-from integrations import fetch_image
+from integrations import fetch_image, save_output_file
 from media import create_media
 from media import media_dir
 from media import media_tools
@@ -493,6 +493,18 @@ def supports_images(provider, model):
     return False
 
 
+def without_pictures(messages):
+    """For a model that cannot look at pictures: drop them and say so in the message."""
+    out = []
+    for item in messages:
+        if item.get("images"):
+            count = len(item["images"])
+            item = {k: v for k, v in item.items() if k != "images"}
+            item["content"] += "\n[%d attached picture%s not shown: this model cannot view pictures.]" % (count, "" if count == 1 else "s")
+        out.append(item)
+    return out
+
+
 _CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -849,6 +861,14 @@ class ToolSession(object):
                 return "Asking another model", self._consult(args), None, False, []
             except Exception as exc:
                 return "Asking another model", "error: %s" % exc, None, True, []
+        if name == "agent_save_file":
+            try:
+                if name not in self.extra.offered:
+                    raise ValueError("Tool was not enabled or advertised for this request.")
+                stored = save_output_file(args.get("name"), args.get("content"))
+            except Exception as exc:
+                return "Saving a file", "error: %s" % exc, None, True, []
+            return "Saving a file", "The file is now in the chat with a Save As button. Do not paste it again.", "file " + stored, False, []
         if name == "agent_show_image":
             try:
                 if name not in self.extra.offered:
@@ -865,12 +885,22 @@ class ToolSession(object):
         if not self.extra.config['ppc_enabled']:
             return "Commander disabled", "error: Commander is disabled in the relay's tool settings.", None, True, []
         images = []
+        shown = None
         try:
             client = self._client_for(client_holder)
             result = client.request("tools/call", {"name": name, "arguments": args})
             output = result_text(result)
             failed = bool(isinstance(result, dict) and result.get("isError"))
             images = result_images(result)
+            if images and not failed:
+                # Show the picture the model looked at in the chat too.
+                try:
+                    import base64
+                    from media import save_bytes
+                    ext = {"image/png": "png", "image/gif": "gif"}.get(images[0]["mime"], "jpg")
+                    shown = "image " + save_bytes(base64.b64decode(images[0]["data"]), ext)
+                except Exception:
+                    shown = None
         except Exception as exc:
             self.run.check()
             if client_holder[0] is not None:
@@ -884,7 +914,7 @@ class ToolSession(object):
             failed = True
             # The next request should look at the link again.
             invalidate_tools(self.config.get("TIGER_HOST"))
-        return tool_summary(name, args), output, None, failed, images
+        return tool_summary(name, args), output, shown, failed, images
 
     def _gate(self, call):
         """Ask the person before a tool runs, when approval is on for it.
@@ -963,6 +993,8 @@ class ToolSession(object):
     def _iter_turn(self, messages, use_tools, provider, model, system_override):
         refresh_settings()
         chosen = resolve_model(provider, model)
+        if not supports_images(provider, chosen):
+            messages = without_pictures(messages)
         skip = self.skip_keys()
         tools = []
         if use_tools and not system_override:
@@ -1019,6 +1051,10 @@ class ToolSession(object):
             ) % (self.account(), self.home(), self.home())
             if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
+            if any(t.get("name") == "agent_save_file" for t in tools):
+                system += (" Files the person attaches are given to you in the conversation (text, PDF and document contents as text, "
+                           "pictures as pictures). To give them a new or changed file, call agent_save_file with the whole content; "
+                           "they get a Save As button.")
             if any(t.get("name") == "view_image" for t in tools):
                 system += (" To look at a picture file on that Mac (JPEG, PNG, GIF, TIFF, PDF and so on), call view_image "
                            "with its path; read_file only returns text.")
@@ -1056,7 +1092,7 @@ class ToolSession(object):
         payload = {
             "model": chosen,
             "store": True,
-            "input": [{"role": "system", "content": system}] + messages,
+            "input": [{"role": "system", "content": system}] + openai_responses_input(messages),
         }
         if not bare and self.extra.config['grok_native_search'] and "search" not in self.skip_keys():
             tools = list(tools) + [{"type": "web_search"}]
@@ -1256,7 +1292,10 @@ class ToolSession(object):
     def _iter_foreign(self, provider, messages, system, tools, model):
         log = []
         for message in messages:
-            log.append({"role": message["role"], "content": message["content"]})
+            entry = {"role": message["role"], "content": message["content"]}
+            if message.get("images"):
+                entry["images"] = message["images"]
+            log.append(entry)
         client_holder = [None]
         round_index = 0
         last_output = ""
@@ -1450,7 +1489,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
-        if length < 0 or length > 1000000:
+        if length < 0 or length > 40000000:
             raise RuntimeError("request is too large")
         raw = self.rfile.read(length) if length else b""
         try:
@@ -1475,12 +1514,28 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError("messages need role user or assistant and string content")
             if content.strip() == "":
                 continue
-            cleaned.append({"role": role, "content": content})
+            entry = {"role": role, "content": content}
+            pictures = self._clean_pictures(item.get("images")) if role == "user" else []
+            if pictures:
+                entry["images"] = pictures
+            cleaned.append(entry)
         if not cleaned:
             raise RuntimeError("messages must be a non-empty list")
         if require_user_end and cleaned[-1]["role"] != "user":
             raise RuntimeError("the last message must be from the user")
         return cleaned
+
+    @staticmethod
+    def _clean_pictures(value):
+        """Pictures the person attached to a message: [{"mime", "data" (base64)}]."""
+        pictures = []
+        if not isinstance(value, list):
+            return pictures
+        for image in value[:8]:
+            if (isinstance(image, dict) and image.get("mime") in ("image/jpeg", "image/png", "image/gif")
+                    and isinstance(image.get("data"), str) and 0 < len(image["data"]) <= 8000000):
+                pictures.append({"mime": image["mime"], "data": image["data"]})
+        return pictures
 
     def _provider_and_model(self, incoming):
         try:
@@ -1701,6 +1756,8 @@ class Handler(BaseHTTPRequestHandler):
                 kind = "image/png"
             elif name.endswith(".gif"):
                 kind = "image/gif"
+            elif not name.endswith((".jpg", ".jpeg", ".png", ".mp4")):
+                kind = "application/octet-stream"
             elif name.endswith(".mp4"):
                 kind = "video/mp4"
             self.send_response(200)

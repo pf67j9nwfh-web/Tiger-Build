@@ -380,6 +380,22 @@ NSString *TBLanguageTitle(NSString *tag, NSString *code)
     return @"Code";
 }
 
+NSString *TBLanguageExtension(NSString *title)
+{
+    static NSDictionary *table = nil;
+    NSString *ext;
+    if (!table)
+        table = [[NSDictionary alloc] initWithObjectsAndKeys:
+            @"py", @"Python", @"js", @"JavaScript", @"ts", @"TypeScript", @"c", @"C", @"cpp", @"C++", @"m", @"Objective-C",
+            @"java", @"Java", @"kt", @"Kotlin", @"swift", @"Swift", @"go", @"Go", @"rs", @"Rust", @"rb", @"Ruby", @"php", @"PHP",
+            @"sh", @"Shell", @"sql", @"SQL", @"json", @"JSON", @"yml", @"YAML", @"toml", @"TOML", @"html", @"HTML", @"xml", @"XML",
+            @"css", @"CSS", @"lua", @"Lua", @"pl", @"Perl", @"r", @"R", @"diff", @"Diff", @"md", @"Markdown", @"txt", @"Text", nil];
+    ext = [table objectForKey:title];
+    if (!ext && [title isEqualToString:@"Makefile"])
+        return @"mk";
+    return ext ? ext : @"txt";
+}
+
 /* ---- colouring ---- */
 
 static int isIdStart(unichar c)

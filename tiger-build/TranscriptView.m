@@ -9,6 +9,10 @@
 - (void)toggleActivityAtView:(NSView *)view;
 - (void)syncTextViews;
 - (void)copyCode:(NSString *)code key:(NSString *)key;
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender;
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender;
+- (void)saveCode:(NSString *)code title:(NSString *)title;
+- (void)saveFileAtPath:(NSString *)path;
 @end
 
 /* One of these sits on each message so the words can be highlighted and copied.
@@ -45,6 +49,28 @@
     [super dealloc];
 }
 
+/* A file dropped on a message goes to the chat, not into the message. */
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender
+{
+    return [(TranscriptView *)[self superview] draggingEntered:sender];
+}
+
+- (NSDragOperation)draggingUpdated:(id <NSDraggingInfo>)sender
+{
+    return [(TranscriptView *)[self superview] draggingEntered:sender];
+}
+
+- (BOOL)prepareForDragOperation:(id <NSDraggingInfo>)sender
+{
+    (void)sender;
+    return YES;
+}
+
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender
+{
+    return [(TranscriptView *)[self superview] performDragOperation:sender];
+}
+
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint local;
@@ -54,7 +80,10 @@
         for (c = 0; c < [copies count]; c++) {
             NSDictionary *entry = [copies objectAtIndex:c];
             if (NSPointInRect(local, [[entry objectForKey:@"rect"] rectValue])) {
-                [(TranscriptView *)[self superview] copyCode:[entry objectForKey:@"code"] key:[entry objectForKey:@"key"]];
+                if ([entry objectForKey:@"save"])
+                    [(TranscriptView *)[self superview] saveCode:[entry objectForKey:@"code"] title:[entry objectForKey:@"title"]];
+                else
+                    [(TranscriptView *)[self superview] copyCode:[entry objectForKey:@"code"] key:[entry objectForKey:@"key"]];
                 return;
             }
         }
@@ -338,6 +367,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     sizeCache = [[NSMutableDictionary alloc] init];
     richCache = [[NSMutableDictionary alloc] init];
     textViews = [[NSMutableArray alloc] init];
+    [self registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
     style = [[NSMutableParagraphStyle alloc] init];
     [style setLineBreakMode:NSLineBreakByWordWrapping];
     bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -809,6 +839,27 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     [self performSelector:@selector(forgetCopied) withObject:nil afterDelay:1.6];
 }
 
+- (void)setDropTarget:(id)target
+{
+    dropTarget = target;
+}
+
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender
+{
+    if (dropTarget && [[[sender draggingPasteboard] types] containsObject:NSFilenamesPboardType])
+        return NSDragOperationCopy;
+    return NSDragOperationNone;
+}
+
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender
+{
+    NSArray *files = [[sender draggingPasteboard] propertyListForType:NSFilenamesPboardType];
+    if (!dropTarget || ![files isKindOfClass:[NSArray class]] || [files count] == 0)
+        return NO;
+    [dropTarget performSelector:@selector(attachPaths:) withObject:files];
+    return YES;
+}
+
 - (void)forgetCopied
 {
     [copiedKey release];
@@ -849,6 +900,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         float imageW = 0;
         float videoH = 0;
         float videoW = 0;
+        NSString *filePath = [message objectForKey:@"file"];
+        float fileH = 0;
         if (!text)
             text = @"";
         if (open && [text length] == 0
@@ -902,6 +955,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 videoW = 220.0 * 16.0 / 9.0;
             }
         }
+        if (!status && filePath && [filePath length] > 0 && [[NSFileManager defaultManager] fileExistsAtPath:filePath])
+            fileH = 34;
         if (used.size.height < 16 && !((imageH > 0 || videoH > 0) && [text length] == 0))
             used.size.height = 16;
         box = [NSMutableDictionary dictionary];
@@ -917,6 +972,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             [box setObject:imagePath forKey:@"image"];
             [box setObject:[NSValue valueWithSize:NSMakeSize(imageW, imageH)] forKey:@"imageSize"];
         }
+        if (fileH > 0)
+            [box setObject:filePath forKey:@"file"];
         if (videoH > 0) {
             [box setObject:videoPath forKey:@"video"];
             [box setObject:[NSValue valueWithSize:NSMakeSize(videoW, videoH)] forKey:@"videoSize"];
@@ -935,6 +992,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 bubble.size.height += imageH + 8;
             if (videoH > 0)
                 bubble.size.height += videoH + 8;
+            if (fileH > 0) {
+                bubble.size.height += fileH;
+                if (bubble.size.width < 150)
+                    bubble.size.width = 150;
+            }
             if (bubble.size.height < 36)
                 bubble.size.height = 36;
             [box setObject:[NSValue valueWithSize:used.size] forKey:@"textSize"];
@@ -971,6 +1033,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 [box setObject:[NSValue valueWithRect:imageRect] forKey:@"imageRect"];
                 stackY += imageSize.height + 8;
             }
+            if ([box objectForKey:@"file"])
+                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMinY(rect) + 10, 96, 24)] forKey:@"fileRect"];
             if ([box objectForKey:@"video"]) {
                 NSSize videoSize = [[box objectForKey:@"videoSize"] sizeValue];
                 NSRect videoRect = NSMakeRect(NSMinX(rect) + 17, stackY, videoSize.width, videoSize.height);
@@ -987,7 +1051,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
                 textRect.size = textSize;
                 textRect.origin.x = NSMinX(rect) + 17;
-                if ([box objectForKey:@"image"] || [box objectForKey:@"video"])
+                if ([box objectForKey:@"image"] || [box objectForKey:@"video"] || [box objectForKey:@"file"])
                     textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
                 else
                     textRect.origin.y = NSMinY(rect) + (NSHeight(rect) - textSize.height) / 2.0;
@@ -1003,7 +1067,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                     NSRect pr = [[panel objectForKey:@"panel"] rectValue];
                     NSRect hr = [[panel objectForKey:@"header"] rectValue];
                     NSString *key = [NSString stringWithFormat:@"%p:%u", (void *)[box objectForKey:@"message"], p];
-                    NSRect copyLocal = NSMakeRect(NSMaxX(hr) - 78, NSMinY(hr), 78, NSHeight(hr));
+                    NSRect copyLocal = NSMakeRect(NSMaxX(hr) - 58, NSMinY(hr), 58, NSHeight(hr));
+                    NSRect saveLocal = NSMakeRect(NSMaxX(hr) - 58 - 46, NSMinY(hr), 46, NSHeight(hr));
                     pr.origin.x += NSMinX(textRect);
                     pr.origin.y = NSMaxY(textRect) - pr.origin.y - pr.size.height;
                     hr.origin.x += NSMinX(textRect);
@@ -1013,6 +1078,9 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                         [panel objectForKey:@"title"], @"title", key, @"key", nil]];
                     [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
                         [NSValue valueWithRect:copyLocal], @"rect", [panel objectForKey:@"code"], @"code", key, @"key", nil]];
+                    [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                        [NSValue valueWithRect:saveLocal], @"rect", [panel objectForKey:@"code"], @"code", key, @"key",
+                        [NSNumber numberWithBool:YES], @"save", [panel objectForKey:@"title"], @"title", nil]];
                 }
                 [box setObject:drawn forKey:@"drawnPanels"];
                 [box setObject:copies forKey:@"copies"];
@@ -1038,6 +1106,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     [view setRichText:YES];
     [view setImportsGraphics:NO];
     [view setFocusRingType:NSFocusRingTypeNone];
+    [view registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
     [view setVerticallyResizable:NO];
     [view setHorizontallyResizable:NO];
     [view setAutoresizingMask:NSViewNotSizable];
@@ -1147,6 +1216,13 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         [shape stroke];
         [[entry objectForKey:@"title"] drawAtPoint:NSMakePoint(NSMinX(header) + 12, NSMidY(header) - titleSize.height / 2) withAttributes:titleAttrs];
         [label drawAtPoint:NSMakePoint(NSMaxX(header) - 12 - labelSize.width, NSMidY(header) - labelSize.height / 2) withAttributes:copyAttrs];
+        {
+            NSDictionary *saveAttrs = [NSDictionary dictionaryWithObjectsAndKeys:
+                [NSFont boldSystemFontOfSize:10], NSFontAttributeName,
+                [NSColor colorWithCalibratedRed:0.62 green:0.78 blue:1 alpha:1], NSForegroundColorAttributeName, nil];
+            NSSize saveSize = [@"Save" sizeWithAttributes:saveAttrs];
+            [@"Save" drawAtPoint:NSMakePoint(NSMaxX(header) - 12 - 38 - 14 - saveSize.width, NSMidY(header) - saveSize.height / 2) withAttributes:saveAttrs];
+        }
     }
 }
 
@@ -1204,6 +1280,21 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             [path stroke];
             if ([box objectForKey:@"drawnPanels"])
                 [self drawCodePanels:[box objectForKey:@"drawnPanels"]];
+            if ([box objectForKey:@"fileRect"]) {
+                NSRect pill = [[box objectForKey:@"fileRect"] rectValue];
+                NSBezierPath *shape = [NSBezierPath bezierPath];
+                NSDictionary *pillAttrs = [NSDictionary dictionaryWithObjectsAndKeys:
+                    [NSFont boldSystemFontOfSize:11], NSFontAttributeName,
+                    [NSColor colorWithCalibratedWhite:0.1 alpha:1], NSForegroundColorAttributeName, nil];
+                NSSize pillSize = [@"Save As..." sizeWithAttributes:pillAttrs];
+                appendRoundedRect(shape, pill, 12);
+                [[NSColor colorWithCalibratedWhite:0.97 alpha:1] set];
+                [shape fill];
+                [[NSColor colorWithCalibratedWhite:0.45 alpha:1] set];
+                [shape setLineWidth:1];
+                [shape stroke];
+                [@"Save As..." drawAtPoint:NSMakePoint(NSMidX(pill) - pillSize.width / 2, NSMidY(pill) - pillSize.height / 2) withAttributes:pillAttrs];
+            }
             if ([box objectForKey:@"imageRect"]) {
                 NSImage *picture = [self cachedImage:[box objectForKey:@"image"]];
                 NSRect imageRect = [[box objectForKey:@"imageRect"] rectValue];
@@ -1249,6 +1340,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 path = [box objectForKey:@"video"];
                 break;
             }
+        }
+        if ([box objectForKey:@"file"] && NSPointInRect(point, [[box objectForKey:@"rect"] rectValue])) {
+            path = [box objectForKey:@"file"];
+            break;
         }
     }
     if (!path) {
@@ -1297,6 +1392,12 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
+    for(i=0;i<[boxes count];i++) {
+        NSDictionary *fileBox=[boxes objectAtIndex:i];
+        if([fileBox objectForKey:@"fileRect"]&&NSPointInRect(point,[[fileBox objectForKey:@"fileRect"] rectValue])) {
+            [self saveFileAtPath:[fileBox objectForKey:@"file"]];return;
+        }
+    }
     if([event clickCount]>1) {
         for(i=0;i<[boxes count];i++) {
             NSDictionary *pictureBox=[boxes objectAtIndex:i];
@@ -1331,9 +1432,42 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];[self setNeedsDisplay:YES];
 }
 
+/* Save As for a block of code the model wrote. */
+- (void)saveCode:(NSString *)code title:(NSString *)title
+{
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    NSString *ext = TBLanguageExtension(title);
+    NSString *name = [ext isEqualToString:@"mk"] ? @"Makefile" : [@"snippet." stringByAppendingString:ext];
+    if ([panel runModalForDirectory:[@"~/Desktop" stringByExpandingTildeInPath] file:name] != NSOKButton)
+        return;
+    if (![[code dataUsingEncoding:NSUTF8StringEncoding] writeToFile:[panel filename] atomically:YES])
+        NSBeep();
+}
+
+/* Save As for a file a model made. */
+- (void)saveFileAtPath:(NSString *)path
+{
+    NSSavePanel *panel;
+    NSData *data;
+    if (!path || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSBeep();
+        return;
+    }
+    panel = [NSSavePanel savePanel];
+    if ([panel runModalForDirectory:[@"~/Desktop" stringByExpandingTildeInPath] file:TBDisplayFileName(path)] != NSOKButton)
+        return;
+    data = [NSData dataWithContentsOfFile:path];
+    if (!data || ![data writeToFile:[panel filename] atomically:YES])
+        NSBeep();
+}
+
 - (void)saveMediaAs:(id)sender
 {
     NSString *path = [sender representedObject];
+    if ([[path lastPathComponent] length] > 17 && [[path lastPathComponent] characterAtIndex:16] == '-') {
+        [self saveFileAtPath:path];
+        return;
+    }
     NSSavePanel *panel;
     NSString *name;
     NSData *data;

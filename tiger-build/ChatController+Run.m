@@ -549,6 +549,7 @@ static NSString *newRunId(void)
     }
     [editButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
     [retryButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
+    [attachButton setEnabled:!busy && current && ![self chatIsBusyElsewhere:current]];
     [editButton setTitle:editBackup ? @"Cancel Edit" : @"Edit Last"];
 }
 
@@ -560,7 +561,8 @@ static NSString *newRunId(void)
     int i;
     for (i = (int)[messages count] - 1; i >= 0; i--) {
         NSDictionary *message = [messages objectAtIndex:i];
-        if ([[message objectForKey:@"role"] isEqualToString:@"user"] && ![[message objectForKey:@"status"] boolValue])
+        if ([[message objectForKey:@"role"] isEqualToString:@"user"] && ![[message objectForKey:@"status"] boolValue]
+            && ![message objectForKey:@"attachment"])
             return i;
     }
     return -1;
