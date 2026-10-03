@@ -397,8 +397,9 @@ NSString *TBMessageContent(NSDictionary *message)
     body = TBReadTextFile([file objectForKey:@"path"], TB_ATTACH_TEXT_MAX, &truncated);
     if (!body)
         return [NSString stringWithFormat:@"[The person attached a file named \"%@\", but it is no longer available on this Mac.]", name];
-    return [NSString stringWithFormat:@"[The person attached a file named \"%@\". Its contents%@ follow. A text copy is on their Mac at %@.]\n\n%@\n\n[End of \"%@\".]",
-        name, truncated ? @" (only the first part; the file is longer)" : @"", [file objectForKey:@"path"], body, name];
+    return [NSString stringWithFormat:@"[The person attached a file named \"%@\". Its contents%@ follow. A text copy is on their Mac at %@.%@]\n\n%@\n\n[End of \"%@\".]",
+        name, truncated ? @" (only the first part; the file is longer)" : @"", [file objectForKey:@"path"],
+        [file objectForKey:@"note"] ? [@" Note: " stringByAppendingString:[file objectForKey:@"note"]] : @"", body, name];
 }
 
 static const char base64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

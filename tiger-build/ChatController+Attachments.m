@@ -10,6 +10,11 @@
 #define TB_ATTACH_MAX_BYTES (40 * 1024 * 1024)
 #define TB_ATTACH_IMAGE_EDGE 1600.0f
 
+@interface ChatController (RelayConversion)
+- (BOOL)relayConverts:(NSString *)path;
+- (BOOL)startRelayConversion:(NSString *)path problem:(NSString **)problem;
+@end
+
 @interface ChatController (HistorySweep)
 - (NSDictionary *)allWorkspaces;
 @end
@@ -289,7 +294,7 @@ static unsigned pdfPageCount(NSString *path)
     NSMutableDictionary *one;
     NSArray *pictures = [NSArray arrayWithObjects:@"jpg", @"jpeg", @"jpe", @"png", @"gif", @"tif", @"tiff", @"bmp", @"pict", @"pct",
         @"jp2", @"psd", @"tga", @"icns", @"ico", nil];
-    NSArray *documents = [NSArray arrayWithObjects:@"rtf", @"rtfd", @"doc", @"docx", @"html", @"htm", @"webarchive", @"odt", nil];
+    NSArray *documents = [NSArray arrayWithObjects:@"rtf", @"rtfd", @"doc", @"html", @"htm", @"webarchive", nil];
     if (![manager fileExistsAtPath:path isDirectory:&isDirectory]) {
         *problem = [NSString stringWithFormat:@"%@ is not there any more.", name];
         return nil;
@@ -321,7 +326,7 @@ static unsigned pdfPageCount(NSString *path)
     }
     text = TBReadTextFile(path, TB_ATTACH_TEXT_MAX, NULL);
     if (!text) {
-        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, RTF and HTML documents and pictures can be attached.", name];
+        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, RTF and HTML documents, and pictures (including HEIC and WebP) can be attached. Older .xls and .ppt files can be saved as .xlsx or .pptx first.", name];
         return nil;
     }
     one = [self textAttachmentWithText:text name:name size:size problem:problem];
@@ -342,7 +347,16 @@ static unsigned pdfPageCount(NSString *path)
     }
     for (i = 0; i < [paths count]; i++) {
         NSString *problem = nil;
-        NSArray *made = [self attachmentsForPath:[paths objectAtIndex:i] problem:&problem];
+        NSArray *made;
+        if ([self relayConverts:[paths objectAtIndex:i]]) {
+            if ([self startRelayConversion:[paths objectAtIndex:i] problem:&problem]) {
+                added++;
+                continue;
+            }
+            made = nil;
+        } else {
+            made = [self attachmentsForPath:[paths objectAtIndex:i] problem:&problem];
+        }
         if (made) {
             unsigned k;
             for (k = 0; k < [made count]; k++) {
@@ -436,6 +450,157 @@ static unsigned pdfPageCount(NSString *path)
             [manager removeFileAtPath:path handler:nil];
         }
     }
+}
+
+/* ---- files the relay converts ----
+   Word, Excel and PowerPoint files, Pages, Numbers and Keynote files, and HEIC, WebP
+   and similar pictures cannot be read on these Macs. The relay (a modern computer)
+   turns them into text and JPEG pictures; see relay/extract.py. */
+
+- (BOOL)relayConverts:(NSString *)path
+{
+    NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
+        @"heic", @"heif", @"webp", @"avif", @"jpg", @"jpeg", nil];
+    return [kinds containsObject:[[path pathExtension] lowercaseString]];
+}
+
+- (BOOL)startRelayConversion:(NSString *)path problem:(NSString **)problem
+{
+    NSString *name = [path lastPathComponent];
+    NSFileManager *manager = [NSFileManager defaultManager];
+    BOOL isDirectory = NO;
+    NSData *data;
+    NSString *zipped = nil;
+    NSMutableDictionary *placeholder;
+    NSDictionary *info;
+    double size;
+    if (![manager fileExistsAtPath:path isDirectory:&isDirectory]) {
+        *problem = [NSString stringWithFormat:@"%@ is not there any more.", name];
+        return NO;
+    }
+    if (isDirectory) {
+        /* An iWork document saved as a folder: send it zipped. */
+        NSTask *task = [[[NSTask alloc] init] autorelease];
+        zipped = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"tb-%u-%@.zip", (unsigned)getpid(), name]];
+        [task setLaunchPath:@"/usr/bin/ditto"];
+        [task setArguments:[NSArray arrayWithObjects:@"-c", @"-k", path, zipped, nil]];
+        [task launch];
+        [task waitUntilExit];
+    }
+    size = [[[manager fileAttributesAtPath:zipped ? zipped : path traverseLink:YES] objectForKey:NSFileSize] doubleValue];
+    if (size > 70 * 1024 * 1024) {
+        *problem = [NSString stringWithFormat:@"%@ is %@. Files over 70 MB cannot be converted.", name, TBHumanSize(size)];
+        return NO;
+    }
+    data = [NSData dataWithContentsOfMappedFile:zipped ? zipped : path];
+    if (zipped)
+        [manager removeFileAtPath:zipped handler:nil];
+    if (!data || [data length] == 0) {
+        *problem = [NSString stringWithFormat:@"%@ could not be read.", name];
+        return NO;
+    }
+    placeholder = [NSMutableDictionary dictionary];
+    [placeholder setObject:@"user" forKey:@"role"];
+    [placeholder setObject:[NSString stringWithFormat:@"Converting %@ on the relay...", name] forKey:@"text"];
+    [placeholder setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+    [placeholder setObject:[NSNumber numberWithBool:YES] forKey:@"converting"];
+    [[current objectForKey:@"messages"] addObject:placeholder];
+    info = [NSDictionary dictionaryWithObjectsAndKeys:placeholder, @"placeholder", current, @"chat", name, @"name",
+        [NSNumber numberWithDouble:size], @"size", path, @"path", nil];
+    [RelayRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
+    return YES;
+}
+
+- (void)conversionArrived:(RelayRequest *)request
+{
+    NSDictionary *info = [request context];
+    NSMutableDictionary *placeholder = [info objectForKey:@"placeholder"];
+    NSMutableDictionary *chat = [info objectForKey:@"chat"];
+    NSString *name = [info objectForKey:@"name"];
+    double size = [[info objectForKey:@"size"] doubleValue];
+    NSMutableArray *messages = [chat objectForKey:@"messages"];
+    NSUInteger index = [messages indexOfObjectIdenticalTo:placeholder];
+    NSMutableArray *made = [NSMutableArray array];
+    NSString *problem = nil;
+    NSDictionary *result = nil;
+    if (index == NSNotFound)
+        return;
+    if ([request ok]) {
+        NSString *error = nil;
+        result = [NSPropertyListSerialization propertyListFromData:[request data] mutabilityOption:NSPropertyListImmutable
+            format:NULL errorDescription:&error];
+        if (error)
+            [error release];
+        if (![result isKindOfClass:[NSDictionary class]])
+            result = nil;
+    }
+    if (!result) {
+        NSString *why = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([request status] == 404 || [request status] == 405)
+            why = @"The relay is too old to convert files. Update it to 1.4.";
+        else if ([request status] == 0)
+            why = [request timedOut] ? @"The relay took too long." : @"The relay could not be reached.";
+        NSString *ext = [[name pathExtension] lowercaseString];
+        if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) {
+            /* The relay only straightens photos; without it the picture is used as it is. */
+            NSMutableDictionary *plain = [self pictureAttachmentFromPath:[info objectForKey:@"path"] name:name pdf:NO problem:&problem];
+            if (plain) {
+                [made addObject:plain];
+                problem = nil;
+            }
+        } else {
+            problem = [NSString stringWithFormat:@"%@ could not be converted. %@", name, why ? why : @""];
+        }
+    } else {
+        NSString *text = [result objectForKey:@"text"];
+        NSArray *pictures = [result objectForKey:@"images"];
+        NSString *note = [result objectForKey:@"note"];
+        unsigned i;
+        if ([text isKindOfClass:[NSString class]] && [[text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] > 0) {
+            NSString *why = nil;
+            NSMutableDictionary *attachment = [self textAttachmentWithText:text name:name size:size problem:&why];
+            if (attachment) {
+                if ([note length] > 0)
+                    [attachment setObject:note forKey:@"note"];
+                [made addObject:attachment];
+            } else {
+                problem = why;
+            }
+        }
+        for (i = 0; [pictures isKindOfClass:[NSArray class]] && i < [pictures count] && i < 3; i++) {
+            NSData *jpeg = [pictures objectAtIndex:i];
+            NSString *why = nil;
+            NSString *temp = [self savedPathForName:name extension:@"jpg"];
+            NSMutableDictionary *attachment = nil;
+            NSString *shownName = ([text length] > 0 || [pictures count] > 1) ? [name stringByAppendingString:@" (preview)"] : name;
+            if ([jpeg isKindOfClass:[NSData class]] && [jpeg writeToFile:temp atomically:YES]) {
+                attachment = [self pictureAttachmentFromPath:temp name:shownName pdf:NO problem:&why];
+                [[NSFileManager defaultManager] removeFileAtPath:temp handler:nil];
+            }
+            if (attachment) {
+                [attachment setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
+                if ([text length] == 0 && [note length] > 0)
+                    [attachment setObject:note forKey:@"note"];
+                [made addObject:attachment];
+            }
+        }
+        if ([made count] == 0 && !problem)
+            problem = [NSString stringWithFormat:@"Nothing could be read from %@.", name];
+    }
+    [messages removeObjectAtIndex:index];
+    if ([made count] > 0) {
+        unsigned k;
+        for (k = 0; k < [made count]; k++)
+            [messages insertObject:[self messageForAttachment:[made objectAtIndex:k]] atIndex:index + k];
+    }
+    if ([chats indexOfObjectIdenticalTo:chat] != NSNotFound) {
+        [self saveStore];
+        [self refreshTranscriptIfCurrent:chat];
+        [self updateContextReadout];
+        [self syncRunButtons];
+    }
+    if (problem)
+        NSRunAlertPanel(@"Could not attach", @"%@", @"OK", nil, nil, problem);
 }
 
 /* The pictures to send with the next request: those of the last few attached pictures. */

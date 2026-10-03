@@ -284,6 +284,18 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
         [workspaceSettings release];
         workspaceSettings = [[store settings] retain];
     }
+    {
+        /* A conversion that was still running when the app quit leaves a note; drop it. */
+        unsigned c;
+        for (c = 0; c < [chats count]; c++) {
+            NSMutableArray *list = [[chats objectAtIndex:c] objectForKey:@"messages"];
+            int m;
+            for (m = (int)[list count] - 1; m >= 0; m--) {
+                if ([[list objectAtIndex:m] objectForKey:@"converting"])
+                    [list removeObjectAtIndex:m];
+            }
+        }
+    }
     if ([chats count] == 0)
         [chats addObject:[self blankChat]];
 }

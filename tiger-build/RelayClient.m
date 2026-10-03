@@ -124,6 +124,28 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     return request;
 }
 
++ (RelayRequest *)sendFile:(NSData *)data
+                      name:(NSString *)name
+                      path:(NSString *)relative
+                   timeout:(double)seconds
+                    target:(id)aTarget
+                    action:(SEL)anAction
+                   context:(id)aContext
+{
+    RelayRequest *request = [[[RelayRequest alloc] init] autorelease];
+    request->target = aTarget;
+    request->action = anAction;
+    request->context = [aContext retain];
+    request->path = [relative copy];
+    request->fileData = [data retain];
+    request->fileName = [name copy];
+    if (![request startMethod:@"POST" body:nil timeout:seconds]) {
+        [request retain];
+        [request performSelector:@selector(complete) withObject:nil afterDelay:0.0];
+    }
+    return request;
+}
+
 - (id)init
 {
     self = [super init];
@@ -138,6 +160,8 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     [payload release];
     [context release];
     [path release];
+    [fileData release];
+    [fileName release];
     [super dealloc];
 }
 
@@ -145,10 +169,16 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
 {
     CFHTTPMessageRef message;
     CFStreamClientContext client;
-    NSData *bytes = body ? [body dataUsingEncoding:NSUTF8StringEncoding] : nil;
+    NSData *bytes = fileData ? fileData : (body ? [body dataUsingEncoding:NSUTF8StringEncoding] : nil);
     message = [RelayRequest copyMessage:method path:path body:bytes];
     if (!message)
         return NO;
+    if (fileData) {
+        NSString *escaped = [(NSString *)CFURLCreateStringByAddingPercentEscapes(NULL, (CFStringRef)fileName, NULL,
+            CFSTR(":/?#[]@!$&'()*+,;= %"), kCFStringEncodingUTF8) autorelease];
+        CFHTTPMessageSetHeaderFieldValue(message, CFSTR("Content-Type"), CFSTR("application/octet-stream"));
+        CFHTTPMessageSetHeaderFieldValue(message, CFSTR("X-Filename"), (CFStringRef)(escaped ? escaped : @"file"));
+    }
     stream = CFReadStreamCreateForHTTPRequest(NULL, message);
     CFRelease(message);
     if (!stream)

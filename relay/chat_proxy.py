@@ -1790,10 +1790,43 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, "not found\n")
 
+    def _extract(self):
+        """Turn an Office, iWork, HEIC or WebP file into text and JPEG pictures (see extract.py)."""
+        import extract as converter
+        from urllib.parse import unquote
+        try:
+            size = int(self.headers.get("Content-Length") or "0")
+            if size < 1 or size > 80 * 1024 * 1024:
+                raise ValueError("Files from 1 byte to 80 MB can be converted.")
+            self.connection.settimeout(120)
+            data = self.rfile.read(size)
+            if len(data) != size:
+                raise ValueError("The upload was cut short.")
+            name = unquote(self.headers.get("X-Filename") or "file")
+            if not converter.handles(name):
+                raise ValueError("The relay does not convert this kind of file.")
+            result = converter.extract(name, data)
+        except (ValueError, converter.Unsupported) as exc:
+            self._send(422, str(exc) + "\n")
+            return
+        except Exception as exc:
+            self._send(500, "Could not convert the file: %s\n" % exc)
+            return
+        payload = plistlib.dumps({"text": result["text"], "images": result["images"], "note": result["note"]}, fmt=plistlib.FMT_XML)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-plist")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_POST(self):
         if not self._authorized():
             return
         path = self.path.split("?", 1)[0]
+        if path == "/v1/extract":
+            self._extract()
+            return
         if path in ("/v1/integrations", "/v1/config-import"):
             from integrations import write as write_integrations
             from config_backup import restore

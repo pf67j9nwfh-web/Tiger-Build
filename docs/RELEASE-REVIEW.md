@@ -4,6 +4,7 @@
 
 ### What changed
 - **Attach files.** Attach... button (beside Edit Last and Retry), Chat → Attach File (⇧⌘A), drop on the chat or the Dock icon. Text and code files, PDF (text via PDFKit, or the first page as a picture when there is none), RTF, Word, HTML, and pictures (kept as they are when small, else redrawn as a JPEG of at most 1600 pixels). Each is a message in the chat; the model gets the text (with where the copy is on that Mac) or the picture, and keeps it for the rest of the conversation. PDFs made mostly of drawings (little text for their pages) also send the first three pages as pictures, and text scraps such as one-letter-per-line watermarks are dropped. Non-vision models are told a picture was attached. Files kept for deleted chats, workspaces and cleared history are removed (a file stays while any chat uses it, and for ten minutes). Compaction summarizes older attachments.
+- **Conversion on the relay** (`relay/extract.py`, `POST /v1/extract`): Word, Excel, PowerPoint and OpenDocument files become text; Pages, Numbers and Keynote files become the text read from their stored text objects plus the preview picture; HEIC, WebP, AVIF and JPEG photos become upright JPEGs (rotation tags are applied to the pixels, since Tiger ignores them). Standard library only, except pictures (`sips`, Pillow or ImageMagick).
 - **Files from the model.** `agent_save_file` (not tied to the agent toolbox switch) puts a file in the chat with Save As. Each code block has Save and Copy.
 - **Pictures a tool looks at** (`view_image`, `take_screenshot`) are also shown in the chat.
 - **Code blocks.** Dark panels with the language named, syntax colours for about 30 languages and aliases, wrapping, selectable text; bold, inline code, headings and bullets in prose.
@@ -14,8 +15,10 @@
 - On both Macs, in the app: attaching text, RTF and pictures (Snow Leopard also PDF), a model reading them, Grok fixing an attached script through Commander and viewing the attached picture, `agent_save_file` giving a Save As file, export and import of a chat with a picture and a file, code blocks on PowerPC (including a long streamed answer). Pictures reach Claude, Grok, Gemini, ChatGPT and Mistral; the local model without vision is told.
 - Menu shortcuts unique on both Macs (`--list-shortcuts`: 0 problems).
 
+- Conversion run on real documents from both Macs' desktops: .docx, .xlsx, .pptx, .pages, .numbers, .key, .heic, .webp, a phone-style JPEG with a rotation tag, and a truncated 20 MB .key (clear error). Models answered questions about each on Tiger and Snow Leopard.
+
 ### Not verified
-- Dropping files by dragging (the same code path as the Dock icon and Attach, tested through those), Word documents (`.doc`/`.docx` rely on what the OS can open), PDFs on Tiger (no PDF tool there to make one).
+- Pages, Numbers and Keynote text is recovered, not exact: slide order can differ, table layout is lost. Keynote/Pages '09 packages that are folders (sent zipped) were not available to test. Dropping files by dragging (the same code path as the Dock icon and Attach, tested through those), Word documents (`.doc`/`.docx` rely on what the OS can open), PDFs on Tiger (no PDF tool there to make one).
 - Leopard 10.5 and the `ppc64` slice, as before.
 
 ## 1.3
