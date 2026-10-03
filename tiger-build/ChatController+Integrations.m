@@ -135,7 +135,7 @@
         [self integrationSwitch:@"Ask first before Commander runs a tool (a chat can change this)" key:@"ppc_approval" y:y in:tab];y-=26;
         [self integrationSwitch:@"Agent toolbox (UTC time and scratch notes)" key:@"toolbox_enabled" y:y in:tab];y-=26;
         [self integrationSwitch:@"Ask other models: lets a model get a second opinion (a chat turns it on)" key:@"consult_enabled" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Web search for other providers (Brave or Tavily)" key:@"search_enabled" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Web and picture search for other providers" key:@"search_enabled" y:y in:tab];y-=26;
         [self integrationSwitch:@"Grok native web search" key:@"grok_native_search" y:y in:tab];y-=26;
         [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=40;
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];

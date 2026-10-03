@@ -90,7 +90,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         ("Mistral", "mistral_api_key", true), ("Muse", "muse_api_key", true), ("Google / Gemini", "gemini_api_key", true),
         ("Local LLM server URL", "local_url", false), ("Local API key (optional)", "local_api_key", true)]
     @objc func showAbout(_ sender: Any?) {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.1"
         let alert = NSAlert()
         alert.messageText = "About Tiger Build Relay"
         alert.informativeText = "Version \(version)\nLicensed under the MIT License."
@@ -251,7 +251,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if let error = result["error"] as? String { self.message.stringValue = error; return }
                 self.last = result
                 let pid = result["pid"] as? Int ?? 0
-                let ver = result["version"] as? String ?? "1.3"
+                let ver = result["version"] as? String ?? "1.3.1"
                 self.window.title = "Tiger Build Relay \(ver)"
                 self.status.stringValue = pid > 0 ? "Version \(ver), running in background (PID \(pid))" : "Version \(ver), stopped"
                 self.status.textColor = pid > 0 ? .systemGreen : .secondaryLabelColor
@@ -512,7 +512,7 @@ final class IntegrationPanel: NSObject {
         func add(_ v:NSView,_ x:CGFloat,_ y:CGFloat,_ w:CGFloat,_ h:CGFloat){v.frame=NSRect(x:x,y:y,width:w,height:h);window.contentView!.addSubview(v)}
         let y:CGFloat=825
         var index=0
-        for (title,name) in [("Commander (built in)","ppc_enabled"),("Ask first before Commander runs a tool","ppc_approval"),("Let models ask other models for advice","consult_enabled"),("Agent toolbox (UTC time, scratch notes)","toolbox_enabled"),("Web search for other providers","search_enabled"),("Grok native web search","grok_native_search"),("Show model thinking","claude_thinking")] {
+        for (title,name) in [("Commander (built in)","ppc_enabled"),("Ask first before Commander runs a tool","ppc_approval"),("Let models ask other models for advice","consult_enabled"),("Agent toolbox (UTC time, scratch notes)","toolbox_enabled"),("Web and picture search for other providers (free, or Brave/Tavily key)","search_enabled"),("Grok native web search","grok_native_search"),("Show model thinking","claude_thinking")] {
             let b=NSButton(checkboxWithTitle:title,target:nil,action:nil)
             add(b,index<4 ? 20 : 390,y-CGFloat(index<4 ? index : index-4)*30,350,24);toggles[name]=b
             index+=1

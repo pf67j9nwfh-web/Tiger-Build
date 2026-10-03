@@ -2090,7 +2090,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.3";
+        version = @"1.3.1";
     NSRunAlertPanel(@"About Tiger Build",
         @"Version %@\nLicensed under the MIT License.",
         @"OK", nil, nil, version);
@@ -2125,6 +2125,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         || [name rangeOfString:@".."].location != NSNotFound)
         return;
     open = [self openMessageIn:chat];
+    /* A message holds one picture or video. A second one (a model showing
+       several search results) goes in a new message below. */
+    if (open && ([open objectForKey:@"image"] || [open objectForKey:@"video"] || [open objectForKey:@"pendingMedia"])) {
+        [open setObject:[NSNumber numberWithBool:NO] forKey:@"open"];
+        open = nil;
+    }
     if (!open) {
         open = [NSMutableDictionary dictionary];
         [open setObject:@"assistant" forKey:@"role"];

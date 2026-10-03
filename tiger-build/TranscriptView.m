@@ -377,10 +377,12 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 - (void)placeMovies
 {
 #if !TB_INLINE_VIDEO
-    /* 64-bit builds have no QuickTime player view; videos open in the default player. */
+    /* 64-bit builds without QTKit open videos in the default player. */
     return;
 #else
     NSMutableArray *paths;
+    if (!TBInlineVideoAvailable())
+        return;
     NSMutableArray *rects;
     unsigned i;
     BOOL same;
@@ -790,7 +792,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
                 NSRect videoRect = [[box objectForKey:@"videoRect"] rectValue];
                 [[NSColor colorWithCalibratedWhite:0.15 alpha:1] set];
                 NSRectFill(videoRect);
-                [(TB_INLINE_VIDEO ? @"QuickTime could not open this video." : @"Double-click to play this video.")
+                [(TBInlineVideoAvailable() ? @"QuickTime could not open this video." : @"Double-click to play this video.")
                     drawInRect:videoRect withAttributes:statusAttrs];
             }
         }

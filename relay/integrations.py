@@ -5,21 +5,37 @@ passed as a list, with no shell. A model tool cannot edit this file.
 Imported servers stay disabled until the user enables them.
 """
 import datetime
+import html
+import ipaddress
 import json
 import os
 import re
+import socket
+import ssl
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
 from mcp_bridge import McpClient, result_text, xai_tools_from_mcp
 from security import support_dir
 
+def _ssl():
+    """Same certificate lookup the model calls use, so search works where Python has no bundled certificates."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        if os.path.isfile("/etc/ssl/cert.pem"):
+            return ssl.create_default_context(cafile="/etc/ssl/cert.pem")
+        return ssl.create_default_context()
+
+
 LOCK = threading.RLock()
 DEFAULT = {
     "ppc_enabled": True,
     "toolbox_enabled": False,
-    "search_enabled": False,
+    "search_enabled": True,
     "grok_native_search": True,
     "search_api_key": "",
     "tavily_api_key": "",
@@ -47,6 +63,8 @@ FLAGS = (
 TEXT = {"type": "string"}
 AUXILIARY = (
     "agent_web_search",
+    "agent_image_search",
+    "agent_show_image",
     "agent_current_time",
     "agent_notes_read",
     "agent_notes_write",
@@ -209,13 +227,27 @@ def auxiliary(provider, config, skip=()):
             {"text": TEXT},
             ("text",),
         ))
-    search_key = "tavily_api_key" if config.get("search_provider") == "tavily" else "search_api_key"
-    if config["search_enabled"] and config.get(search_key) and provider != "grok" and "search" not in skip:
+    native = provider == "grok" and config.get("grok_native_search")
+    if config["search_enabled"] and not native and "search" not in skip:
         tools.append(function(
             "agent_web_search",
-            "Search the web using the configured Brave or Tavily service. Returns titles, links and snippets, not full pages.",
+            "Search the web from the relay computer. Returns titles, links and snippets, not full pages.",
             {"query": TEXT},
             ("query",),
+        ))
+        tools.append(function(
+            "agent_image_search",
+            "Find pictures on the web. Returns image addresses with titles and the pages they come from. "
+            "Then call agent_show_image to put one in the chat.",
+            {"query": TEXT},
+            ("query",),
+        ))
+        tools.append(function(
+            "agent_show_image",
+            "Download a picture from a web address (an image_url from agent_image_search, or any direct "
+            "link to a JPEG, PNG or GIF) and show it to the person in the chat. Each call shows one picture.",
+            {"url": TEXT},
+            ("url",),
         ))
     return tools
 
@@ -224,10 +256,25 @@ def _search(query, config):
     provider = config.get("search_provider", "brave")
     key_name = "tavily_api_key" if provider == "tavily" else "search_api_key"
     key = config.get(key_name, "")
-    if not config["search_enabled"] or not key:
-        raise ValueError("Web search disabled or no API key.")
+    if not config["search_enabled"]:
+        raise ValueError("Web search is turned off in the relay's tool settings.")
     if not isinstance(query, str) or not query.strip() or len(query) > 1500:
         raise ValueError("Supply a query of 1-1500 characters.")
+    if not key:
+        return json.dumps(_free_search(query), ensure_ascii=False)
+    try:
+        return _keyed_search(query, provider, key, config)
+    except urllib.error.HTTPError as exc:
+        # A rejected or used-up key should not leave the model without search.
+        if exc.code not in (401, 402, 403, 429):
+            raise
+        rows = _free_search(query)
+        return json.dumps({"note": "The %s key was refused (HTTP %d), so the free search was used. "
+                                   "Fix the key in the relay's Tools settings." % (provider, exc.code),
+                           "results": rows}, ensure_ascii=False)
+
+
+def _keyed_search(query, provider, key, config):
     if provider == "tavily":
         payload = json.dumps({
             "query": query,
@@ -240,7 +287,7 @@ def _search(query, config):
             data=payload,
             headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=25) as response:
+        with urllib.request.urlopen(request, timeout=25, context=_ssl()) as response:
             data = json.load(response)
         rows = [
             {"title": item.get("title"), "url": item.get("url"), "description": item.get("content")}
@@ -252,7 +299,7 @@ def _search(query, config):
         url,
         headers={"X-Subscription-Token": config["search_api_key"], "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
+    with urllib.request.urlopen(request, timeout=20, context=_ssl()) as response:
         data = json.load(response)
     rows = [
         {"title": item.get("title"), "url": item.get("url"), "description": item.get("description")}
@@ -261,9 +308,150 @@ def _search(query, config):
     return json.dumps(rows, ensure_ascii=False)
 
 
+UA = "TigerBuildRelay/1.3.1 (Tiger Build chat relay; https://github.com/pf67j9nwfh-web/Tiger-Build) python-urllib"
+
+
+def _get(url, data=None, headers=None, timeout=20, limit=2000000):
+    request = urllib.request.Request(url, data=data, headers=dict({"User-Agent": UA}, **(headers or {})))
+    with urllib.request.urlopen(request, timeout=timeout, context=_ssl()) as response:
+        return response.read(limit)
+
+
+def _free_search(query):
+    """No key needed: DuckDuckGo's plain HTML results."""
+    page = _get("https://html.duckduckgo.com/html/", data=urllib.parse.urlencode({"q": query}).encode(),
+                headers={"Content-Type": "application/x-www-form-urlencoded"}).decode("utf-8", "replace")
+    rows = []
+    for match in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>(.*?)(?=<a[^>]*class="result__a"|$)',
+                             page, re.S):
+        link = html.unescape(match.group(1))
+        found = re.search(r"[?&]uddg=([^&]+)", link)
+        if found:
+            link = urllib.parse.unquote(found.group(1))
+        if link.startswith("//"):
+            link = "https:" + link
+        snippet = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', match.group(3), re.S)
+        clean = lambda text: html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
+        rows.append({"title": clean(match.group(2)), "url": link, "description": clean(snippet.group(1)) if snippet else ""})
+        if len(rows) >= 6:
+            break
+    if not rows:
+        # DuckDuckGo limits automated callers now and then. Wikipedia always answers.
+        data = json.loads(_get("https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode({
+            "action": "query", "format": "json", "list": "search", "srsearch": query, "srlimit": 6})))
+        for item in (data.get("query") or {}).get("search", []):
+            rows.append({"title": item["title"],
+                         "url": "https://en.wikipedia.org/wiki/" + urllib.parse.quote(item["title"].replace(" ", "_")),
+                         "description": html.unescape(re.sub(r"<[^>]+>", "", item.get("snippet", "")))})
+    if not rows:
+        raise ValueError("The free search found nothing. Add a Brave or Tavily key in the relay's Tools settings for broader search.")
+    return rows
+
+
+def _image_search(query, config):
+    if not config["search_enabled"]:
+        raise ValueError("Web search is turned off in the relay's tool settings.")
+    if not isinstance(query, str) or not query.strip() or len(query) > 500:
+        raise ValueError("Supply a query of 1-500 characters.")
+    provider = config.get("search_provider", "brave")
+    rows = []
+    try:
+        if provider == "brave" and config.get("search_api_key"):
+            url = "https://api.search.brave.com/res/v1/images/search?" + urllib.parse.urlencode({"q": query, "count": 8})
+            data = json.loads(_get(url, headers={"X-Subscription-Token": config["search_api_key"], "Accept": "application/json"}))
+            for item in data.get("results", []):
+                image = (item.get("properties") or {}).get("url") or (item.get("thumbnail") or {}).get("src")
+                if image:
+                    rows.append({"title": item.get("title"), "image_url": image, "page_url": item.get("url")})
+        elif provider == "tavily" and config.get("tavily_api_key"):
+            payload = json.dumps({"query": query, "max_results": 3, "include_images": True, "include_image_descriptions": True}).encode()
+            data = json.loads(_get("https://api.tavily.com/search", data=payload,
+                                   headers={"Authorization": "Bearer " + config["tavily_api_key"], "Content-Type": "application/json"}))
+            for item in data.get("images", []):
+                if isinstance(item, dict):
+                    rows.append({"title": item.get("description"), "image_url": item.get("url"), "page_url": None})
+                else:
+                    rows.append({"title": None, "image_url": item, "page_url": None})
+    except urllib.error.HTTPError:
+        rows = []  # bad or used-up key: use the free source below
+    if not rows:
+        # Wikimedia Commons: free, no key, pictures that are fine to show.
+        url = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode({
+            "action": "query", "format": "json", "generator": "search", "gsrnamespace": 6, "gsrsearch": query,
+            "gsrlimit": 12, "prop": "imageinfo", "iiprop": "url|mime", "iiurlwidth": 640})
+        data = json.loads(_get(url))
+        for page in sorted((data.get("query") or {}).get("pages", {}).values(), key=lambda p: p.get("index", 0)):
+            info = (page.get("imageinfo") or [{}])[0]
+            if info.get("mime") in ("image/jpeg", "image/png", "image/gif", "image/svg+xml") and info.get("thumburl"):
+                rows.append({"title": page.get("title", "").replace("File:", ""), "image_url": info["thumburl"],
+                             "page_url": info.get("descriptionurl")})
+            if len(rows) >= 8:
+                break
+    if not rows:
+        raise ValueError("No pictures found for that search.")
+    return json.dumps(rows[:8], ensure_ascii=False)
+
+
+def _public_host(host):
+    """Refuse addresses on the relay's own network: a model must not fetch them."""
+    try:
+        found = socket.getaddrinfo(host, None)
+    except OSError:
+        raise ValueError("Cannot find that address.")
+    for entry in found:
+        address = ipaddress.ip_address(entry[4][0].split("%")[0])
+        if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast:
+            raise ValueError("Pictures can only come from public web addresses.")
+
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _check_url(url):
+    parts = urllib.parse.urlparse(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("Give a full http or https picture address.")
+    _public_host(parts.hostname)
+
+
+def sniff_image(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    return None
+
+
+def fetch_image(url, limit=10000000):
+    """Download a picture for the chat. Returns the file name in the media folder."""
+    from media import save_bytes
+    if not isinstance(url, str) or len(url) > 2000:
+        raise ValueError("Give a picture address.")
+    _check_url(url.strip())
+    opener = urllib.request.build_opener(_CheckedRedirects, urllib.request.HTTPSHandler(context=_ssl()))
+    request = urllib.request.Request(url.strip(), headers={"User-Agent": UA, "Accept": "image/jpeg,image/png,image/gif,*/*;q=0.5"})
+    with opener.open(request, timeout=25) as response:
+        data = response.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("That picture is larger than 10 MB.")
+    kind = sniff_image(data)
+    if not kind:
+        raise ValueError("That address is not a JPEG, PNG or GIF picture. Try another result.")
+    return os.path.basename(save_bytes(data, kind))
+
+
 def run_auxiliary(name, args, config):
     if name == "agent_web_search":
         return _search(args.get("query", ""), config)
+    if name == "agent_image_search":
+        return _image_search(args.get("query", ""), config)
+    if name == "agent_show_image":
+        raise ValueError("agent_show_image is run by the chat relay.")
     if not config["toolbox_enabled"]:
         raise ValueError("Agent toolbox disabled.")
     if name == "agent_current_time":
@@ -301,7 +489,7 @@ class Connections:
         "mcp_<id>")."""
         tools = auxiliary(provider, self.config, skip)
         for name in tools:
-            self.owners[name["name"]] = "search" if name["name"] == "agent_web_search" else "toolbox"
+            self.owners[name["name"]] = "search" if name["name"] in ("agent_web_search", "agent_image_search", "agent_show_image") else "toolbox"
         for server in self.config["servers"]:
             if not server["enabled"] or ("mcp_" + server["id"]) in skip:
                 continue

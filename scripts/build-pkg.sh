@@ -4,7 +4,7 @@
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="1.3"
+VERSION="1.3.1"
 STAGE="$(mktemp -d)"
 DIST="$ROOT/dist"
 mkdir -p "$DIST" "$STAGE"

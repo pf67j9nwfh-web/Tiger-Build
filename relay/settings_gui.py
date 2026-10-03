@@ -29,7 +29,7 @@ TOGGLES = (
     ("ppc_approval", "Ask first before Commander runs a tool"),
     ("consult_enabled", "Let models ask other models for advice"),
     ("toolbox_enabled", "Agent toolbox"),
-    ("search_enabled", "Web search (Brave or Tavily)"),
+    ("search_enabled", "Web and picture search (free, or Brave/Tavily key)"),
     ("grok_native_search", "Grok native search"),
     ("claude_thinking", "Show model thinking"),
 )
@@ -295,7 +295,7 @@ def main():
         last.clear()
         last.update(result)
         pid = int(result.get("pid") or 0)
-        version = result.get("version") or "1.3"
+        version = result.get("version") or "1.3.1"
         root.title("Tiger Build Relay %s" % version)
         status.set("Version %s, running in background (PID %s)" % (version, pid) if pid else "Version %s, stopped" % version)
         address.set("Reachable address: %s" % (result.get("url") or "unknown"))

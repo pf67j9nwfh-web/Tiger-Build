@@ -118,3 +118,14 @@ static NSString *profilerValue(NSString *text, NSString *label)
 }
 
 @end
+
+int TBInlineVideoAvailable(void)
+{
+#if !TB_INLINE_VIDEO
+    return 0;
+#elif defined(__LP64__)
+    return TBSystemMinor() >= 6;
+#else
+    return 1;
+#endif
+}
