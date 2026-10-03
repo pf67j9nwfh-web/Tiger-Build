@@ -251,13 +251,13 @@ From Terminal, without opening a window:
 
 ## Encrypting the connection to the relay
 
-The relay speaks plain HTTP on your network, so chats, attached files and the token cross it unencrypted (Tiger cannot do modern TLS). On a network you do not fully trust, send it through SSH, which Tiger does support:
+The relay speaks plain HTTP on your network, so chats, attached files and the token cross it unencrypted (Tiger cannot do modern TLS). On a network you do not fully trust, send it through SSH. Tiger's old SSH cannot sign in to a modern SSH server, so the relay computer opens the tunnel instead, the same way it already reaches Commander:
 
 ```bash
-ssh -N -L 8765:RELAY-ADDRESS:8765 USER@RELAY-ADDRESS
+scripts/relay-tunnel.sh TIGER-ADDRESS [USER]
 ```
 
-Run that on the Tiger Mac (`scripts/relay-tunnel.sh RELAY-ADDRESS USER` does it for you and keeps it going), then set the relay address in Tiger Build Preferences to `http://127.0.0.1:8765`. The relay computer needs Remote Login on, and the Tiger Mac needs an SSH key it accepts (Tiger's OpenSSH 4 only speaks the older algorithms, so an old-style key and `-o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa` may be needed against a modern SSH server). A tunnelled Mac tells the relay which Mac it is with an `X-TigerBuild-Client` header, which the relay believes only for connections from the relay computer itself and only for allowed addresses, so Commander still goes to the right Mac.
+Leave that running on the relay computer (it reconnects if the link drops), then set the relay address in Tiger Build Preferences on that Mac to `http://127.0.0.1:8765`. It uses the relay's own SSH key, which Commander setup has already put on the Tiger Mac, and Remote Login must be on there. A tunnelled Mac tells the relay which Mac it is with an `X-TigerBuild-Client` header, which the relay believes only for connections from the relay computer itself and only for allowed addresses, so Commander still goes to the right Mac.
 
 ## Troubleshooting
 
