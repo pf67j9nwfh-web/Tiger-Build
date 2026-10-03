@@ -3249,6 +3249,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             NSString *state=finished?([[event objectForKey:@"failed"] boolValue]?@"Failed":@"Completed"):@"Running";
             [activity setObject:[NSString stringWithFormat:@"%@ - %@%@",[event objectForKey:@"name"],state,
                 finished?[NSString stringWithFormat:@" (%.1fs)",[[event objectForKey:@"elapsed"] doubleValue]]:@""] forKey:@"text"];
+            if(finished&&[event objectForKey:@"files"]) {
+                /* A diff or commit: what changed, as +added -removed in n files. */
+                int files=[[event objectForKey:@"files"] intValue];
+                [activity setObject:[NSString stringWithFormat:@"%@   %d file%@  +%d  %C%d",[activity objectForKey:@"text"],files,files==1?@"":@"s",
+                    [[event objectForKey:@"added"] intValue],(unichar)0x2212,[[event objectForKey:@"removed"] intValue]] forKey:@"text"];
+            }
             [activity setObject:[NSString stringWithFormat:@"%@\n\n%@",[event objectForKey:@"detail"],[event objectForKey:@"output"]] forKey:@"detail"];
             [activity setObject:[event objectForKey:@"failed"] forKey:@"failed"];
             [self refreshTranscriptIfCurrent:chat];

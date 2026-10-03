@@ -558,6 +558,34 @@ def _plist(data):
     return plistlib.dumps(_clean(data), fmt=plistlib.FMT_XML).decode()
 
 
+_COMMIT_LINE = re.compile(r"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?")
+
+
+def change_stats(name, output):
+    """(files, added, removed) from a diff or a commit's own summary line, or None when the output has neither.
+    Counts the + and - lines of a unified diff (git or Subversion), leaving out the +++ and --- headers."""
+    if name not in ("git_read", "git_write", "svn_read", "svn_write") or not output:
+        return None
+    found = _COMMIT_LINE.search(output)
+    if found:
+        return int(found.group(1)), int(found.group(2) or 0), int(found.group(3) or 0)
+    files = added = removed = 0
+    seen = False
+    for line in output.split("\n"):
+        if line.startswith("diff --git ") or line.startswith("Index: "):
+            files += 1
+            seen = True
+        elif line.startswith("+++ ") or line.startswith("--- "):
+            seen = True
+        elif line.startswith("+") and seen:
+            added += 1
+        elif line.startswith("-") and seen and not line.startswith("-----"):
+            removed += 1
+    if not seen:
+        return None
+    return max(files, 1), added, removed
+
+
 class ToolSession(object):
     """State for one request. Every HTTP request gets its own instance.
 
@@ -775,9 +803,13 @@ class ToolSession(object):
         args = self._call_args(call)
         name = call.get("name") or "tool"
         detail = args.get("command") or args.get("input") or args.get("query") or args.get("url") or args.get("question") or json.dumps(args, ensure_ascii=False)
-        return _plist({"id": call.get("id") or call.get("call_id") or name, "name": name, "phase": phase,
-                       "detail": str(detail)[:20000], "output": str(output)[:100000],
-                       "failed": bool(failed), "elapsed": float(elapsed)})
+        event = {"id": call.get("id") or call.get("call_id") or name, "name": name, "phase": phase,
+                 "detail": str(detail)[:20000], "output": str(output)[:100000],
+                 "failed": bool(failed), "elapsed": float(elapsed)}
+        stats = change_stats(name, str(output)) if phase == "result" and not failed else None
+        if stats:
+            event["files"], event["added"], event["removed"] = stats
+        return _plist(event)
 
     # ---- model consult ----
 

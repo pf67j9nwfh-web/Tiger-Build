@@ -65,6 +65,20 @@ def call(name, **args):
     return {"id": name + "-1", "name": name, "arguments": json.dumps(args)}
 
 
+class ChangeStatsTests(unittest.TestCase):
+    def test_git_diff(self):
+        out = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1,2 @@\n-old\n+new\n+more\ndiff --git a/y b/y\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-a\n+b\n"
+        self.assertEqual(C.change_stats("git_read", out), (2, 3, 2))
+
+    def test_svn_diff_and_commit_line_and_nothing(self):
+        out = "Index: a.txt\n===\n--- a.txt\t(revision 1)\n+++ a.txt\t(working copy)\n@@ -1 +1,2 @@\n hello\n+world\n"
+        self.assertEqual(C.change_stats("svn_read", out), (1, 1, 0))
+        self.assertEqual(C.change_stats("git_write", "[main abc] fix\n 3 files changed, 12 insertions(+), 4 deletions(-)\n"), (3, 12, 4))
+        self.assertEqual(C.change_stats("git_write", " 1 file changed, 1 insertion(+)\n"), (1, 1, 0))
+        self.assertIsNone(C.change_stats("git_read", "On branch main\nnothing to commit"))
+        self.assertIsNone(C.change_stats("start_process", "diff --git a b\n+x"))
+
+
 class TurnTests(unittest.TestCase):
     def setUp(self):
         FakeClient.calls = []
