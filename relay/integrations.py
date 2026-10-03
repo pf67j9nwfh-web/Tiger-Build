@@ -26,9 +26,18 @@ DEFAULT = {
     "search_provider": "brave",
     # "Show model thinking" for every service; the key keeps its old name.
     "claude_thinking": True,
+    # Ask before running tools: the person is asked first, for Commander and
+    # for every custom server that has its own approval switch on.
+    "ppc_approval": False,
+    # Let the model ask another available model for a second opinion.
+    "consult_enabled": True,
+    # Tool rounds one reply may use before the relay stops it and says so.
+    "max_tool_steps": 40,
     "servers": [],
 }
 FLAGS = (
+    "ppc_approval",
+    "consult_enabled",
     "ppc_enabled",
     "toolbox_enabled",
     "search_enabled",
@@ -70,6 +79,10 @@ def validate(obj):
         if type(obj[name]) is not bool:
             raise ValueError(name + " must be true or false.")
         out[name] = obj[name]
+    steps = obj.get("max_tool_steps", DEFAULT["max_tool_steps"])
+    if type(steps) is not int or not 1 <= steps <= 200:
+        raise ValueError("Tool steps per reply must be a whole number from 1 to 200.")
+    out["max_tool_steps"] = steps
     key = obj.get("search_api_key", "")
     if not isinstance(key, str):
         raise ValueError("Search API key must be text.")
@@ -105,13 +118,21 @@ def validate(obj):
         enabled = row.get("enabled", False)
         if type(enabled) is not bool:
             raise ValueError("Enabled must be true or false.")
+        approval = row.get("approval", False)
+        if type(approval) is not bool:
+            raise ValueError("Approval must be true or false.")
+        title = row.get("title", "")
+        if not isinstance(title, str) or len(title) > 60:
+            raise ValueError("A server name must be text of at most 60 characters.")
         ids.add(name)
         clean.append({
             "id": name,
+            "title": title.strip(),
             "command": command,
             "args": args,
             "env": env,
             "enabled": enabled,
+            "approval": approval,
         })
     out["servers"] = clean
     return out
@@ -144,6 +165,26 @@ def public():
     return obj
 
 
+def catalogue():
+    """What a chat can switch on or off, for Tiger Build's tools menu:
+    [{id, title, approval, default}]. Only what the relay has enabled."""
+    config = read()
+    rows = []
+    if config["ppc_enabled"]:
+        rows.append({"id": "commander", "title": "Commander (this Mac)", "approval": config["ppc_approval"], "default": True})
+    if config["toolbox_enabled"]:
+        rows.append({"id": "toolbox", "title": "Agent toolbox", "approval": False, "default": True})
+    if config["search_enabled"]:
+        rows.append({"id": "search", "title": "Web search", "approval": False, "default": True})
+    if config["consult_enabled"]:
+        rows.append({"id": "consult", "title": "Ask other models", "approval": False, "default": False})
+    for server in config["servers"]:
+        if server["enabled"]:
+            rows.append({"id": "mcp_" + server["id"], "title": server.get("title") or server["id"],
+                         "approval": server.get("approval", False), "default": True})
+    return rows
+
+
 def function(name, desc, props, required=()):
     return {
         "type": "function",
@@ -157,9 +198,9 @@ def function(name, desc, props, required=()):
     }
 
 
-def auxiliary(provider, config):
+def auxiliary(provider, config, skip=()):
     tools = []
-    if config["toolbox_enabled"]:
+    if config["toolbox_enabled"] and "toolbox" not in skip:
         tools.append(function("agent_current_time", "Current UTC date and time.", {}))
         tools.append(function("agent_notes_read", "Read persistent agent scratch notes on the relay host.", {}))
         tools.append(function(
@@ -169,7 +210,7 @@ def auxiliary(provider, config):
             ("text",),
         ))
     search_key = "tavily_api_key" if config.get("search_provider") == "tavily" else "search_api_key"
-    if config["search_enabled"] and config.get(search_key) and provider != "grok":
+    if config["search_enabled"] and config.get(search_key) and provider != "grok" and "search" not in skip:
         tools.append(function(
             "agent_web_search",
             "Search the web using the configured Brave or Tavily service. Returns titles, links and snippets, not full pages.",
@@ -252,11 +293,17 @@ class Connections:
         self.config = read()
         self.errors = []
         self.offered = set()
+        self.owners = {}
 
-    def definitions(self, provider):
-        tools = auxiliary(provider, self.config)
+    def definitions(self, provider, skip=()):
+        """Tools from the auxiliary toolbox and every enabled MCP server.
+        skip names the keys the chat turned off ("toolbox", "search",
+        "mcp_<id>")."""
+        tools = auxiliary(provider, self.config, skip)
+        for name in tools:
+            self.owners[name["name"]] = "search" if name["name"] == "agent_web_search" else "toolbox"
         for server in self.config["servers"]:
-            if not server["enabled"]:
+            if not server["enabled"] or ("mcp_" + server["id"]) in skip:
                 continue
             client = McpClient([server["command"]] + server["args"])
             client.env = dict(os.environ, **server["env"])
@@ -270,6 +317,7 @@ class Connections:
                     if len(alias) > 64 or alias in self.routes:
                         continue
                     self.routes[alias] = (client, original)
+                    self.owners[alias] = "mcp_" + server["id"]
                     tool = dict(tool)
                     tool["name"] = alias
                     tool["description"] = "[Relay MCP " + server["id"] + "] " + tool["description"]
@@ -279,6 +327,16 @@ class Connections:
                 self.errors.append(server["id"] + ": " + str(exc))
         self.offered = set(tool["name"] for tool in tools)
         return tools
+
+    def approval_default(self, key):
+        """Whether the relay's own settings ask before running this server's tools."""
+        if key == "commander":
+            return bool(self.config.get("ppc_approval"))
+        if key.startswith("mcp_"):
+            for server in self.config["servers"]:
+                if "mcp_" + server["id"] == key:
+                    return bool(server.get("approval"))
+        return False
 
     def handles(self, name):
         return name in self.routes or name in AUXILIARY

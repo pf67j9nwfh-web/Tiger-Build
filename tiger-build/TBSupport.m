@@ -26,22 +26,37 @@ NSString *TBJSONEscape(NSString *value)
     return out;
 }
 
-TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, float statusHeight)
+TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, float statusHeight, float thinkingHeight)
 {
     TBChatLayout layout;
-    float fieldW = paneWidth - 104;
-    float maxField = paneHeight - 150;
+    float sendW = 76;
+    float stopW = 76;
+    /* The rounded bezels are drawn about 9 pixels in from the left of their frames and
+       5 from the right, so frames that sit side by side look 14 pixels apart. These
+       positions make the drawn gaps equal: text box to Stop, Stop to Send, and Send to
+       the window edge are each about 14 pixels. */
+    float edgeInset = 9;
+    float fieldW = paneWidth - 8 - (edgeInset + sendW + stopW + 7);
+    float maxField;
+    float inputTop;
     float transcriptY;
     float transcriptH;
     float buttonY;
     float top;
+    float rowY;
+    float actionsW = TB_ACTIONS_WIDTH;
     if (statusHeight < 0)
         statusHeight = 0;
     if (statusHeight > TB_STATUS_MAX)
         statusHeight = TB_STATUS_MAX;
+    if (thinkingHeight < 0)
+        thinkingHeight = 0;
+    if (thinkingHeight > TB_THINKING_MAX)
+        thinkingHeight = TB_THINKING_MAX;
     top = statusHeight > 0 ? statusHeight + 4 : 0;
     if (fieldW < 80)
         fieldW = 80;
+    maxField = paneHeight - 150 - (thinkingHeight > 0 ? thinkingHeight + 6 : 0);
     if (maxField > TB_FIELD_MAX)
         maxField = TB_FIELD_MAX;
     if (maxField < TB_FIELD_MIN)
@@ -50,20 +65,206 @@ TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, f
         wanted = TB_FIELD_MIN;
     if (wanted > maxField)
         wanted = maxField;
-    transcriptY = 22 + wanted;
-    transcriptH = paneHeight - 28 - top - transcriptY;
+    inputTop = 14 + wanted;
+    if (thinkingHeight > 0) {
+        layout.thinking = NSMakeRect(8, inputTop + 6, paneWidth - 16, thinkingHeight);
+        inputTop += thinkingHeight + 6;
+    } else {
+        layout.thinking = NSMakeRect(8, inputTop + 6, paneWidth - 16, 0);
+    }
+    transcriptY = 8 + inputTop;
+    rowY = paneHeight - 28 - top;
+    transcriptH = rowY - 4 - transcriptY;
     if (transcriptH < 40)
         transcriptH = 40;
     buttonY = 14 + (wanted - 28) / 2;
     if (buttonY < 10)
         buttonY = 10;
+    if (actionsW > paneWidth - 16 - 120)
+        actionsW = paneWidth - 16 - 120;
+    if (actionsW < 0)
+        actionsW = 0;
     layout.fieldHeight = wanted;
     layout.input = NSMakeRect(8, 14, fieldW, wanted);
-    layout.send = NSMakeRect(paneWidth - 88, buttonY, 76, 28);
+    layout.stop = NSMakeRect(paneWidth - edgeInset - sendW - stopW, buttonY, stopW, 28);
+    layout.send = NSMakeRect(paneWidth - edgeInset - sendW, buttonY, sendW, 28);
     layout.transcript = NSMakeRect(8, transcriptY, paneWidth - 16, transcriptH);
-    layout.context = NSMakeRect(8, paneHeight - 28 - top, paneWidth - 16, 18);
+    layout.actions = NSMakeRect(8, rowY, actionsW, 20);
+    layout.context = NSMakeRect(8 + actionsW + 4, rowY, paneWidth - 16 - actionsW - 4, 18);
     layout.status = NSMakeRect(8, paneHeight - 10 - statusHeight, paneWidth - 16, statusHeight);
     return layout;
+}
+
+/* On PowerPC, sending doubleValue to nil returns whatever was left in the
+   floating point register, not 0. Always go through this. */
+static double numberD(id value)
+{
+    return value ? [value doubleValue] : 0.0;
+}
+
+NSString *TBFormatTokens(int count)
+{
+    if (count >= 1000000)
+        return [NSString stringWithFormat:@"%.1fm", count / 1000000.0];
+    if (count >= 1000)
+        return [NSString stringWithFormat:@"%.1fk", count / 1000.0];
+    return [NSString stringWithFormat:@"%d", count];
+}
+
+NSString *TBFormatCost(double dollars)
+{
+    if (dollars <= 0)
+        return @"$0.00";
+    if (dollars < 0.001)
+        return @"<$0.001";
+    if (dollars < 0.1)
+        return [NSString stringWithFormat:@"$%.4f", dollars];
+    if (dollars < 100)
+        return [NSString stringWithFormat:@"$%.2f", dollars];
+    return [NSString stringWithFormat:@"$%.0f", dollars];
+}
+
+void TBAddUsage(NSMutableDictionary *chat, NSDictionary *event)
+{
+    NSMutableDictionary *usage = [chat objectForKey:@"usage"];
+    NSString *key;
+    NSMutableDictionary *row;
+    NSArray *names;
+    unsigned i;
+    if (!event || ![event objectForKey:@"model"])
+        return;
+    if (![usage isKindOfClass:[NSMutableDictionary class]]) {
+        usage = [NSMutableDictionary dictionary];
+        [chat setObject:usage forKey:@"usage"];
+    }
+    key = [NSString stringWithFormat:@"%@|%@", [event objectForKey:@"provider"], [event objectForKey:@"model"]];
+    row = [usage objectForKey:key];
+    if (!row) {
+        row = [NSMutableDictionary dictionary];
+        [usage setObject:row forKey:key];
+    }
+    names = [NSArray arrayWithObjects:@"input", @"cached", @"written", @"output", nil];
+    for (i = 0; i < [names count]; i++) {
+        NSString *name = [names objectAtIndex:i];
+        [row setObject:[NSNumber numberWithInt:[[row objectForKey:name] intValue] + [[event objectForKey:name] intValue]] forKey:name];
+    }
+    [row setObject:[NSNumber numberWithInt:[[row objectForKey:@"calls"] intValue] + 1] forKey:@"calls"];
+    if ([event objectForKey:@"cost"]) {
+        [row setObject:[NSNumber numberWithDouble:numberD([row objectForKey:@"cost"]) + numberD([event objectForKey:@"cost"])]
+                forKey:@"cost"];
+        [row setObject:[NSNumber numberWithInt:[[row objectForKey:@"priced"] intValue] + 1] forKey:@"priced"];
+    }
+}
+
+NSString *TBCostReadout(NSDictionary *chat)
+{
+    NSDictionary *usage = [chat objectForKey:@"usage"];
+    NSEnumerator *keys;
+    NSString *key;
+    double total = 0;
+    int priced = 0;
+    int calls = 0;
+    if (![usage isKindOfClass:[NSDictionary class]] || [usage count] == 0)
+        return @"";
+    keys = [usage keyEnumerator];
+    while ((key = [keys nextObject])) {
+        NSDictionary *row = [usage objectForKey:key];
+        total += numberD([row objectForKey:@"cost"]);
+        priced += [[row objectForKey:@"priced"] intValue];
+        calls += [[row objectForKey:@"calls"] intValue];
+    }
+    if (priced == 0)
+        return @"Cost (est) N/A";
+    /* Some calls had no price (a local model, or a model the price list does
+       not know): the total is then a floor, shown with a plus. */
+    return [NSString stringWithFormat:@"Cost (est) %@%@", TBFormatCost(total), priced < calls ? @"+" : @""];
+}
+
+NSString *TBCostDetail(NSDictionary *chat)
+{
+    NSDictionary *usage = [chat objectForKey:@"usage"];
+    NSArray *keys;
+    NSMutableString *out = [NSMutableString string];
+    unsigned i;
+    if (![usage isKindOfClass:[NSDictionary class]] || [usage count] == 0)
+        return @"No usage yet.";
+    keys = [[usage allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    for (i = 0; i < [keys count]; i++) {
+        NSString *key = [keys objectAtIndex:i];
+        NSDictionary *row = [usage objectForKey:key];
+        NSRange bar = [key rangeOfString:@"|"];
+        NSString *model = bar.location == NSNotFound ? key : [key substringFromIndex:bar.location + 1];
+        int tokensIn = [[row objectForKey:@"input"] intValue] + [[row objectForKey:@"cached"] intValue] + [[row objectForKey:@"written"] intValue];
+        NSString *money = [[row objectForKey:@"priced"] intValue] > 0 ? TBFormatCost(numberD([row objectForKey:@"cost"])) : @"N/A";
+        [out appendFormat:@"%@: %@ in, %@ out, %@\n", model, TBFormatTokens(tokensIn),
+            TBFormatTokens([[row objectForKey:@"output"] intValue]), money];
+    }
+    [out appendString:@"Estimates from token counts and published prices; not an invoice."];
+    return out;
+}
+
+BOOL TBWorkspaceNameOK(NSString *name)
+{
+    return [name length] > 0 && [name length] <= 60 && ![name hasPrefix:@"."]
+        && [name rangeOfString:@"/"].location == NSNotFound && [name rangeOfString:@":"].location == NSNotFound;
+}
+
+NSString *TBChatListProblem(id chats)
+{
+    unsigned i;
+    if (![chats isKindOfClass:[NSArray class]])
+        return @"This is not a Tiger Build history export.";
+    for (i = 0; i < [chats count]; i++) {
+        NSDictionary *chat = [chats objectAtIndex:i];
+        NSArray *list;
+        unsigned j;
+        if (![chat isKindOfClass:[NSDictionary class]] || ![[chat objectForKey:@"messages"] isKindOfClass:[NSArray class]])
+            return @"The history contains a malformed chat.";
+        list = [chat objectForKey:@"messages"];
+        for (j = 0; j < [list count]; j++) {
+            NSDictionary *message = [list objectAtIndex:j];
+            if (![message isKindOfClass:[NSDictionary class]] || ![[message objectForKey:@"text"] isKindOfClass:[NSString class]]
+                || ![[message objectForKey:@"role"] isKindOfClass:[NSString class]])
+                return @"Malformed message; import cancelled.";
+        }
+    }
+    return nil;
+}
+
+NSDictionary *TBHistoryBundle(id root, NSString *fallbackName)
+{
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    NSMutableDictionary *spaces = [NSMutableDictionary dictionary];
+    if (![root isKindOfClass:[NSDictionary class]])
+        return nil;
+    if ([[root objectForKey:@"format"] isEqualToString:@"TigerBuild-history"]) {
+        NSDictionary *incoming = [root objectForKey:@"workspaces"];
+        NSEnumerator *names;
+        NSString *name;
+        if (![incoming isKindOfClass:[NSDictionary class]] || [incoming count] == 0)
+            return nil;
+        names = [incoming keyEnumerator];
+        while ((name = [names nextObject])) {
+            NSDictionary *space = [incoming objectForKey:name];
+            if (![name isKindOfClass:[NSString class]] || !TBWorkspaceNameOK(name) || ![space isKindOfClass:[NSDictionary class]])
+                return nil;
+            if (TBChatListProblem([space objectForKey:@"chats"]))
+                return nil;
+            [spaces setObject:space forKey:name];
+        }
+        [result setObject:spaces forKey:@"workspaces"];
+        if ([[root objectForKey:@"current"] isKindOfClass:[NSString class]] && [spaces objectForKey:[root objectForKey:@"current"]])
+            [result setObject:[root objectForKey:@"current"] forKey:@"current"];
+        [result setObject:[NSNumber numberWithBool:YES] forKey:@"bundle"];
+        return result;
+    }
+    /* The 1.2 format: one workspace's chats. */
+    if (TBChatListProblem([root objectForKey:@"chats"]))
+        return nil;
+    [spaces setObject:root forKey:fallbackName ? fallbackName : @"Default"];
+    [result setObject:spaces forKey:@"workspaces"];
+    [result setObject:[NSNumber numberWithBool:NO] forKey:@"bundle"];
+    return result;
 }
 
 int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
@@ -94,6 +295,157 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
     tokens += toolsOn ? 3500 : 400;
     return (int)tokens;
 }
+
+NSString *TBStoreChangedNotification = @"TBStoreChanged";
+static NSMutableDictionary *openStores = nil;
+
+@implementation TBStore
+
++ (TBStore *)storeAtPath:(NSString *)path
+{
+    TBStore *store;
+    if (!openStores)
+        openStores = [[NSMutableDictionary alloc] init];
+    store = [openStores objectForKey:path];
+    if (store)
+        return store;
+    store = [[[TBStore alloc] initWithPath:path] autorelease];
+    [openStores setObject:store forKey:path];
+    return store;
+}
+
++ (void)forgetAll
+{
+    NSEnumerator *all = [[openStores allValues] objectEnumerator];
+    TBStore *store;
+    while ((store = [all nextObject])) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:store selector:@selector(flush) object:nil];
+        store->dirty = NO;
+    }
+    [openStores removeAllObjects];
+}
+
++ (void)flushAll
+{
+    NSEnumerator *all = [[openStores allValues] objectEnumerator];
+    TBStore *store;
+    while ((store = [all nextObject]))
+        [store flush];
+}
+
+- (id)initWithPath:(NSString *)file
+{
+    NSData *data;
+    NSString *error = nil;
+    id root;
+    NSArray *saved;
+    unsigned i;
+    int highest = 0;
+    self = [super init];
+    if (!self)
+        return nil;
+    path = [file copy];
+    chats = [[NSMutableArray alloc] init];
+    settings = [[NSMutableDictionary alloc] init];
+    data = [NSData dataWithContentsOfFile:path];
+    if (data) {
+        root = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListMutableContainers
+            format:NULL errorDescription:&error];
+        if (error)
+            [error release];
+        if ([root isKindOfClass:[NSDictionary class]]) {
+            saved = [root objectForKey:@"chats"];
+            if ([saved isKindOfClass:[NSArray class]]) {
+                for (i = 0; i < [saved count]; i++) {
+                    NSArray *list = [[saved objectAtIndex:i] objectForKey:@"messages"];
+                    unsigned j;
+                    for (j = 0; j < [list count]; j++) {
+                        /* A reply that was still streaming when the app quit. */
+                        [[list objectAtIndex:j] removeObjectForKey:@"pendingMedia"];
+                        [[list objectAtIndex:j] removeObjectForKey:@"open"];
+                    }
+                    [chats addObject:[saved objectAtIndex:i]];
+                }
+            }
+            highest = [[root objectForKey:@"next"] intValue];
+            if ([[root objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
+                [settings addEntriesFromDictionary:[root objectForKey:@"settings"]];
+        }
+    }
+    /* The saved value is the next number to hand out. Without one, go by the
+       highest chat number there is. */
+    if (highest < 1) {
+        for (i = 0; i < [chats count]; i++) {
+            int number = [[[chats objectAtIndex:i] objectForKey:@"id"] intValue];
+            if (number > highest)
+                highest = number;
+        }
+        highest++;
+    }
+    next = highest;
+    return self;
+}
+
+- (void)dealloc
+{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    [path release];
+    [chats release];
+    [settings release];
+    [super dealloc];
+}
+
+- (NSString *)path { return path; }
+- (NSMutableArray *)chats { return chats; }
+- (NSMutableDictionary *)settings { return settings; }
+- (int)next { return next; }
+- (void)setNext:(int)value { next = value; }
+
+- (int)takeNextId
+{
+    int value = next;
+    next++;
+    return value;
+}
+
+/* A streamed reply, a rename and a model change can all arrive within a
+   second. Write once they settle rather than rewriting the file each time. */
+- (void)markDirty
+{
+    if (dirty)
+        return;
+    dirty = YES;
+    [self performSelector:@selector(flush) withObject:nil afterDelay:0.75];
+}
+
+- (void)flush
+{
+    NSMutableDictionary *root;
+    NSString *error = nil;
+    NSData *data;
+    if (!dirty)
+        return;
+    dirty = NO;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flush) object:nil];
+    root = [NSMutableDictionary dictionary];
+    [root setObject:chats forKey:@"chats"];
+    [root setObject:[NSNumber numberWithInt:next] forKey:@"next"];
+    [root setObject:settings forKey:@"settings"];
+    /* Binary plists are about half the size of XML and much faster to write.
+       Loading reads either format. */
+    data = [NSPropertyListSerialization dataFromPropertyList:root format:NSPropertyListBinaryFormat_v1_0
+        errorDescription:&error];
+    if (error) {
+        NSLog(@"Tiger Build could not save chats: %@", error);
+        [error release];
+    }
+    if (data) {
+        [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+        [data writeToFile:path atomically:YES];
+    }
+}
+
+@end
 
 @implementation ModelCatalog
 

@@ -1,11 +1,84 @@
 #import "ChatController_Private.h"
 
+/* The tools window: the relay's switches for Commander and the built-in tools,
+   web search keys, and the list of custom MCP servers. It is tabbed so every
+   control fits a 1024x768 screen. */
+
 @interface ChatController (IntegrationPrivate)
 - (NSMutableDictionary *)integrationFields;
-- (void)renderServers;
 - (void)loadIntegrationForm:(NSDictionary *)data;
 - (NSDictionary *)integrationFormData;
 - (void)applyClientBackup:(NSDictionary *)backup;
+- (void)integrationStatus:(NSString *)text;
+@end
+
+/* Data source for the server table. Rows are the same dictionaries the relay
+   saves, so checking a box changes the data directly. */
+@interface TBServerSource : NSObject {
+    NSMutableArray *servers;
+}
+- (NSMutableArray *)servers;
+- (void)setServers:(NSArray *)list;
+@end
+
+@implementation TBServerSource
+- (id)init
+{
+    self = [super init];
+    servers = [[NSMutableArray alloc] init];
+    return self;
+}
+- (void)dealloc
+{
+    [servers release];
+    [super dealloc];
+}
+- (NSMutableArray *)servers { return servers; }
+- (void)setServers:(NSArray *)list
+{
+    unsigned i;
+    [servers removeAllObjects];
+    for (i = 0; i < [list count]; i++)
+        [servers addObject:[NSMutableDictionary dictionaryWithDictionary:[list objectAtIndex:i]]];
+}
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)aTable
+{
+    (void)aTable;
+    return (NSInteger)[servers count];
+}
+- (id)tableView:(NSTableView *)aTable objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
+{
+    NSDictionary *server;
+    NSString *ident = [column identifier];
+    (void)aTable;
+    if (row < 0 || row >= (NSInteger)[servers count])
+        return @"";
+    server = [servers objectAtIndex:row];
+    if ([ident isEqualToString:@"on"])
+        return [NSNumber numberWithBool:[[server objectForKey:@"enabled"] boolValue]];
+    if ([ident isEqualToString:@"ask"])
+        return [NSNumber numberWithBool:[[server objectForKey:@"approval"] boolValue]];
+    if ([ident isEqualToString:@"name"])
+        return [[server objectForKey:@"title"] length] ? [server objectForKey:@"title"] : [server objectForKey:@"id"];
+    return [server objectForKey:@"command"];
+}
+- (void)tableView:(NSTableView *)aTable setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row
+{
+    NSString *ident = [column identifier];
+    (void)aTable;
+    if (row < 0 || row >= (NSInteger)[servers count])
+        return;
+    if ([ident isEqualToString:@"on"])
+        [[servers objectAtIndex:row] setObject:[NSNumber numberWithBool:[value boolValue]] forKey:@"enabled"];
+    else if ([ident isEqualToString:@"ask"])
+        [[servers objectAtIndex:row] setObject:[NSNumber numberWithBool:[value boolValue]] forKey:@"approval"];
+}
+- (BOOL)tableView:(NSTableView *)aTable shouldEditTableColumn:(NSTableColumn *)column row:(NSInteger)row
+{
+    (void)aTable;
+    (void)row;
+    return [[column identifier] isEqualToString:@"on"] || [[column identifier] isEqualToString:@"ask"];
+}
 @end
 
 @implementation ChatController (Integrations)
@@ -22,71 +95,116 @@
 {
     NSTextField *f = [[[NSTextField alloc] initWithFrame:rect] autorelease];
     [f setStringValue:title];[f setEditable:NO];[f setSelectable:NO];[f setBezeled:NO];[f setDrawsBackground:NO];
-    [f setFont:[NSFont systemFontOfSize:12]];[view addSubview:f];return f;
+    [f setFont:[NSFont systemFontOfSize:12]];[[f cell] setWraps:YES];[view addSubview:f];return f;
 }
+- (NSView *)integrationTab:(NSString *)label in:(NSTabView *)tabs
+{
+    NSTabViewItem *item = [[[NSTabViewItem alloc] initWithIdentifier:label] autorelease];
+    NSView *view = [[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 556, 330)] autorelease];
+    [item setLabel:label];[item setView:view];[tabs addTabViewItem:item];
+    return view;
+}
+- (NSButton *)integrationSwitch:(NSString *)title key:(NSString *)key y:(float)y in:(NSView *)view
+{
+    NSButton *b = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 524, 22)] autorelease];
+    [b setButtonType:NSSwitchButton];[b setTitle:title];[view addSubview:b];
+    [[self integrationFields] setObject:b forKey:key];
+    return b;
+}
+- (void)integrationStatus:(NSString *)text
+{
+    [[[self integrationFields] objectForKey:@"status"] setStringValue:text ? text : @""];
+}
+
 - (void)showIntegrations:(id)sender
 {
     (void)sender;
     NSMutableDictionary *fields=[self integrationFields];
     NSWindow *panel=[fields objectForKey:@"window"];
     if (!panel) {
-        panel=[[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,800)
+        panel=[[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,600,470)
             styleMask:NSTitledWindowMask|NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
         [panel setReleasedWhenClosed:NO];[panel setTitle:@"MCP Servers and Agent Tools"];[panel center];
         [fields setObject:panel forKey:@"window"];
         NSView *view=[panel contentView];
-        NSArray *titles=[NSArray arrayWithObjects:@"PPC Commander (built in)",@"Agent toolbox (UTC time and scratch notes)",
-            @"Web search for other providers (Brave or Tavily)",@"Grok native web search",@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)",nil];
-        NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"toolbox_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",nil];
-        unsigned i;
-        for(i=0;i<[titles count];i++) {
-            NSButton *b=[[[NSButton alloc] initWithFrame:NSMakeRect(16,757-i*27,620,24)] autorelease];
-            [b setButtonType:NSSwitchButton];[b setTitle:[titles objectAtIndex:i]];[view addSubview:b];[fields setObject:b forKey:[keys objectAtIndex:i]];
-        }
-        [self integrationLabel:@"Brave Search API key (blank keeps saved)" frame:NSMakeRect(16,614,275,22) view:view];
-        NSSecureTextField *key=[[[NSSecureTextField alloc] initWithFrame:NSMakeRect(295,614,342,24)] autorelease];
-        [view addSubview:key];[fields setObject:key forKey:@"search_api_key"];
-        NSButton *clear=[[[NSButton alloc] initWithFrame:NSMakeRect(295,585,342,24)] autorelease];
-        [clear setButtonType:NSSwitchButton];[clear setTitle:@"Delete saved search key"];[view addSubview:clear];[fields setObject:clear forKey:@"clear_search_key"];
-        [self integrationLabel:@"Tavily API key (blank keeps saved)" frame:NSMakeRect(16,549,275,22) view:view];
-        NSSecureTextField *tavily=[[[NSSecureTextField alloc] initWithFrame:NSMakeRect(295,549,342,24)] autorelease];
-        [view addSubview:tavily];[fields setObject:tavily forKey:@"tavily_api_key"];
-        NSButton *clearT=[[[NSButton alloc] initWithFrame:NSMakeRect(295,520,342,24)] autorelease];
-        [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[view addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];
-        [self integrationLabel:@"Search service" frame:NSMakeRect(16,484,275,22) view:view];
-        NSPopUpButton *provider=[[[NSPopUpButton alloc] initWithFrame:NSMakeRect(295,484,220,26) pullsDown:NO] autorelease];
+        NSTabView *tabs=[[[NSTabView alloc] initWithFrame:NSMakeRect(12,56,576,404)] autorelease];
+        [tabs setFont:[NSFont systemFontOfSize:12]];[view addSubview:tabs];
+        NSView *tab=[self integrationTab:@"Built-in Tools" in:tabs];
+        float y=292;
+        [self integrationSwitch:@"Commander (built in): read and edit files and run commands on the chat's Mac" key:@"ppc_enabled" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Ask first before Commander runs a tool (a chat can change this)" key:@"ppc_approval" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Agent toolbox (UTC time and scratch notes)" key:@"toolbox_enabled" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Ask other models: lets a model get a second opinion (a chat turns it on)" key:@"consult_enabled" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Web search for other providers (Brave or Tavily)" key:@"search_enabled" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Grok native web search" key:@"grok_native_search" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=40;
+        [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
+        NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
+        [steps setToolTip:@"A reply may use this many tool steps (1 to 200) before the relay stops it and says so. Say continue to go on."];
+        [tab addSubview:steps];[fields setObject:steps forKey:@"max_tool_steps"];y-=30;
+        [self integrationLabel:@"Each chat can switch these on or off from the Tools button, and choose which ones must ask first. "
+            @"The switches here are the relay's: they apply to every Mac that uses it." frame:NSMakeRect(16,y-20,524,44) view:tab];
+        tab=[self integrationTab:@"Web Search" in:tabs];
+        y=284;
+        [self integrationLabel:@"Search service" frame:NSMakeRect(16,y+2,170,18) view:tab];
+        NSPopUpButton *provider=[[[NSPopUpButton alloc] initWithFrame:NSMakeRect(190,y-2,200,26) pullsDown:NO] autorelease];
         [provider addItemsWithTitles:[NSArray arrayWithObjects:@"Brave Search",@"Tavily",nil]];
-        [view addSubview:provider];[fields setObject:provider forKey:@"search_provider"];
-        [self integrationLabel:@"Custom stdio servers execute on the relay Mac. Enable only trusted programs." frame:NSMakeRect(16,386,628,22) view:view];
-        NSScrollView *scroll=[[[NSScrollView alloc] initWithFrame:NSMakeRect(16,231,628,152)] autorelease];
+        [tab addSubview:provider];[fields setObject:provider forKey:@"search_provider"];y-=40;
+        [self integrationLabel:@"Brave Search API key" frame:NSMakeRect(16,y+2,170,18) view:tab];
+        NSSecureTextField *key=[[[NSSecureTextField alloc] initWithFrame:NSMakeRect(190,y,350,24)] autorelease];
+        [[key cell] setPlaceholderString:@"blank keeps the saved key"];
+        [tab addSubview:key];[fields setObject:key forKey:@"search_api_key"];y-=28;
+        NSButton *clear=[[[NSButton alloc] initWithFrame:NSMakeRect(190,y,350,22)] autorelease];
+        [clear setButtonType:NSSwitchButton];[clear setTitle:@"Delete saved Brave key"];[tab addSubview:clear];[fields setObject:clear forKey:@"clear_search_key"];y-=40;
+        [self integrationLabel:@"Tavily API key" frame:NSMakeRect(16,y+2,170,18) view:tab];
+        NSSecureTextField *tavily=[[[NSSecureTextField alloc] initWithFrame:NSMakeRect(190,y,350,24)] autorelease];
+        [[tavily cell] setPlaceholderString:@"blank keeps the saved key"];
+        [tab addSubview:tavily];[fields setObject:tavily forKey:@"tavily_api_key"];y-=28;
+        NSButton *clearT=[[[NSButton alloc] initWithFrame:NSMakeRect(190,y,350,22)] autorelease];
+        [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];
+
+        tab=[self integrationTab:@"MCP Servers" in:tabs];
+        [self integrationLabel:@"Custom stdio servers run on the relay Mac, not on the chat's Mac. Only add programs you trust; new ones start switched off."
+            frame:NSMakeRect(16,288,524,32) view:tab];
+        NSScrollView *scroll=[[[NSScrollView alloc] initWithFrame:NSMakeRect(16,52,524,230)] autorelease];
         [scroll setHasVerticalScroller:YES];[scroll setBorderType:NSBezelBorder];
-        NSView *doc=[[[NSView alloc] initWithFrame:NSMakeRect(0,0,605,152)] autorelease];[scroll setDocumentView:doc];[view addSubview:scroll];[fields setObject:doc forKey:@"list"];
-        NSArray *labels=[NSArray arrayWithObjects:@"Server ID",@"Executable path",@"Arguments",nil];
-        NSArray *names=[NSArray arrayWithObjects:@"id",@"command",@"args",nil];
+        NSTableView *list=[[[NSTableView alloc] initWithFrame:NSMakeRect(0,0,500,230)] autorelease];
+        TBServerSource *source=[[[TBServerSource alloc] init] autorelease];
+        [fields setObject:source forKey:@"source"];[fields setObject:list forKey:@"table"];
+        NSArray *ids=[NSArray arrayWithObjects:@"on",@"name",@"command",@"ask",nil];
+        NSArray *heads=[NSArray arrayWithObjects:@"On",@"Server",@"Program",@"Ask first",nil];
+        float widths[4]={34,140,250,64};unsigned c;
+        for(c=0;c<4;c++) {
+            NSTableColumn *col=[[[NSTableColumn alloc] initWithIdentifier:[ids objectAtIndex:c]] autorelease];
+            [[col headerCell] setStringValue:[heads objectAtIndex:c]];[col setWidth:widths[c]];
+            if(c==0||c==3){NSButtonCell *cell=[[[NSButtonCell alloc] init] autorelease];[cell setButtonType:NSSwitchButton];[cell setTitle:@""];[col setDataCell:cell];[col setEditable:YES];}
+            else {[[col dataCell] setFont:[NSFont systemFontOfSize:12]];[col setEditable:NO];}
+            [list addTableColumn:col];
+        }
+        [list setDataSource:source];[list setRowHeight:20];[list setAllowsEmptySelection:YES];[list setDoubleAction:@selector(editIntegrationServer:)];[list setTarget:self];
+        [scroll setDocumentView:list];[tab addSubview:scroll];
+        NSArray *labels=[NSArray arrayWithObjects:@"Add...",@"Edit...",@"Remove",nil];
+        SEL acts[]={@selector(addIntegrationServer:),@selector(editIntegrationServer:),@selector(removeIntegrationServer:)};
+        unsigned i;
         for(i=0;i<3;i++) {
-            float y=196-i*31;
-            [self integrationLabel:[labels objectAtIndex:i] frame:NSMakeRect(16,y,113,22) view:view];
-            NSTextField *f=[[[NSTextField alloc] initWithFrame:NSMakeRect(132,y,505,24)] autorelease];
-            [view addSubview:f];[fields setObject:f forKey:[names objectAtIndex:i]];
+            NSButton *b=[[[NSButton alloc] initWithFrame:NSMakeRect(16+i*100,12,94,28)] autorelease];
+            [b setTitle:[labels objectAtIndex:i]];[b setBezelStyle:NSRoundedBezelStyle];[b setTarget:self];[b setAction:acts[i]];[tab addSubview:b];
         }
-        [[fields objectForKey:@"args"] setToolTip:@"Separate arguments with | (pipe). No shell expansion. Example: /path/server.py|--stdio"];
-        NSArray *buttons=[NSArray arrayWithObjects:@"Add Disabled Server",@"Save",@"Export All Settings...",@"Import All Settings...",nil];
-        SEL actions[]={@selector(addIntegrationServer:),@selector(saveIntegrations:),@selector(exportAllSettings:),@selector(importAllSettings:)};
-        for(i=0;i<4;i++) {
-            NSButton *b=[[[NSButton alloc] initWithFrame:NSMakeRect(i<2 ? 16+i*192 : 16+(i-2)*210,i<2 ? 91:52,i==1 ? 92:200,28)] autorelease];
-            [b setTitle:[buttons objectAtIndex:i]];[b setBezelStyle:NSRoundedBezelStyle];[b setTarget:self];[b setAction:actions[i]];[view addSubview:b];
-            if(i==1)[fields setObject:b forKey:@"save"];
-        }
-        NSTextField *status=[self integrationLabel:@"Loading..." frame:NSMakeRect(16,13,628,30) view:view];[fields setObject:status forKey:@"status"];
+        NSTextField *status=[self integrationLabel:@"Loading..." frame:NSMakeRect(16,22,360,30) view:view];[fields setObject:status forKey:@"status"];
+        NSButton *save=[[[NSButton alloc] initWithFrame:NSMakeRect(396,16,94,30)] autorelease];
+        [save setTitle:@"Save"];[save setBezelStyle:NSRoundedBezelStyle];[save setKeyEquivalent:@"\r"];[save setTarget:self];[save setAction:@selector(saveIntegrations:)];[view addSubview:save];[fields setObject:save forKey:@"save"];
+        NSButton *close=[[[NSButton alloc] initWithFrame:NSMakeRect(494,16,94,30)] autorelease];
+        [close setTitle:@"Close"];[close setBezelStyle:NSRoundedBezelStyle];[close setKeyEquivalent:@"\033"];[close setTarget:panel];[close setAction:@selector(performClose:)];[view addSubview:close];
     }
     [[fields objectForKey:@"save"] setEnabled:NO];
+    [self integrationStatus:@"Loading..."];
     [panel makeKeyAndOrderFront:nil];
     [RelayRequest send:@"GET" path:@"/v1/integrations" body:nil timeout:15 target:self action:@selector(integrationsArrived:) context:nil];
 }
 - (void)integrationsArrived:(RelayRequest *)request
 {
     NSMutableDictionary *fields=[self integrationFields];
-    if(![request ok]) {[[fields objectForKey:@"status"] setStringValue:[self relayProblemForRequest:request]];return;}
+    if(![request ok]) {[self integrationStatus:[self relayProblemForRequest:request]];return;}
     NSString *error=nil;
     NSDictionary *data=[NSPropertyListSerialization propertyListFromData:[request data] mutabilityOption:NSPropertyListMutableContainers format:NULL errorDescription:&error];
     if(error)[error release];
@@ -96,69 +214,154 @@
 - (void)loadIntegrationForm:(NSDictionary *)data
 {
     NSMutableDictionary *fields=[self integrationFields];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"toolbox_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",nil];
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",nil];
     unsigned i;
     for(i=0;i<[keys count];i++)[[fields objectForKey:[keys objectAtIndex:i]] setState:[[data objectForKey:[keys objectAtIndex:i]] boolValue]?NSOnState:NSOffState];
-    [fields setObject:[NSMutableArray arrayWithArray:[data objectForKey:@"servers"]] forKey:@"servers"];
+    [(TBServerSource *)[fields objectForKey:@"source"] setServers:[data objectForKey:@"servers"]];
+    [[fields objectForKey:@"max_tool_steps"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"max_tool_steps"] intValue]>0?[[data objectForKey:@"max_tool_steps"] intValue]:40]];
+    [[fields objectForKey:@"table"] reloadData];
     [[fields objectForKey:@"search_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_search_key"] setState:NSOffState];
-    [[fields objectForKey:@"status"] setStringValue:([[data objectForKey:@"search_key_saved"] intValue]!=0)?@"Brave key is saved.":@"No Brave key saved. Grok can use its native search."];
     [[fields objectForKey:@"tavily_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_tavily_key"] setState:NSOffState];
     [[fields objectForKey:@"search_provider"] selectItemAtIndex:[[data objectForKey:@"search_provider"] isEqualToString:@"tavily"]?1:0];
-    [[fields objectForKey:@"status"] setStringValue:[NSString stringWithFormat:@"Saved keys: Brave %@, Tavily %@.",
+    [self integrationStatus:[NSString stringWithFormat:@"Saved keys: Brave %@, Tavily %@.",
         ([[data objectForKey:@"search_key_saved"] intValue]!=0)?@"yes":@"no",[[data objectForKey:@"tavily_key_saved"] boolValue]?@"yes":@"no"]];
-    [self renderServers];
 }
-- (void)renderServers
+
+/* ---- the add/edit sheet for one server ---- */
+
+- (void)serverSheetDone:(id)sender {(void)sender;[[NSApp modalWindow] makeFirstResponder:nil];[NSApp stopModalWithCode:1];}
+- (void)serverSheetCancel:(id)sender {(void)sender;[NSApp stopModalWithCode:0];}
+
+/* server nil adds a new one. Returns the edited dictionary, or nil when cancelled. */
+- (NSMutableDictionary *)runServerSheet:(NSDictionary *)server
 {
-    NSMutableDictionary *fields=[self integrationFields];NSView *doc=[fields objectForKey:@"list"];
-    NSArray *subs=[NSArray arrayWithArray:[doc subviews]];unsigned i;
-    for(i=0;i<[subs count];i++)[[subs objectAtIndex:i] removeFromSuperview];
-    NSArray *servers=[fields objectForKey:@"servers"];float height=MAX(152,[servers count]*32);
-    [doc setFrameSize:NSMakeSize(605,height)];
-    for(i=0;i<[servers count];i++) {
-        NSDictionary *s=[servers objectAtIndex:i];float y=height-30-i*32;
-        NSButton *b=[[[NSButton alloc] initWithFrame:NSMakeRect(4,y,490,25)] autorelease];[b setButtonType:NSSwitchButton];
-        [b setTitle:[NSString stringWithFormat:@"%@ - %@",[s objectForKey:@"id"],[s objectForKey:@"command"]]];
-        [b setState:([[s objectForKey:@"enabled"] intValue]!=0)?NSOnState:NSOffState];[b setTag:i];[b setTarget:self];[b setAction:@selector(toggleIntegrationServer:)];[doc addSubview:b];
-        NSButton *del=[[[NSButton alloc] initWithFrame:NSMakeRect(500,y,91,25)] autorelease];[del setTitle:@"Remove"];
-        [del setBezelStyle:NSRoundedBezelStyle];[del setTag:i];[del setTarget:self];[del setAction:@selector(removeIntegrationServer:)];[doc addSubview:del];
+    NSPanel *panel=[[[NSPanel alloc] initWithContentRect:NSMakeRect(0,0,520,356) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
+    NSView *view=[panel contentView];
+    NSArray *labels=[NSArray arrayWithObjects:@"Server ID",@"Name (optional)",@"Program path",@"Arguments",nil];
+    NSMutableArray *fieldList=[NSMutableArray array];
+    unsigned i;
+    [panel setTitle:server?@"Edit MCP Server":@"Add MCP Server"];[panel center];
+    for(i=0;i<4;i++) {
+        float y=312-i*36;
+        [self integrationLabel:[labels objectAtIndex:i] frame:NSMakeRect(16,y+2,120,18) view:view];
+        NSTextField *f=[[[NSTextField alloc] initWithFrame:NSMakeRect(140,y,364,24)] autorelease];[view addSubview:f];[fieldList addObject:f];
     }
-}
-- (void)toggleIntegrationServer:(NSButton *)sender
-{
-    NSMutableArray *servers=[[self integrationFields] objectForKey:@"servers"];
-    [[servers objectAtIndex:[sender tag]] setObject:[NSNumber numberWithBool:[sender state]==NSOnState] forKey:@"enabled"];
-}
-- (void)removeIntegrationServer:(NSButton *)sender
-{
-    [[[self integrationFields] objectForKey:@"servers"] removeObjectAtIndex:[sender tag]];[self renderServers];
+    [[fieldList objectAtIndex:0] setToolTip:@"Letters, digits and underscore, up to 20 characters. Used to name its tools."];
+    [[fieldList objectAtIndex:2] setToolTip:@"Absolute path of the program on the relay Mac."];
+    [[fieldList objectAtIndex:3] setToolTip:@"Separate arguments with | (pipe). No shell expansion. Example: /path/server.py|--stdio"];
+    [self integrationLabel:@"Environment" frame:NSMakeRect(16,168,120,18) view:view];
+    NSScrollView *envScroll=[[[NSScrollView alloc] initWithFrame:NSMakeRect(140,100,364,86)] autorelease];
+    [envScroll setHasVerticalScroller:YES];[envScroll setBorderType:NSBezelBorder];
+    NSTextView *env=[[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,346,86)] autorelease];
+    [env setFont:[NSFont fontWithName:@"Monaco" size:10]];[env setRichText:NO];[env setVerticallyResizable:YES];
+    [env setMinSize:NSMakeSize(0,86)];[env setMaxSize:NSMakeSize(1000000,1000000)];
+    [[env textContainer] setWidthTracksTextView:YES];
+    [envScroll setDocumentView:env];[view addSubview:envScroll];
+    [self integrationLabel:@"One NAME=value per line" frame:NSMakeRect(16,122,120,34) view:view];
+    NSButton *on=[[[NSButton alloc] initWithFrame:NSMakeRect(140,72,364,22)] autorelease];
+    [on setButtonType:NSSwitchButton];[on setTitle:@"Switched on (its tools run on the relay Mac)"];[view addSubview:on];
+    NSButton *ask=[[[NSButton alloc] initWithFrame:NSMakeRect(140,48,364,22)] autorelease];
+    [ask setButtonType:NSSwitchButton];[ask setTitle:@"Ask before running its tools"];[view addSubview:ask];
+    if(server) {
+        [[fieldList objectAtIndex:0] setStringValue:[server objectForKey:@"id"]];[[fieldList objectAtIndex:0] setEditable:NO];
+        [[fieldList objectAtIndex:1] setStringValue:[server objectForKey:@"title"]?[server objectForKey:@"title"]:@""];
+        [[fieldList objectAtIndex:2] setStringValue:[server objectForKey:@"command"]];
+        [[fieldList objectAtIndex:3] setStringValue:[[server objectForKey:@"args"] componentsJoinedByString:@"|"]];
+        NSMutableString *text=[NSMutableString string];NSDictionary *vars=[server objectForKey:@"env"];NSEnumerator *names=[vars keyEnumerator];NSString *n;
+        while((n=[names nextObject]))[text appendFormat:@"%@=%@\n",n,[vars objectForKey:n]];
+        [env setString:text];
+        [on setState:[[server objectForKey:@"enabled"] boolValue]?NSOnState:NSOffState];
+        [ask setState:[[server objectForKey:@"approval"] boolValue]?NSOnState:NSOffState];
+    }
+    NSButton *okButton=[[[NSButton alloc] initWithFrame:NSMakeRect(318,10,90,30)] autorelease];
+    [okButton setTitle:server?@"Done":@"Add"];[okButton setBezelStyle:NSRoundedBezelStyle];[okButton setKeyEquivalent:@"\r"];[okButton setTarget:self];[okButton setAction:@selector(serverSheetDone:)];[view addSubview:okButton];
+    NSButton *cancel=[[[NSButton alloc] initWithFrame:NSMakeRect(414,10,90,30)] autorelease];
+    [cancel setTitle:@"Cancel"];[cancel setBezelStyle:NSRoundedBezelStyle];[cancel setKeyEquivalent:@"\033"];[cancel setTarget:self];[cancel setAction:@selector(serverSheetCancel:)];[view addSubview:cancel];
+    [panel makeKeyAndOrderFront:nil];[panel makeFirstResponder:[fieldList objectAtIndex:server?2:0]];
+    int result=[NSApp runModalForWindow:panel];[panel orderOut:nil];
+    if(result!=1)return nil;
+    NSString *name=[[[fieldList objectAtIndex:0] stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *command=[[[fieldList objectAtIndex:2] stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if(![name length]||[name length]>20||![command hasPrefix:@"/"]) {
+        NSRunAlertPanel(@"MCP Server",@"Enter an ID (letters, digits or underscore, up to 20 characters) and the absolute path of the program on the relay Mac.",@"OK",nil,nil);
+        return nil;
+    }
+    NSString *args=[[fieldList objectAtIndex:3] stringValue];
+    NSMutableDictionary *vars=[NSMutableDictionary dictionary];
+    NSArray *lines=[[env string] componentsSeparatedByString:@"\n"];
+    for(i=0;i<[lines count];i++) {
+        NSString *line=[lines objectAtIndex:i];NSRange eq=[line rangeOfString:@"="];
+        if(eq.location!=NSNotFound&&eq.location>0)[vars setObject:[line substringFromIndex:eq.location+1] forKey:[line substringToIndex:eq.location]];
+    }
+    return [NSMutableDictionary dictionaryWithObjectsAndKeys:name,@"id",[[fieldList objectAtIndex:1] stringValue],@"title",command,@"command",
+        [args length]?[args componentsSeparatedByString:@"|"]:[NSArray array],@"args",vars,@"env",
+        [NSNumber numberWithBool:[on state]==NSOnState],@"enabled",[NSNumber numberWithBool:[ask state]==NSOnState],@"approval",nil];
 }
 - (void)addIntegrationServer:(id)sender
 {
-    (void)sender;NSMutableDictionary *fields=[self integrationFields];
-    NSString *name=[[fields objectForKey:@"id"] stringValue];NSString *command=[[fields objectForKey:@"command"] stringValue];
-    if(![name length]||![command hasPrefix:@"/"]){[[fields objectForKey:@"status"] setStringValue:@"Enter a unique ID and absolute executable path on the relay Mac."];return;}
-    NSString *args=[[fields objectForKey:@"args"] stringValue];
-    NSMutableDictionary *s=[NSMutableDictionary dictionaryWithObjectsAndKeys:name,@"id",command,@"command",
-        [args length]?[args componentsSeparatedByString:@"|"]:[NSArray array],@"args",[NSMutableDictionary dictionary],@"env",[NSNumber numberWithBool:NO],@"enabled",nil];
-    NSMutableArray *servers=[fields objectForKey:@"servers"];if(!servers){servers=[NSMutableArray array];[fields setObject:servers forKey:@"servers"];}
-    [servers addObject:s];[self renderServers];
-    [[fields objectForKey:@"status"] setStringValue:@"Added disabled. Enable only trusted executables, then Save."];
+    (void)sender;
+    NSMutableDictionary *fields=[self integrationFields];
+    TBServerSource *source=[fields objectForKey:@"source"];
+    NSMutableDictionary *added=[self runServerSheet:nil];
+    unsigned i;
+    if(!added)return;
+    for(i=0;i<[[source servers] count];i++) {
+        if([[[[source servers] objectAtIndex:i] objectForKey:@"id"] isEqualToString:[added objectForKey:@"id"]]) {
+            NSRunAlertPanel(@"MCP Server",@"There is already a server with that ID.",@"OK",nil,nil);return;
+        }
+    }
+    /* Switched on only if the person said so in the sheet; a new server is otherwise off. */
+    [[source servers] addObject:added];
+    [[fields objectForKey:@"table"] reloadData];
+    [self integrationStatus:[[added objectForKey:@"enabled"] boolValue]?@"Added and switched on. Save to apply. Enable only trusted programs.":@"Added switched off. Save to keep it."];
+}
+- (void)editIntegrationServer:(id)sender
+{
+    (void)sender;
+    NSMutableDictionary *fields=[self integrationFields];
+    TBServerSource *source=[fields objectForKey:@"source"];
+    NSTableView *list=[fields objectForKey:@"table"];
+    int row=[list selectedRow];
+    if(row<0||row>=(int)[[source servers] count]){NSBeep();return;}
+    NSMutableDictionary *edited=[self runServerSheet:[[source servers] objectAtIndex:row]];
+    if(!edited)return;
+    [[source servers] replaceObjectAtIndex:row withObject:edited];
+    [list reloadData];
+    [self integrationStatus:@"Changed. Save to apply."];
+}
+- (void)removeIntegrationServer:(id)sender
+{
+    (void)sender;
+    NSMutableDictionary *fields=[self integrationFields];
+    TBServerSource *source=[fields objectForKey:@"source"];
+    NSTableView *list=[fields objectForKey:@"table"];
+    int row=[list selectedRow];
+    if(row<0||row>=(int)[[source servers] count]){NSBeep();return;}
+    if(NSRunAlertPanel(@"Remove this server?",@"\"%@\" is removed from the relay's list when you Save.",@"Remove",@"Cancel",nil,[[[source servers] objectAtIndex:row] objectForKey:@"id"])!=NSAlertDefaultReturn)return;
+    [[source servers] removeObjectAtIndex:row];
+    [list reloadData];
+    [self integrationStatus:@"Removed. Save to apply."];
 }
 - (NSDictionary *)integrationFormData
 {
     NSMutableDictionary *fields=[self integrationFields];NSMutableDictionary *data=[NSMutableDictionary dictionary];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"toolbox_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
     for(i=0;i<[keys count];i++)[data setObject:[NSNumber numberWithBool:[[fields objectForKey:[keys objectAtIndex:i]] state]==NSOnState] forKey:[keys objectAtIndex:i]];
     [data setObject:[[fields objectForKey:@"search_api_key"] stringValue] forKey:@"search_api_key"];
     [data setObject:[[fields objectForKey:@"tavily_api_key"] stringValue] forKey:@"tavily_api_key"];
     [data setObject:[[fields objectForKey:@"search_provider"] indexOfSelectedItem]==1?@"tavily":@"brave" forKey:@"search_provider"];
-    [data setObject:[fields objectForKey:@"servers"] forKey:@"servers"];return data;
+    {int steps=[[[fields objectForKey:@"max_tool_steps"] stringValue] intValue];if(steps<1)steps=40;if(steps>200)steps=200;
+        [data setObject:[NSNumber numberWithInt:steps] forKey:@"max_tool_steps"];}
+    [data setObject:[(TBServerSource *)[fields objectForKey:@"source"] servers] forKey:@"servers"];return data;
 }
 - (void)saveIntegrations:(id)sender
 {
     (void)sender;
-    if(NSRunAlertPanel(@"Enable relay tools?",@"Custom MCP executables run on the relay Mac with its user's permissions. "
+    BOOL anyOn=NO;
+    NSArray *servers=[(TBServerSource *)[[self integrationFields] objectForKey:@"source"] servers];
+    unsigned i;
+    for(i=0;i<[servers count];i++)if([[[servers objectAtIndex:i] objectForKey:@"enabled"] boolValue])anyOn=YES;
+    if(anyOn&&NSRunAlertPanel(@"Enable relay tools?",@"Custom MCP executables run on the relay Mac with its user's permissions. "
         @"Enable only servers you trust. This configuration applies to every client of the relay.",@"Save",@"Cancel",nil)!=NSAlertDefaultReturn)return;
     NSString *error=nil;NSData *data=[NSPropertyListSerialization dataFromPropertyList:[self integrationFormData] format:NSPropertyListXMLFormat_v1_0 errorDescription:&error];
     if(error)[error release];NSString *text=[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
@@ -166,8 +369,8 @@
 }
 - (void)integrationsSaved:(RelayRequest *)request
 {
-    [[[self integrationFields] objectForKey:@"status"] setStringValue:[request ok]?@"Saved. New chat turns use the updated tools.":[request text]];
-    if([request ok]){[[[self integrationFields] objectForKey:@"tavily_api_key"] setStringValue:@""];[[[self integrationFields] objectForKey:@"clear_tavily_key"] setState:NSOffState];[[[self integrationFields] objectForKey:@"search_api_key"] setStringValue:@""];[[[self integrationFields] objectForKey:@"clear_search_key"] setState:NSOffState];}
+    [self integrationStatus:[request ok]?@"Saved. New chat turns use the updated tools.":[request text]];
+    if([request ok]){[[[self integrationFields] objectForKey:@"tavily_api_key"] setStringValue:@""];[[[self integrationFields] objectForKey:@"clear_tavily_key"] setState:NSOffState];[[[self integrationFields] objectForKey:@"search_api_key"] setStringValue:@""];[[[self integrationFields] objectForKey:@"clear_search_key"] setState:NSOffState];[self refreshToolCatalog];}
 }
 
 - (void)exportAllSettings:(id)sender

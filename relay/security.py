@@ -79,6 +79,15 @@ def listen_address(config):
             return address_toward(host)
         except OSError:
             pass
+    else:
+        # No Tiger Mac yet: the address on the network this computer
+        # reaches the internet through (nothing is sent to find it).
+        try:
+            found = address_toward("192.0.2.1")
+            if found and not found.startswith("127."):
+                return found
+        except OSError:
+            pass
     return "127.0.0.1"
 
 
@@ -90,6 +99,10 @@ def allowed_clients(config):
     host = (config.get("TIGER_HOST") or "").strip()
     if host:
         allowed.add(host)
+    else:
+        # No Tiger Mac is set up yet. Let computers on a private network
+        # connect so Tiger Build can introduce itself; the token still applies.
+        allowed.add("private")
     return allowed
 
 
@@ -98,4 +111,11 @@ def client_allowed(address, allowed):
         return False
     if address.startswith("::ffff:"):
         address = address[7:]
+    if "private" in allowed:
+        import ipaddress
+        try:
+            if ipaddress.ip_address(address).is_private:
+                return True
+        except ValueError:
+            pass
     return "*" in allowed or address in allowed

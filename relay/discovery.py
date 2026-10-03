@@ -67,7 +67,7 @@ def _key(provider):
 
 
 def _get_json(url, headers, ssl_context, timeout=30):
-    merged = {"User-Agent": "TigerBuild-relay/1.2"}
+    merged = {"User-Agent": "TigerBuild-relay/1.3"}
     merged.update(headers)
     request = urllib.request.Request(url, headers=merged)
     try:

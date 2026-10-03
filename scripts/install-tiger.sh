@@ -69,6 +69,8 @@ COPYFILE_DISABLE=1 tar -C "$ROOT/tiger-build" --exclude '*.orig' --exclude 'Tige
   | "$SSH" 'cd "$HOME/TigerBuild-build/native.new" && tar -xf -'
 "$SSH" 'cat > "$HOME/TigerBuild-build/native.new/TigerBuild.icns"' < "$ROOT/assets/TigerBuild.icns"
 "$SSH" 'cat > "$HOME/TigerBuild-build/native.new/models.txt"' < "$MODELS"
+# The app carries its own ppc-commander and installs it when it is missing or older.
+"$SSH" 'mkdir -p "$HOME/TigerBuild-build/native.new/ppc-commander" && cp "$HOME/ppc-commander/ppc_commander.py" "$HOME/ppc-commander/service.py" "$HOME/TigerBuild-build/native.new/ppc-commander/"'
 rm -f "$MODELS"
 
 echo "Building on $TIGER_HOST (make test, then make)..."

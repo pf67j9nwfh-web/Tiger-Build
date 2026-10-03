@@ -1,5 +1,8 @@
 #import "TranscriptView.h"
+#import "TBSupport.h"
+#if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
+#endif
 
 @interface TranscriptView (Selection)
 - (void)toggleActivityAtView:(NSView *)view;
@@ -37,6 +40,7 @@
 
 @end
 
+#if TB_INLINE_VIDEO
 @interface SaveMovieView : QTMovieView
 {
     NSString *mediaPath;
@@ -102,6 +106,8 @@
 
 @end
 
+#endif
+
 static void appendRoundedRect(NSBezierPath *path, NSRect rect, float radius)
 {
     float x = NSMinX(rect);
@@ -122,22 +128,32 @@ static void appendRoundedRect(NSBezierPath *path, NSRect rect, float radius)
     [path closePath];
 }
 
+/* The iOS 6 Messages bubble: a flat body, a bright rim along the top, a lighter
+   glow along the bottom, a thin dark outline, and a pointed tail that is part
+   of the outline. Sent bubbles are sky blue, received ones light gray. */
 typedef struct {
-    float top[3];
-    float bottom[3];
+    CGFloat top[3];     /* rim at the top edge */
+    CGFloat body[3];    /* the flat middle */
+    CGFloat low[3];     /* glow at the bottom edge */
+    CGFloat topEnd;     /* where the rim has faded into the body (0..1 from the top) */
+    CGFloat lowStart;   /* where the glow begins */
 } ShadeInfo;
 
-static void shadeEvaluate(void *info, const float *in, float *out)
+/* CGFloat is a double in 64-bit builds, so the callback must say so. */
+static void shadeEvaluate(void *info, const CGFloat *in, CGFloat *out)
 {
     ShadeInfo *shade = (ShadeInfo *)info;
-    float t = in[0];
-    float gloss = 0.0;
+    CGFloat t = in[0];
     int i;
-    if (t < 0.28)
-        gloss = (0.28 - t) / 0.28 * 0.62;
     for (i = 0; i < 3; i++) {
-        float c = shade->top[i] + (shade->bottom[i] - shade->top[i]) * t;
-        c = c + (1.0 - c) * gloss;
+        CGFloat c = shade->body[i];
+        if (t < shade->topEnd) {
+            CGFloat k = t / shade->topEnd;
+            c = shade->top[i] + (shade->body[i] - shade->top[i]) * k;
+        } else if (t > shade->lowStart) {
+            CGFloat k = (t - shade->lowStart) / (1.0 - shade->lowStart);
+            c = shade->body[i] + (shade->low[i] - shade->body[i]) * k;
+        }
         out[i] = c;
     }
     out[3] = 1.0;
@@ -148,23 +164,90 @@ static void shadeRelease(void *info)
     (void)info;
 }
 
-static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *bottom)
+static const float sentTop[3] = {203.0 / 255.0, 222.0 / 255.0, 252.0 / 255.0};
+static const float sentBody[3] = {130.0 / 255.0, 180.0 / 255.0, 249.0 / 255.0};
+static const float sentLow[3] = {178.0 / 255.0, 230.0 / 255.0, 255.0 / 255.0};
+static const float sentLine[3] = {58.0 / 255.0, 76.0 / 255.0, 112.0 / 255.0};
+static const float gotTop[3] = {248.0 / 255.0, 247.0 / 255.0, 247.0 / 255.0};
+static const float gotBody[3] = {203.0 / 255.0, 203.0 / 255.0, 203.0 / 255.0};
+static const float gotLow[3] = {219.0 / 255.0, 219.0 / 255.0, 219.0 / 255.0};
+static const float gotLine[3] = {78.0 / 255.0, 82.0 / 255.0, 94.0 / 255.0};
+
+/* The bubble's outline: a rounded rectangle whose lower corner on the speaker's
+   side sweeps out into a pointed tail. */
+static void appendBubble(NSBezierPath *path, NSRect r, float radius, BOOL tailRight)
+{
+    float left = NSMinX(r);
+    float right = NSMaxX(r);
+    float bottom = NSMinY(r);
+    float top = NSMaxY(r);
+    if (radius > (top - bottom) / 2.0)
+        radius = (top - bottom) / 2.0;
+    if (tailRight) {
+        [path moveToPoint:NSMakePoint(left + radius, top)];
+        [path lineToPoint:NSMakePoint(right - radius, top)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(right - radius, top - radius)
+                                         radius:radius startAngle:90 endAngle:0 clockwise:YES];
+        [path lineToPoint:NSMakePoint(right, bottom + 15)];
+        [path curveToPoint:NSMakePoint(right + 8, bottom - 3)
+             controlPoint1:NSMakePoint(right, bottom + 8)
+             controlPoint2:NSMakePoint(right + 3, bottom + 1)];
+        [path curveToPoint:NSMakePoint(right - 10, bottom)
+             controlPoint1:NSMakePoint(right + 3, bottom - 2)
+             controlPoint2:NSMakePoint(right - 3, bottom - 0.5)];
+        [path lineToPoint:NSMakePoint(left + radius, bottom)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(left + radius, bottom + radius)
+                                         radius:radius startAngle:270 endAngle:180 clockwise:YES];
+        [path lineToPoint:NSMakePoint(left, top - radius)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(left + radius, top - radius)
+                                         radius:radius startAngle:180 endAngle:90 clockwise:YES];
+    } else {
+        [path moveToPoint:NSMakePoint(left + radius, top)];
+        [path lineToPoint:NSMakePoint(right - radius, top)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(right - radius, top - radius)
+                                         radius:radius startAngle:90 endAngle:0 clockwise:YES];
+        [path lineToPoint:NSMakePoint(right, bottom + radius)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(right - radius, bottom + radius)
+                                         radius:radius startAngle:0 endAngle:270 clockwise:YES];
+        [path lineToPoint:NSMakePoint(left + 10, bottom)];
+        [path curveToPoint:NSMakePoint(left - 8, bottom - 3)
+             controlPoint1:NSMakePoint(left + 3, bottom - 0.5)
+             controlPoint2:NSMakePoint(left - 3, bottom - 2)];
+        [path curveToPoint:NSMakePoint(left, bottom + 15)
+             controlPoint1:NSMakePoint(left - 3, bottom + 1)
+             controlPoint2:NSMakePoint(left, bottom + 8)];
+        [path lineToPoint:NSMakePoint(left, top - radius)];
+        [path appendBezierPathWithArcWithCenter:NSMakePoint(left + radius, top - radius)
+                                         radius:radius startAngle:180 endAngle:90 clockwise:YES];
+    }
+    [path closePath];
+}
+
+static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 {
     ShadeInfo shade;
     CGFunctionCallbacks callbacks;
-    float domain[2];
-    float range[8];
+    CGFloat domain[2];
+    CGFloat range[8];
     CGFunctionRef function;
     CGColorSpaceRef space;
     CGShadingRef shading;
     CGPoint start;
     CGPoint end;
+    const float *top = sent ? sentTop : gotTop;
+    const float *body = sent ? sentBody : gotBody;
+    const float *low = sent ? sentLow : gotLow;
+    float height = NSHeight(rect);
     int i;
 
     for (i = 0; i < 3; i++) {
         shade.top[i] = top[i];
-        shade.bottom[i] = bottom[i];
+        shade.body[i] = body[i];
+        shade.low[i] = low[i];
     }
+    /* The rim is about 12 pixels deep and the glow 16, however tall the bubble. */
+    shade.topEnd = height > 0 ? fminf(12.0f, height * 0.4f) / height : 0.3;
+    shade.lowStart = height > 0 ? 1.0 - fminf(16.0f, height * 0.45f) / height : 0.6;
     callbacks.version = 0;
     callbacks.evaluate = shadeEvaluate;
     callbacks.releaseInfo = shadeRelease;
@@ -177,7 +260,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     space = CGColorSpaceCreateDeviceRGB();
     start = CGPointMake(NSMidX(rect), NSMaxY(rect));
     end = CGPointMake(NSMidX(rect), NSMinY(rect));
-    shading = CGShadingCreateAxial(space, start, end, function, 0, 0);
+    /* Extended, so the tail below the bubble's bottom edge is painted too. */
+    shading = CGShadingCreateAxial(space, start, end, function, 1, 1);
     [NSGraphicsContext saveGraphicsState];
     [path addClip];
     CGContextDrawShading((CGContextRef)[[NSGraphicsContext currentContext] graphicsPort], shading);
@@ -188,6 +272,26 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 }
 
 @implementation TranscriptView
+
+/* The backdrop of iOS 6 Messages and iChat: a light blue-gray with very fine
+   vertical lines. A tiled picture, so painting it costs one fill. */
++ (NSColor *)backgroundColor
+{
+    static NSColor *color = nil;
+    NSImage *tile;
+    if (color)
+        return color;
+    tile = [[NSImage alloc] initWithSize:NSMakeSize(4, 4)];
+    [tile lockFocus];
+    [[NSColor colorWithCalibratedRed:215.0 / 255.0 green:219.0 / 255.0 blue:227.0 / 255.0 alpha:1] set];
+    NSRectFill(NSMakeRect(0, 0, 4, 4));
+    [[NSColor colorWithCalibratedRed:205.0 / 255.0 green:210.0 / 255.0 blue:220.0 / 255.0 alpha:1] set];
+    NSRectFill(NSMakeRect(0, 0, 1, 4));
+    [tile unlockFocus];
+    color = [[NSColor colorWithPatternImage:tile] retain];
+    [tile release];
+    return color;
+}
 
 - (id)initWithFrame:(NSRect)frame
 {
@@ -200,6 +304,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     movieViews = [[NSMutableArray alloc] init];
     moviePaths = [[NSMutableArray alloc] init];
     imageCache = [[NSMutableDictionary alloc] init];
+    sizeCache = [[NSMutableDictionary alloc] init];
     textViews = [[NSMutableArray alloc] init];
     style = [[NSMutableParagraphStyle alloc] init];
     [style setLineBreakMode:NSLineBreakByWordWrapping];
@@ -210,7 +315,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         nil];
     userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
         [NSFont systemFontOfSize:14], NSFontAttributeName,
-        [NSColor whiteColor], NSForegroundColorAttributeName,
+        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
         style, NSParagraphStyleAttributeName,
         nil];
     statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -229,6 +334,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     [movieViews release];
     [moviePaths release];
     [imageCache release];
+    [sizeCache release];
     [textViews release];
     [bodyAttrs release];
     [userAttrs release];
@@ -270,6 +376,10 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)placeMovies
 {
+#if !TB_INLINE_VIDEO
+    /* 64-bit builds have no QuickTime player view; videos open in the default player. */
+    return;
+#else
     NSMutableArray *paths;
     NSMutableArray *rects;
     unsigned i;
@@ -322,12 +432,16 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         [movieViews addObject:view];
         [view release];
     }
+#endif
 }
 
 - (void)setMessages:(NSArray *)newMessages
 {
+    if (newMessages != messages)
+        [sizeCache removeAllObjects];
+    [newMessages retain];
     [messages release];
-    messages = [newMessages retain];
+    messages = newMessages;
     [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
 }
 
@@ -336,6 +450,27 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     if (fromUser)
         return userAttrs;
     return bodyAttrs;
+}
+
+/* Measuring wraps every message's text, which is the slow part of laying out
+   a chat. A message that did not change since the last layout keeps its size,
+   so a streaming reply only re-measures itself. */
+- (NSRect)measureText:(NSString *)text attrs:(NSDictionary *)attrs width:(float)width height:(float)height forMessage:(id)message
+{
+    NSValue *key = [NSValue valueWithPointer:message];
+    NSString *signature = [NSString stringWithFormat:@"%lu|%.0f|%.0f|%@", (unsigned long)[text length], width, height,
+        attrs == statusAttrs ? @"s" : (attrs == userAttrs ? @"u" : (attrs == bodyAttrs ? @"b" : @"m"))];
+    NSArray *hit = [sizeCache objectForKey:key];
+    NSRect used;
+    /* The text itself is compared too: a reply that grows from "..." to "OK."
+       has the same length, and must not keep the old, narrower size. */
+    if (hit && [[hit objectAtIndex:0] isEqualToString:signature] && [[hit objectAtIndex:2] isEqualToString:text])
+        return [[hit objectAtIndex:1] rectValue];
+    used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
+    if ([sizeCache count] > 4000)
+        [sizeCache removeAllObjects];
+    [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], [[text copy] autorelease], nil] forKey:key];
+    return used;
 }
 
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible
@@ -390,9 +525,9 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             [mono setObject:[NSFont fontWithName:@"Monaco" size:11] forKey:NSFontAttributeName];
             attrs=mono;
         }
-        used = [text boundingRectWithSize:NSMakeSize(status ? layoutWidth - (activity ? 64 : 48) : maxText, activity ? 1000000 : 4000)
-                                   options:NSStringDrawingUsesLineFragmentOrigin
-                                attributes:attrs];
+        used = [self measureText:text attrs:attrs
+                           width:(status ? layoutWidth - (activity ? 64 : 48) : maxText)
+                          height:(activity ? 1000000 : 4000) forMessage:message];
         if (used.size.width < 12)
             used.size.width = 12;
         if (!status && imagePath && [self cachedImage:imagePath]) {
@@ -437,11 +572,11 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             [box setObject:[NSValue valueWithRect:NSMakeRect(24, yFromTop, layoutWidth - 48, used.size.height+(activity?18:0))] forKey:@"topRect"];
             yFromTop += used.size.height + (activity?28:10);
         } else {
-            bubble.size.width = used.size.width + 28;
-            if (imageW + 28 > bubble.size.width)
-                bubble.size.width = imageW + 28;
-            if (videoW + 28 > bubble.size.width)
-                bubble.size.width = videoW + 28;
+            bubble.size.width = used.size.width + 34;
+            if (imageW + 34 > bubble.size.width)
+                bubble.size.width = imageW + 34;
+            if (videoW + 34 > bubble.size.width)
+                bubble.size.width = videoW + 34;
             bubble.size.height = used.size.height + 18;
             if (imageH > 0)
                 bubble.size.height += imageH + 8;
@@ -479,13 +614,13 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             float stackY = NSMinY(rect) + 10;
             if ([box objectForKey:@"image"]) {
                 NSSize imageSize = [[box objectForKey:@"imageSize"] sizeValue];
-                NSRect imageRect = NSMakeRect(NSMinX(rect) + 14, stackY, imageSize.width, imageSize.height);
+                NSRect imageRect = NSMakeRect(NSMinX(rect) + 17, stackY, imageSize.width, imageSize.height);
                 [box setObject:[NSValue valueWithRect:imageRect] forKey:@"imageRect"];
                 stackY += imageSize.height + 8;
             }
             if ([box objectForKey:@"video"]) {
                 NSSize videoSize = [[box objectForKey:@"videoSize"] sizeValue];
-                NSRect videoRect = NSMakeRect(NSMinX(rect) + 14, stackY, videoSize.width, videoSize.height);
+                NSRect videoRect = NSMakeRect(NSMinX(rect) + 17, stackY, videoSize.width, videoSize.height);
                 [box setObject:[NSValue valueWithRect:videoRect] forKey:@"videoRect"];
             }
         }
@@ -498,7 +633,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
             } else {
                 NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
                 textRect.size = textSize;
-                textRect.origin.x = NSMinX(rect) + 14;
+                textRect.origin.x = NSMinX(rect) + 17;
                 if ([box objectForKey:@"image"] || [box objectForKey:@"video"])
                     textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
                 else
@@ -557,8 +692,10 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         if (!text)
             text = @"";
         [(TBSelectText *)view setActivity:[[box objectForKey:@"activity"] boolValue]];
-        [view setFrame:textRect];
-        [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
+        if (!NSEqualRects([view frame], textRect))
+            [view setFrame:textRect];
+        if (fabsf([[view textContainer] containerSize].width - NSWidth(textRect)) > 0.5f)
+            [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
         if (![[view string] isEqualToString:text]) {
             [view setString:text];
             storage = [view textStorage];
@@ -570,7 +707,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)toggleActivityAtView:(NSView *)view
 {
-    unsigned index = [textViews indexOfObject:view];
+    NSUInteger index = [textViews indexOfObject:view];
     NSMutableDictionary *message;
     if (index == NSNotFound || index >= [boxes count])
         return;
@@ -593,14 +730,10 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 
 - (void)drawRect:(NSRect)dirty
 {
-    float blueTop[3] = {161.0 / 255.0, 204.0 / 255.0, 242.0 / 255.0};
-    float blueBottom[3] = {51.0 / 255.0, 125.0 / 255.0, 203.0 / 255.0};
-    float grayTop[3] = {252.0 / 255.0, 252.0 / 255.0, 254.0 / 255.0};
-    float grayBottom[3] = {208.0 / 255.0, 208.0 / 255.0, 216.0 / 255.0};
     unsigned i;
 
-    [[NSColor colorWithCalibratedRed:215.0 / 255.0 green:218.0 / 255.0 blue:224.0 / 255.0 alpha:1] set];
-    NSRectFill([self bounds]);
+    [[TranscriptView backgroundColor] set];
+    NSRectFill(dirty);
     for (i = 0; i < [boxes count]; i++) {
         NSDictionary *box = [boxes objectAtIndex:i];
         NSRect rect = [[box objectForKey:@"rect"] rectValue];
@@ -616,28 +749,37 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
         }
         {
             NSBezierPath *path = [NSBezierPath bezierPath];
-            NSBezierPath *tail = [NSBezierPath bezierPath];
-            float radius = 8;
-            float *top = fromUser ? blueTop : grayTop;
-            float *bottom = fromUser ? blueBottom : grayBottom;
-            if (radius > rect.size.height / 2.0)
-                radius = rect.size.height / 2.0;
-            appendRoundedRect(path, rect, radius);
-            [[NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1] set];
-            [path fill];
-            fillBubble(path, rect, top, bottom);
-            if (fromUser) {
-                [tail moveToPoint:NSMakePoint(NSMaxX(rect) - 22, NSMinY(rect) + 10)];
-                [tail lineToPoint:NSMakePoint(NSMaxX(rect) - 6, NSMinY(rect) + 2)];
-                [tail lineToPoint:NSMakePoint(NSMaxX(rect) + 8, NSMinY(rect) - 8)];
-            } else {
-                [tail moveToPoint:NSMakePoint(NSMinX(rect) + 22, NSMinY(rect) + 10)];
-                [tail lineToPoint:NSMakePoint(NSMinX(rect) + 6, NSMinY(rect) + 2)];
-                [tail lineToPoint:NSMakePoint(NSMinX(rect) - 8, NSMinY(rect) - 8)];
+            NSBezierPath *light = [NSBezierPath bezierPath];
+            const float *line = fromUser ? sentLine : gotLine;
+            float radius = 16;
+            appendBubble(path, rect, radius, fromUser);
+            fillBubble(path, rect, fromUser);
+            /* A faint bright line just inside the outline, over the upper half only.
+               Going all the way round drew a white arc across the tail. */
+            {
+                float left = NSMinX(rect) + 1.5f;
+                float right = NSMaxX(rect) - 1.5f;
+                float topY = NSMaxY(rect) - 1.5f;
+                float midY = NSMidY(rect);
+                float r = radius - 1.5f;
+                if (r > (topY - midY))
+                    r = topY - midY;
+                [light moveToPoint:NSMakePoint(left, midY)];
+                [light lineToPoint:NSMakePoint(left, topY - r)];
+                [light appendBezierPathWithArcWithCenter:NSMakePoint(left + r, topY - r) radius:r startAngle:180 endAngle:90 clockwise:YES];
+                [light lineToPoint:NSMakePoint(right - r, topY)];
+                [light appendBezierPathWithArcWithCenter:NSMakePoint(right - r, topY - r) radius:r startAngle:90 endAngle:0 clockwise:YES];
+                [light lineToPoint:NSMakePoint(right, midY)];
             }
-            [tail closePath];
-            [[NSColor colorWithCalibratedRed:bottom[0] green:bottom[1] blue:bottom[2] alpha:1] set];
-            [tail fill];
+            [NSGraphicsContext saveGraphicsState];
+            [path addClip];
+            [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.30 : 0.55] set];
+            [light setLineWidth:1];
+            [light stroke];
+            [NSGraphicsContext restoreGraphicsState];
+            [[NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1] set];
+            [path setLineWidth:1.2];
+            [path stroke];
             if ([box objectForKey:@"imageRect"]) {
                 NSImage *picture = [self cachedImage:[box objectForKey:@"image"]];
                 NSRect imageRect = [[box objectForKey:@"imageRect"] rectValue];
@@ -648,7 +790,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
                 NSRect videoRect = [[box objectForKey:@"videoRect"] rectValue];
                 [[NSColor colorWithCalibratedWhite:0.15 alpha:1] set];
                 NSRectFill(videoRect);
-                [@"QuickTime could not open this video." drawInRect:videoRect withAttributes:statusAttrs];
+                [(TB_INLINE_VIDEO ? @"QuickTime could not open this video." : @"Double-click to play this video.")
+                    drawInRect:videoRect withAttributes:statusAttrs];
             }
         }
     }
@@ -706,6 +849,22 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
     return menu;
 }
 
+/* Double-click a picture: Leopard and Snow Leopard have Quick Look, which
+   shows it in a floating preview; on Tiger it opens in the default viewer. */
+- (void)openMediaPath:(NSString *)path
+{
+    if(!path)return;
+    if(TBSystemMinor()>=5&&[[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/bin/qlmanage"]) {
+        NSTask *task=[[[NSTask alloc] init] autorelease];
+        [task setLaunchPath:@"/usr/bin/qlmanage"];
+        [task setArguments:[NSArray arrayWithObjects:@"-p",path,nil]];
+        [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+        [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+        [task launch];
+        return;
+    }
+    [[NSWorkspace sharedWorkspace] openFile:path];
+}
 - (void)copyMessageText:(id)sender
 {
     NSPasteboard *p=[NSPasteboard generalPasteboard];[p declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
@@ -714,6 +873,20 @@ static void fillBubble(NSBezierPath *path, NSRect rect, float *top, float *botto
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
+    if([event clickCount]>1) {
+        for(i=0;i<[boxes count];i++) {
+            NSDictionary *pictureBox=[boxes objectAtIndex:i];
+            if([pictureBox objectForKey:@"imageRect"]&&NSPointInRect(point,[[pictureBox objectForKey:@"imageRect"] rectValue])) {
+                [self openMediaPath:[pictureBox objectForKey:@"image"]];return;
+            }
+        }
+        for(i=0;i<[boxes count];i++) {
+            NSDictionary *box=[boxes objectAtIndex:i];
+            if([box objectForKey:@"videoRect"]&&NSPointInRect(point,[[box objectForKey:@"videoRect"] rectValue])&&![self playingVideo:[box objectForKey:@"video"]]) {
+                [[NSWorkspace sharedWorkspace] openFile:[box objectForKey:@"video"]];return;
+            }
+        }
+    }
     for(i=0;i<[boxes count];i++) {
         NSDictionary *box=[boxes objectAtIndex:i];
         if([[box objectForKey:@"activity"] boolValue]&&NSPointInRect(point,[[box objectForKey:@"rect"] rectValue])) {

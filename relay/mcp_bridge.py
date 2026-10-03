@@ -49,11 +49,9 @@ def load_shell_config():
     return config
 
 
-def ssh_command(config):
-    remote = (
-        "exec /usr/bin/env LANG=C LC_ALL=C /usr/bin/python -u "
-        + config["REMOTE_COMMANDER"]
-    )
+def ssh_base(config):
+    """The ssh program and the options Tiger's OpenSSH 5.x can talk to,
+    ending with user@host. Add the remote command after it."""
     return [
         "ssh", "-T",
         "-i", config["TIGER_KEY"],
@@ -72,9 +70,24 @@ def ssh_command(config):
         "-o", "UserKnownHostsFile=" + config["TIGER_KNOWN"],
         "-o", "UpdateHostKeys=no",
         "-o", "ConnectTimeout=12",
+        "-o", "ServerAliveInterval=20",
+        "-o", "ServerAliveCountMax=6",
         "%s@%s" % (config["TIGER_USER"], config["TIGER_HOST"]),
-        remote,
     ]
+
+
+def ssh_command(config, root=""):
+    """Run ppc-commander on the Tiger Mac. root, when given, limits its file
+    tools to that folder; the setting is passed in the command, so the model
+    cannot change it."""
+    assignments = ""
+    if root:
+        assignments = "TB_WORKSPACE_ROOT=%s " % shlex.quote(root)
+    remote = (
+        "exec /usr/bin/env LANG=C LC_ALL=C %s/usr/bin/python -u " % assignments
+        + config["REMOTE_COMMANDER"]
+    )
+    return ssh_base(config) + [remote]
 
 
 class McpError(Exception):
@@ -103,11 +116,15 @@ class McpClient(object):
             self.command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             env=getattr(self, "env", None),
             bufsize=0,
         )
         self.buffer = b""
+        self.stderr_tail = b""
+        self._errors = threading.Thread(target=self._pump_errors)
+        self._errors.daemon = True
+        self._errors.start()
         self._chunks = queue.Queue()
         self._reader = threading.Thread(target=self._pump)
         self._reader.daemon = True
@@ -115,7 +132,7 @@ class McpClient(object):
         self.request("initialize", {
             "protocolVersion": "2025-06-18",
             "capabilities": {},
-            "clientInfo": {"name": "tigerbuild", "version": "1.2"},
+            "clientInfo": {"name": "tigerbuild", "version": "1.3"},
         }, timeout=45)
         self.notify("notifications/initialized", {})
 
@@ -136,6 +153,20 @@ class McpClient(object):
                 pass
         self.proc = None
 
+
+    def _pump_errors(self):
+        """Keep the last of ssh's error output. It says why a login failed."""
+        try:
+            while True:
+                chunk = self.proc.stderr.read(4096)
+                if not chunk:
+                    return
+                self.stderr_tail = (self.stderr_tail + chunk)[-4000:]
+        except Exception:
+            return
+
+    def stderr_text(self):
+        return self.stderr_tail.decode("utf-8", "replace").strip()
 
     def _pump(self):
         try:
@@ -227,6 +258,19 @@ def result_text(result):
     if len(text) > 8000:
         text = text[:8000] + "\n... truncated"
     return text or "ok"
+
+
+def result_images(result):
+    """Images a tool returned: [{"mime": ..., "data": base64}]."""
+    images = []
+    if not isinstance(result, dict):
+        return images
+    for item in result.get("content") or []:
+        if isinstance(item, dict) and item.get("type") == "image" and isinstance(item.get("data"), str):
+            mime = item.get("mimeType") or "image/jpeg"
+            if mime in ("image/jpeg", "image/png", "image/gif", "image/webp") and len(item["data"]) < 6000000:
+                images.append({"mime": mime, "data": item["data"]})
+    return images
 
 
 def xai_tools_from_mcp(listed):

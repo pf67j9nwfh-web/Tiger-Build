@@ -369,7 +369,7 @@ def clean_title(text):
 
 
 def _get_json(url, timeout=8):
-    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.2"})
+    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.3"})
     response = urllib.request.urlopen(request, timeout=timeout)
     try:
         return json.loads(response.read().decode("utf-8", "replace"))
