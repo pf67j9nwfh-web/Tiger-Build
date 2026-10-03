@@ -444,6 +444,50 @@ static const Language languages[] = {
         F_DIFF, "", ""},
     {"markdown", "Markdown", "md",
         F_NONE, "", ""},
+    {"haskell", "Haskell", "hs",
+        F_DASH | F_BLOCKC | F_DQ | F_CAPS,
+        "case class data deriving do else if import in infix infixl infixr instance let module newtype of then type where",
+        "Int Integer Float Double Bool Char String Maybe Either IO"},
+    {"scala", "Scala", "sc",
+        F_SLASH | F_BLOCKC | F_DQ | F_AT | F_CAPS,
+        "abstract case catch class def do else extends false final finally for forSome if implicit import lazy match new null object "
+        "override package private protected return sealed super this throw trait true try type val var while with yield",
+        "Int Long Double Float Boolean String Unit Any List Map Set Option"},
+    {"dart", "Dart", "",
+        F_SLASH | F_BLOCKC | F_SQ | F_DQ | F_AT | F_CAPS,
+        "abstract as assert async await break case catch class const continue default do else enum extends false final finally for "
+        "if implements import in is late library new null on required return static super switch this throw true try var void while with yield",
+        "int double num bool String List Map Set dynamic Future Stream"},
+    {"elixir", "Elixir", "ex exs",
+        F_HASH | F_SQ | F_DQ | F_CAPS,
+        "after alias and case catch cond def defmodule defp do else end false fn for if import in nil not or quote raise receive "
+        "require rescue true try unless unquote use when with", ""},
+    {"lisp", "Lisp", "clojure clj scheme racket elisp el cl",
+        F_SQ | F_DQ,
+        "and cond def defn define defmacro defun do else fn if lambda let loop nil not or quote set! setq when unless", ""},
+    {"powershell", "PowerShell", "ps1 pwsh",
+        F_HASH | F_SQ | F_DQ | F_DOLLAR | F_CASEINS,
+        "begin break catch class continue data do dynamicparam else elseif end exit filter finally for foreach from function if in param "
+        "process return switch throw trap try until using var while", ""},
+    {"batch", "Batch", "bat cmd",
+        F_SQ | F_DQ | F_CASEINS,
+        "call echo else exit for goto if in not rem set setlocal endlocal shift", ""},
+    {"ini", "INI", "",
+        F_HASH | F_SQ | F_DQ | F_KEYS, "true false", ""},
+    {"csv", "CSV", "tsv",
+        F_NONE, "", ""},
+    {"latex", "LaTeX", "tex",
+        F_PERCENT | F_AT, "", ""},
+    {"vb", "Visual Basic", "vba vbs visualbasic",
+        F_SQ | F_DQ | F_CASEINS,
+        "as byval byref class dim do each else elseif end exit false for function if in loop module new next nothing not or private "
+        "public return select set sub then to true try while with", ""},
+    {"csharp", "C#", "cs c#",
+        F_SLASH | F_BLOCKC | F_SQ | F_DQ | F_AT | F_CAPS,
+        "abstract as async await base bool break case catch class const continue default delegate do else enum event false finally "
+        "for foreach if in interface internal is lock namespace new null object operator out override params private protected public "
+        "readonly ref return sealed static struct switch this throw true try typeof using var virtual void while yield",
+        "int long short byte float double decimal bool char string object var List Dictionary"},
     {"text", "Text", "txt plain plaintext none output log text/plain",
         F_NONE, "", ""},
     {NULL, NULL, NULL, 0, NULL, NULL}
@@ -685,9 +729,12 @@ static unsigned scanString(const unichar *buf, unsigned n, unsigned i, unichar q
     return n;
 }
 
+NSData *TBHighlight(NSString *code, NSString *tag);
+
 static void highlightTags(const unichar *buf, unsigned n, unsigned char *kinds)
 {
     unsigned i = 0;
+    int embedded = 0;
     while (i < n) {
         if (buf[i] != '<') {
             i++;
@@ -710,6 +757,11 @@ static void highlightTags(const unichar *buf, unsigned n, unsigned char *kinds)
             while (i < n && (isIdChar(buf[i]) || buf[i] == '-' || buf[i] == ':' || buf[i] == '.'))
                 i++;
             paint(kinds, s, i, TBTokKeyword);
+            embedded = 0;
+            if (i - s == 6 && s > 0 && buf[s - 1] == '<' && inList(buf + s, 6, "script", 1))
+                embedded = 1;
+            else if (i - s == 5 && s > 0 && buf[s - 1] == '<' && inList(buf + s, 5, "style", 1))
+                embedded = 2;
         }
         while (i < n && buf[i] != '>') {
             unichar c = buf[i];
@@ -728,6 +780,27 @@ static void highlightTags(const unichar *buf, unsigned n, unsigned char *kinds)
                 i++;
             }
         }
+        if (embedded && i < n && buf[i] == '>') {
+            unsigned start = i + 1;
+            unsigned end = start;
+            const char *closer = embedded == 1 ? "</script" : "</style";
+            while (end < n) {
+                unsigned k = 0;
+                while (closer[k] && end + k < n && lower(buf[end + k]) == (unichar)closer[k])
+                    k++;
+                if (!closer[k])
+                    break;
+                end++;
+            }
+            if (end > start) {
+                NSString *piece = [NSString stringWithCharacters:buf + start length:end - start];
+                NSData *inner = TBHighlight(piece, embedded == 1 ? @"javascript" : @"css");
+                if ([inner length] == end - start)
+                    memcpy(kinds + start, [inner bytes], end - start);
+            }
+            i = end;
+        }
+        embedded = 0;
     }
 }
 

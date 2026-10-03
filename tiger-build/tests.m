@@ -209,6 +209,13 @@ int main(void)
         tbcheck(k[0] == TBTokInsert && k[7] == TBTokDelete && k[13] == TBTokPlain, @"diff lines");
         k = (const unsigned char *)[TBHighlight(@"echo $HOME # hi", @"bash") bytes];
         tbcheck(k[5] == TBTokProperty && k[11] == TBTokComment, @"shell variable and comment");
+        {
+            NSString *page = @"<script>var n = 12; // x\n</script>";
+            const unsigned char *h = (const unsigned char *)[TBHighlight(page, @"html") bytes];
+            tbcheck(h[8] == TBTokKeyword && h[16] == TBTokNumber && h[20] == TBTokComment, @"script inside html is coloured as javascript");
+            h = (const unsigned char *)[TBHighlight(@"data Maybe a = Nothing -- none", @"haskell") bytes];
+            tbcheck(h[0] == TBTokKeyword && h[23] == TBTokComment, @"haskell keyword and comment");
+        }
         tbcheck([TBHighlight(@"", @"python") length] == 0 && [TBHighlight(@"x = 'unterminated", @"python") length] == 17, @"empty and unterminated input");
     }
     {
