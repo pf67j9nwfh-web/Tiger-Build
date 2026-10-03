@@ -22,10 +22,13 @@ typedef float CGFloat;
 #define CGFLOAT_DEFINED 1
 #endif
 
-/* The video player is QuickTime's QTKit, which has no 64-bit PowerPC version
-   and is missing from 64-bit Intel on 10.5. 64-bit builds open videos in the
-   default player instead. */
-#if defined(__LP64__)
+/* The video player is QuickTime's QTKit. It has no 64-bit PowerPC version, and
+   64-bit Intel only has one from Snow Leopard (10.6) on. The 32-bit slices
+   always play inline. The x86_64 slice is built with the 10.6 SDK (and
+   TB_QTKIT64) where that is installed, links QTKit weakly, and plays inline
+   only when the running system is 10.6 or later. Other 64-bit builds open
+   videos in the default player. */
+#if defined(__LP64__) && !defined(TB_QTKIT64)
 #define TB_INLINE_VIDEO 0
 #else
 #define TB_INLINE_VIDEO 1
@@ -34,5 +37,9 @@ typedef float CGFloat;
 /* The running system's minor version: 4 for Tiger, 5 for Leopard, 6 for Snow
    Leopard. Read from the system, not assumed. */
 int TBSystemMinor(void);
+
+/* Whether this process can show videos in the chat: always in a 32-bit
+   slice, on 10.6 or later in a 64-bit one. */
+int TBInlineVideoAvailable(void);
 
 #endif

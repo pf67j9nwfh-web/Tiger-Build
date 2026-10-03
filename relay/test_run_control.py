@@ -172,7 +172,7 @@ class TurnTests(unittest.TestCase):
             holder["calls"] = []
         with patch.object(C, "stream_round", fake):
             list(session.iter_turn([{"role": "user", "content": "go"}], True, "claude", "m"))
-        self.assertEqual(tools_seen[0], [])
+        self.assertEqual([n for n in tools_seen[0] if not n.startswith("agent_")], [])
 
     def test_screenshot_goes_back_as_image(self):
         seen = []

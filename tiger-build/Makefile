@@ -11,6 +11,8 @@
 # 32-bit slice. Set ARCHS32 / ARCHS64 to change the choice (ARCHS64= for none).
 SDK32 ?= /Developer/SDKs/MacOSX10.4u.sdk
 SDK64 ?= /Developer/SDKs/MacOSX10.5.sdk
+# 64-bit Intel QuickTime (QTKit) exists from 10.6, so x86_64 uses the 10.6 SDK when it is installed.
+SDKX86 ?= $(if $(wildcard /Developer/SDKs/MacOSX10.6.sdk),/Developer/SDKs/MacOSX10.6.sdk,$(SDK64))
 ARCHS32 ?= ppc i386
 ifeq ($(wildcard $(SDK64)),)
 ARCHS64 ?=
@@ -21,9 +23,12 @@ endif
 CC32 ?= $(if $(wildcard /usr/bin/gcc-4.0),gcc-4.0,gcc)
 CC64 ?= $(if $(wildcard /usr/bin/gcc-4.2),gcc-4.2,gcc)
 CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -O2
-CFLAGS64 := $(addprefix -arch ,$(ARCHS64)) -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -O2
+CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -O2
+CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -O2 $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
 LIBS32 := -framework Cocoa -framework CoreServices -framework QTKit
 LIBS64 := -framework Cocoa -framework CoreServices
+comma := ,
+LIBSX86 := -framework Cocoa -framework CoreServices $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
 SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m RelayClient.m TBSupport.m TBMachine.m TranscriptView.m
 HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TranscriptView.h
 APP := TigerBuild.app
@@ -42,8 +47,9 @@ $(BIN): $(SOURCES) $(HEADERS) Info.plist TigerBuild.icns models.txt
 	rm -rf build && mkdir build
 	$(CC32) $(CFLAGS32) -o build/TigerBuild32 $(SOURCES) $(LIBS32)
 ifneq ($(strip $(ARCHS64)),)
-	$(CC64) $(CFLAGS64) -o build/TigerBuild64 $(SOURCES) $(LIBS64)
-	lipo -create build/TigerBuild32 build/TigerBuild64 -output $(BIN)
+	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -o build/TigerBuildP64 $(SOURCES) $(LIBS64))
+	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -o build/TigerBuildX64 $(SOURCES) $(LIBSX86))
+	lipo -create build/TigerBuild32 $$(ls build/TigerBuildP64 build/TigerBuildX64 2>/dev/null) -output $(BIN)
 else
 	cp build/TigerBuild32 $(BIN)
 endif

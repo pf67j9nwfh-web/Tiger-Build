@@ -70,4 +70,14 @@ class IntegrationsTest(unittest.TestCase):
         loaded=load_shell_config()
         for name,value in connection.items():self.assertEqual(loaded[name],value)
 
+    def test_picture_tools_and_safety(self):
+        names=[t['name'] for t in I.auxiliary('claude',dict(I.read(),search_enabled=True,search_api_key='',tavily_api_key=''))]
+        self.assertIn('agent_image_search',names);self.assertIn('agent_show_image',names)
+        self.assertNotIn('agent_show_image',[t['name'] for t in I.auxiliary('claude',dict(I.read(),search_enabled=False))])
+        self.assertNotIn('agent_web_search',[t['name'] for t in I.auxiliary('grok',dict(I.read(),search_enabled=True,grok_native_search=True))])
+        self.assertEqual(I.sniff_image(b'\x89PNG\r\n\x1a\n'+b'0'*8),'png');self.assertEqual(I.sniff_image(b'\xff\xd8\xff\xe0'),'jpg')
+        self.assertEqual(I.sniff_image(b'GIF89a..'),'gif');self.assertIsNone(I.sniff_image(b'<html>'))
+        for bad in ('http://127.0.0.1:8765/x.png','http://localhost/x.png','http://10.0.1.23/x.png','file:///etc/hosts','ftp://example.com/a.png'):
+            with self.assertRaises(ValueError):I.fetch_image(bad)
+
 if __name__=='__main__':unittest.main()

@@ -512,7 +512,7 @@ final class IntegrationPanel: NSObject {
         func add(_ v:NSView,_ x:CGFloat,_ y:CGFloat,_ w:CGFloat,_ h:CGFloat){v.frame=NSRect(x:x,y:y,width:w,height:h);window.contentView!.addSubview(v)}
         let y:CGFloat=825
         var index=0
-        for (title,name) in [("Commander (built in)","ppc_enabled"),("Ask first before Commander runs a tool","ppc_approval"),("Let models ask other models for advice","consult_enabled"),("Agent toolbox (UTC time, scratch notes)","toolbox_enabled"),("Web search for other providers","search_enabled"),("Grok native web search","grok_native_search"),("Show model thinking","claude_thinking")] {
+        for (title,name) in [("Commander (built in)","ppc_enabled"),("Ask first before Commander runs a tool","ppc_approval"),("Let models ask other models for advice","consult_enabled"),("Agent toolbox (UTC time, scratch notes)","toolbox_enabled"),("Web and picture search for other providers (free, or Brave/Tavily key)","search_enabled"),("Grok native web search","grok_native_search"),("Show model thinking","claude_thinking")] {
             let b=NSButton(checkboxWithTitle:title,target:nil,action:nil)
             add(b,index<4 ? 20 : 390,y-CGFloat(index<4 ? index : index-4)*30,350,24);toggles[name]=b
             index+=1

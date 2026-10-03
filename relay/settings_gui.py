@@ -29,7 +29,7 @@ TOGGLES = (
     ("ppc_approval", "Ask first before Commander runs a tool"),
     ("consult_enabled", "Let models ask other models for advice"),
     ("toolbox_enabled", "Agent toolbox"),
-    ("search_enabled", "Web search (Brave or Tavily)"),
+    ("search_enabled", "Web and picture search (free, or Brave/Tavily key)"),
     ("grok_native_search", "Grok native search"),
     ("claude_thinking", "Show model thinking"),
 )

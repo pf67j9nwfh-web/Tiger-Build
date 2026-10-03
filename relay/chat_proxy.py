@@ -35,6 +35,7 @@ from security import relay_token
 from security import token_ok
 from security import token_path
 from version import VERSION
+from integrations import fetch_image
 from media import create_media
 from media import media_dir
 from media import media_tools
@@ -734,7 +735,7 @@ class ToolSession(object):
     def _tool_event(self, call, phase, output="", failed=False, elapsed=0):
         args = self._call_args(call)
         name = call.get("name") or "tool"
-        detail = args.get("command") or args.get("input") or args.get("query") or args.get("question") or json.dumps(args, ensure_ascii=False)
+        detail = args.get("command") or args.get("input") or args.get("query") or args.get("url") or args.get("question") or json.dumps(args, ensure_ascii=False)
         return _plist({"id": call.get("id") or call.get("call_id") or name, "name": name, "phase": phase,
                        "detail": str(detail)[:20000], "output": str(output)[:100000],
                        "failed": bool(failed), "elapsed": float(elapsed)})
@@ -848,6 +849,14 @@ class ToolSession(object):
                 return "Asking another model", self._consult(args), None, False, []
             except Exception as exc:
                 return "Asking another model", "error: %s" % exc, None, True, []
+        if name == "agent_show_image":
+            try:
+                if name not in self.extra.offered:
+                    raise ValueError("Tool was not enabled or advertised for this request.")
+                filename = fetch_image(args.get("url"))
+            except Exception as exc:
+                return "Showing a picture", "error: %s" % exc, None, True, []
+            return "Showing a picture", "The picture is now shown in the chat.", "image " + filename, False, []
         if self.extra.handles(name):
             try:
                 return "Running " + name, self.extra.call(name, args), None, False, []
@@ -1687,6 +1696,8 @@ class Handler(BaseHTTPRequestHandler):
             kind = "image/jpeg"
             if name.endswith(".png"):
                 kind = "image/png"
+            elif name.endswith(".gif"):
+                kind = "image/gif"
             elif name.endswith(".mp4"):
                 kind = "video/mp4"
             self.send_response(200)
