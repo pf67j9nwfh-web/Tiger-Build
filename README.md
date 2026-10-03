@@ -15,7 +15,7 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 
 | Tiger | Snow Leopard |
 | --- | --- |
-| ![Tiger Build on Tiger: a chat that used the calculator, notebook and time tools](docs/screenshots/client-tiger-chat.png) | ![Tiger Build on Snow Leopard running a shell command and two calculator tools](docs/screenshots/client-snowleopard-chat.png) |
+| ![Tiger Build on Tiger: a chat that used the calculator, notebook and time tools](docs/screenshots/client-tiger-chat.png) | ![Tiger Build on Snow Leopard playing a video inline](docs/screenshots/client-snowleopard-chat.png) |
 
 **Asking before a tool runs, with the model's thinking shown above the message box while it works** (Stop and Guide replace Send while a reply runs), and **the Tools menu**, which switches each tool on or off for the chat:
 
