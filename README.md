@@ -11,15 +11,11 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 
 ## Screenshots
 
-**The client**, on Mac OS X 10.4 Tiger (PowerPC, brushed metal) and on 10.6 Snow Leopard (Intel):
+**The client**, on Mac OS X 10.4 Tiger (PowerPC, brushed metal), 10.5 Leopard (Intel) and 10.6 Snow Leopard (Intel):
 
-| Tiger | Snow Leopard |
-| --- | --- |
-| ![Tiger Build on Tiger: a chat that used the calculator, notebook and time tools](docs/screenshots/client-tiger-chat.png) | ![Tiger Build on Snow Leopard playing a video inline](docs/screenshots/client-snowleopard-chat.png) |
-
-**Code blocks with syntax colours and Save/Copy, a file attached to the chat, and a file the model made with its Save As button** (Snow Leopard shown):
-
-![A chat with an attached file, a diff and a Python block, and a file ready to save](docs/screenshots/client-code-and-files.png)
+| Tiger | Leopard | Snow Leopard |
+| --- | --- | --- |
+| ![Tiger Build on Tiger: an attached file, a diff, Python code and a table, and a file to save](docs/screenshots/client-tiger-chat.png) | ![The same chat on Leopard](docs/screenshots/client-leopard-chat.png) | ![The same chat on Snow Leopard](docs/screenshots/client-snowleopard-chat.png) |
 
 **Asking before a tool runs, with the model's thinking shown above the message box while it works** (Stop and Guide replace Send while a reply runs), and **the Tools menu**, which switches each tool on or off for the chat:
 

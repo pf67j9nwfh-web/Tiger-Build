@@ -29,6 +29,7 @@ static NSMutableArray *extraWindows = nil;
 - (void)layoutPanes;
 - (void)updateContextReadout;
 - (BOOL)startCompactionIfNeeded;
+- (NSString *)versionNote;
 - (BOOL)chatHasAttachments:(NSDictionary *)chat;
 - (BOOL)confirmCloudAttach;
 - (void)refreshRelayVersion;
@@ -1404,6 +1405,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"The relay is still testing %d models. More may appear.", [[ModelCatalog shared] checkingCount]]];
         [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
     }
+    if (!text && [[relayStatusField stringValue] length] == 0 && [self versionNote]) {
+        [relayStatusField setStringValue:[self versionNote]];
+        [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
+    }
     /* A Commander problem (SSH cannot sign in, the Mac is unreachable...) is
        shown when nothing more basic is wrong. */
     commander = text ? nil : [self commanderStatusLine];
@@ -1434,18 +1439,6 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [RelayRequest send:@"GET" path:@"/v1/version" body:nil timeout:10 target:self action:@selector(relayVersionArrived:) context:nil];
 }
 
-- (void)relayVersionArrived:(RelayRequest *)request
-{
-    NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    [relayVersion release];
-    if ([request ok] && [text length] > 0 && [text length] < 20)
-        relayVersion = [text copy];
-    else if ([request status] == 404)
-        relayVersion = [@"1.3" copy];
-    else
-        relayVersion = nil;
-}
-
 /* "1.4" against "1.4.1": whether version a is older than b. */
 static BOOL versionOlder(NSString *a, NSString *b)
 {
@@ -1459,6 +1452,32 @@ static BOOL versionOlder(NSString *a, NSString *b)
             return p < q;
     }
     return NO;
+}
+
+- (void)relayVersionArrived:(RelayRequest *)request
+{
+    NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    [relayVersion release];
+    if ([request ok] && [text length] > 0 && [text length] < 20)
+        relayVersion = [text copy];
+    else if ([request status] == 404)
+        relayVersion = [@"1.3" copy];
+    else
+        relayVersion = nil;
+    [self setRelayProblem:nil];
+}
+
+/* A gentle note when the app and the relay are different releases. */
+- (NSString *)versionNote
+{
+    NSString *mine = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    if (!relayVersion || !mine)
+        return nil;
+    if (versionOlder(mine, relayVersion))
+        return [NSString stringWithFormat:@"The relay is version %@ and this Tiger Build is %@. A newer Tiger Build is available: install TigerBuild-%@.pkg.", relayVersion, mine, relayVersion];
+    if (versionOlder(relayVersion, mine))
+        return [NSString stringWithFormat:@"This Tiger Build is %@ but the relay is %@. Update the relay to use everything in this version.", mine, relayVersion];
+    return nil;
 }
 
 /* A relay older than 1.4 drops attached pictures without a word. */
