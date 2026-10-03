@@ -25,8 +25,8 @@
 - Conversion run on real documents from both Macs' desktops: .docx, .xlsx, .pptx, .pages, .numbers, .key, .heic, .webp, a phone-style JPEG with a rotation tag, and a truncated 20 MB .key (clear error). Models answered questions about each on Tiger and Snow Leopard.
 
 ### Not verified
-- Pages, Numbers and Keynote text is recovered, not exact: slide order can differ, table layout is lost. Keynote/Pages '09 packages that are folders (sent zipped) were not available to test. Dropping files by dragging (the same code path as the Dock icon and Attach, tested through those), Word documents (`.doc`/`.docx` rely on what the OS can open), PDFs on Tiger (no PDF tool there to make one).
-- Leopard 10.5 and the `ppc64` slice, as before.
+- Pages, Numbers and Keynote text is recovered, not exact: slide order can differ and table layout is lost. Real drag-and-drop, `.doc` through the OS, a Keynote saved as a folder (tested), and PDFs were all run on Tiger and Snow Leopard in round 2.
+- The `ppc64` slice (no G5 now: its power supply failed) and Intel Tiger hardware. Both byte orders are covered by other runs (PowerPC Tiger and Rosetta; Intel Leopard and Snow Leopard).
 
 ## 1.3
 
