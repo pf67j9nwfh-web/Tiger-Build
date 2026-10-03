@@ -734,7 +734,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     column = sideW - 28;
     if (column < 80)
         column = 80;
-    fieldW = mainW - 16 - 76 - 64 - 12;
+    fieldW = mainW - 16 - 76 - 76 - 16;
     if (fieldW < 80)
         fieldW = 80;
     chatLayout = TBLayoutChatPane(mainW, mainH, [self inputHeightForWidth:fieldW - 70],

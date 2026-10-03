@@ -132,16 +132,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             if let action=item.action,let combo=shortcuts[NSStringFromSelector(action)] {item.keyEquivalent=combo.0;item.keyEquivalentModifierMask=combo.1}
         }}
         NSApp.mainMenu = menu
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 800), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 840), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Tiger Build Relay"; window.center(); window.isReleasedWhenClosed = false
         let v = window.contentView!
-        let icon = NSImageView(frame: NSRect(x: 24, y: 752, width: 36, height: 36))
+        let icon = NSImageView(frame: NSRect(x: 24, y: 792, width: 36, height: 36))
         icon.image = NSImage(named: NSImage.applicationIconName); v.addSubview(icon)
-        label("Tiger Build Relay", 70, 764, 500, 26, bold: true, size: 20)
-        let tagline = label("Connects Tiger Build on Mac OS X 10.4 to 10.6 to current AI services and tools.", 70, 746, 600, 16, size: 11)
+        label("Tiger Build Relay", 70, 804, 500, 26, bold: true, size: 20)
+        let tagline = label("Connects Tiger Build on Mac OS X 10.4 to 10.6 to current AI services and tools.", 70, 786, 600, 16, size: 11)
         tagline.textColor = .secondaryLabelColor
 
-        let serviceBox = section("Service", NSRect(x: 20, y: 620, width: 740, height: 118))
+        let serviceBox = section("Service", NSRect(x: 20, y: 660, width: 740, height: 118))
         put(status, in: serviceBox, 16, 60, 470, 22); status.font = .boldSystemFont(ofSize: 15)
         put(button("Start", 0, 0, 100, "startRelay:"), in: serviceBox, 496, 55, 100, 30)
         put(button("Stop", 0, 0, 100, "stopRelay:"), in: serviceBox, 606, 55, 100, 30)
@@ -150,20 +150,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         folder.lineBreakMode = .byTruncatingMiddle; folder.isSelectable = true
         put(button("Show Folder", 0, 0, 100, "openSupport:"), in: serviceBox, 606, 2, 100, 28)
 
-        let connection = section("Connection", NSRect(x: 20, y: 472, width: 740, height: 140))
-        put(address, in: connection, 16, 84, 470, 20); address.isSelectable = true
-        put(button("Copy", 0, 0, 100, "copyAddress:"), in: connection, 606, 78, 100, 30)
-        let portLabel = NSTextField(labelWithString: "Port"); put(portLabel, in: connection, 16, 54, 40, 22)
-        put(port, in: connection, 56, 54, 70, 22)
+        // Rows 36 apart; the three buttons on the right are the same size and evenly spaced.
+        let connection = section("Connection", NSRect(x: 20, y: 472, width: 740, height: 180))
+        put(address, in: connection, 16, 134, 470, 20); address.isSelectable = true
+        put(button("Copy", 0, 0, 100, "copyAddress:"), in: connection, 606, 128, 100, 30)
+        let portLabel = NSTextField(labelWithString: "Port"); put(portLabel, in: connection, 16, 96, 40, 22)
+        put(port, in: connection, 56, 96, 70, 22)
         let portNote = NSTextField(labelWithString: "Saving a new port restarts the relay. Use the same port in Tiger Build.")
         portNote.font = .systemFont(ofSize: 11); portNote.textColor = .secondaryLabelColor
-        put(portNote, in: connection, 136, 56, 460, 18)
-        put(token, in: connection, 16, 30, 570, 20); token.isSelectable = true
+        put(portNote, in: connection, 136, 98, 460, 18)
+        put(token, in: connection, 16, 62, 570, 20); token.isSelectable = true
         token.font = .monospacedSystemFont(ofSize: 11, weight: .regular); token.lineBreakMode = .byTruncatingTail
-        put(button("Copy Token", 0, 0, 100, "copyToken:"), in: connection, 606, 24, 100, 30)
-        put(button("Macs…", 0, 0, 100, "tigerMacPanel:"), in: connection, 606, 0, 100, 28)
-        put(tigerMac, in: connection, 16, 6, 580, 18); tigerMac.font = .systemFont(ofSize: 11)
+        put(button("Copy Token", 0, 0, 100, "copyToken:"), in: connection, 606, 56, 100, 30)
+        put(tigerMac, in: connection, 16, 20, 570, 18); tigerMac.font = .systemFont(ofSize: 11)
         tigerMac.textColor = .secondaryLabelColor; tigerMac.lineBreakMode = .byTruncatingTail
+        put(button("Macs…", 0, 0, 100, "tigerMacPanel:"), in: connection, 606, 14, 100, 30)
 
         let keys = section("AI services and local LLM server", NSRect(x: 20, y: 82, width: 740, height: 382))
         let keyNote = NSTextField(labelWithString: "One API key is enough, or use only a local LLM server. Blank fields keep what is saved.")

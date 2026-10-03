@@ -30,8 +30,8 @@ TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, f
 {
     TBChatLayout layout;
     float sendW = 76;
-    float stopW = 64;
-    float gap = 6;
+    float stopW = 76;
+    float gap = 8;
     float fieldW = paneWidth - 16 - sendW - stopW - 2 * gap;
     float maxField;
     float inputTop;
