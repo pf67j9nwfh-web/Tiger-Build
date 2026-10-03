@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import <unistd.h>
 
 /* Files attached to a chat. Each file becomes a message from the person, shown as
    "Attached: name (size)" with a thumbnail for pictures, and the model sees it
@@ -26,6 +27,7 @@
 - (NSArray *)confirmedAttachments:(NSArray *)made chat:(NSMutableDictionary *)chat;
 - (BOOL)confirmCloudAttach;
 - (NSString *)tokenString:(int)count;
+- (int)contextTokensForChat:(NSDictionary *)chat;
 @end
 
 @interface ChatController (AttachmentsPrivate)
@@ -85,6 +87,7 @@
     [[prompt->panel contentView] addSubview:prompt->field];
     [[prompt->panel contentView] addSubview:ok];
     [[prompt->panel contentView] addSubview:cancel];
+    [prompt->panel setDefaultButtonCell:[ok cell]];
     [prompt->panel center];
     [prompt->panel makeFirstResponder:prompt->field];
     result = [NSApp runModalForWindow:prompt->panel];
@@ -114,7 +117,7 @@
 static NSArray *pagesFromSpec(NSString *spec, unsigned total)
 {
     NSMutableArray *found = [NSMutableArray array];
-    NSArray *parts = [[spec stringByReplacingCharactersInRange:NSMakeRange(0, 0) withString:@""] componentsSeparatedByString:@","];
+    NSArray *parts = [spec componentsSeparatedByString:@","];
     unsigned i;
     for (i = 0; i < [parts count]; i++) {
         NSString *part = [[parts objectAtIndex:i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
@@ -490,6 +493,7 @@ static unsigned pdfPageCount(NSString *path)
     updated = [NSMutableDictionary dictionaryWithDictionary:known];
     [updated setObject:[NSNumber numberWithBool:YES] forKey:provider];
     [defaults setObject:updated forKey:@"TBAttachConsent"];
+    [defaults synchronize];
     return YES;
 }
 

@@ -64,7 +64,9 @@ static NSMutableArray *allControllers = nil;
     owner = controller;
 }
 
-- (void)paste:(id)sender
+/* Files copied in the Finder, or a picture on the clipboard (a screenshot), are attached to the chat.
+   Returns NO for anything else, which is then pasted as text as usual. */
+- (BOOL)pasteSpecial
 {
     NSPasteboard *board = [NSPasteboard generalPasteboard];
     NSArray *types = [board types];
@@ -72,7 +74,7 @@ static NSMutableArray *allControllers = nil;
         NSArray *files = [board propertyListForType:NSFilenamesPboardType];
         if ([files isKindOfClass:[NSArray class]] && [files count] > 0) {
             [owner performSelector:@selector(attachPaths:) withObject:files];
-            return;
+            return YES;
         }
     }
     if (![types containsObject:NSStringPboardType] && [types containsObject:NSTIFFPboardType]) {
@@ -84,11 +86,25 @@ static NSMutableArray *allControllers = nil;
             path = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"Pasted Picture %u.tiff", counter]];
             if ([data writeToFile:path atomically:YES]) {
                 [owner performSelector:@selector(attachPaths:) withObject:[NSArray arrayWithObject:path]];
-                return;
+                return YES;
             }
         }
     }
-    [super paste:sender];
+    return NO;
+}
+
+- (void)paste:(id)sender
+{
+    if (![self pasteSpecial])
+        [super paste:sender];
+}
+
+/* Command-V can be taken by the text editor before the menu sees it. */
+- (BOOL)performKeyEquivalent:(NSEvent *)event
+{
+    if (([event modifierFlags] & NSCommandKeyMask) && [[event charactersIgnoringModifiers] isEqualToString:@"v"] && [self pasteSpecial])
+        return YES;
+    return [super performKeyEquivalent:event];
 }
 
 @end
@@ -1704,7 +1720,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 - (id)windowWillReturnFieldEditor:(NSWindow *)sender toObject:(id)client
 {
     (void)sender;
-    if (client != input)
+    if (client != input && client != [input cell])
         return nil;
     if (!fieldEditor) {
         fieldEditor = [[TBFieldEditor alloc] initWithFrame:NSMakeRect(0, 0, 100, 20)];

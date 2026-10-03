@@ -179,8 +179,8 @@ static NSArray *splitTables(NSString *prose)
             {
                 NSMutableDictionary *table = [NSMutableDictionary dictionary];
                 [table setObject:[NSNumber numberWithBool:YES] forKey:@"code"];
-                [table setObject:[aligned stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]] forKey:@"text"];
-                [table setObject:[copy stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]] forKey:@"copy"];
+                [table setObject:[aligned stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\n"]] forKey:@"text"];
+                [table setObject:[copy stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\n"]] forKey:@"copy"];
                 [table setObject:@"table" forKey:@"lang"];
                 [table setObject:[NSNumber numberWithBool:YES] forKey:@"closed"];
                 [out addObject:table];

@@ -18,6 +18,7 @@
 }
 - (id)initWithOwner:(id)controller;
 - (void)show;
+- (void)openRow:(id)sender;
 @end
 
 @implementation TBFinder
@@ -264,6 +265,7 @@
     [[panel contentView] addSubview:everyChat];
     [[panel contentView] addSubview:ok];
     [[panel contentView] addSubview:cancel];
+    [panel setDefaultButtonCell:[ok cell]];
     [panel center];
     [panel makeFirstResponder:view];
     result = [NSApp runModalForWindow:panel];
