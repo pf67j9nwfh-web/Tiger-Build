@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TranscriptView.h"
+#import "TBMarkup.h"
 
 /* Three small things the chat window needed:
      Custom Instructions   text the model is told to follow in this chat (and optionally every new chat in the workspace)
@@ -302,6 +303,48 @@
 }
 
 /* ---- text size ---- */
+
+/* The sidebar's chat list, the message box and the thinking line follow the text size too. The popups and
+   buttons are drawn by the system at their own fixed size. */
+- (void)applyTextScale
+{
+    float scale = [TranscriptView textScale];
+    float box = scale > 1.3f ? 1.3f : scale;
+    [table setFont:[NSFont systemFontOfSize:13 * scale]];
+    if ([[table tableColumns] count] > 0)
+        [[[[table tableColumns] objectAtIndex:0] dataCell] setFont:[NSFont systemFontOfSize:13 * scale]];
+    [table setRowHeight:ceilf(20 * (scale > 1.6f ? 1.6f : scale))];
+    [table reloadData];
+    [input setFont:[NSFont systemFontOfSize:13 * box]];
+    [thinkingField setFont:[NSFont systemFontOfSize:11 * box]];
+    [self layoutPanes];
+}
+
+/* Chat > Copy Last Code Block: for people who cannot click the Copy label in the panel. */
+- (IBAction)copyLastCode:(id)sender
+{
+    NSArray *messages = [current objectForKey:@"messages"];
+    int i;
+    (void)sender;
+    for (i = (int)[messages count] - 1; i >= 0; i--) {
+        NSDictionary *message = [messages objectAtIndex:i];
+        NSArray *blocks;
+        int b;
+        if ([[message objectForKey:@"status"] boolValue] || ![[message objectForKey:@"role"] isEqualToString:@"assistant"])
+            continue;
+        blocks = TBSplitBlocks([message objectForKey:@"text"]);
+        for (b = (int)[blocks count] - 1; b >= 0; b--) {
+            NSDictionary *block = [blocks objectAtIndex:b];
+            if ([[block objectForKey:@"code"] boolValue]) {
+                NSPasteboard *board = [NSPasteboard generalPasteboard];
+                [board declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+                [board setString:[block objectForKey:@"copy"] ? [block objectForKey:@"copy"] : [block objectForKey:@"text"] forType:NSStringPboardType];
+                return;
+            }
+        }
+    }
+    NSBeep();
+}
 
 - (IBAction)biggerText:(id)sender
 {

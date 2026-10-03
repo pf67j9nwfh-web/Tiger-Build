@@ -11,6 +11,13 @@ class CachingTests(unittest.TestCase):
         self.assertEqual(messages[-1]["content"][-1]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(messages[0]["content"], "first")
 
+    def test_big_prompts_get_the_one_hour_cache(self):
+        big = [{"role": "user", "content": "x" * 70000}]
+        small = [{"role": "user", "content": "hi"}]
+        self.assertEqual(P.claude_cache_marks("s", big)[0]["cache_control"], {"type": "ephemeral", "ttl": "1h"})
+        self.assertEqual(big[-1]["content"][-1]["cache_control"]["ttl"], "1h")
+        self.assertEqual(P.claude_cache_marks("s", small)[0]["cache_control"], {"type": "ephemeral"})
+
     def test_tool_result_and_empty_messages(self):
         blocks = [{"type": "tool_result", "tool_use_id": "x", "content": "out"}]
         P.claude_cache_marks("s", [{"role": "user", "content": blocks}])

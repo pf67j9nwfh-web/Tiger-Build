@@ -363,6 +363,8 @@ OFFLINE_RETRY_SECONDS = 15
 
 CONSULT_TOOL = "consult_model"
 SCREENSHOT_TOOL = "take_screenshot"
+# Commander tools that cannot change anything never ask first, however approval is set.
+READ_ONLY_TOOLS = ("git_read", "svn_read", "repo_info")
 LIMIT_NOTE = (
     "\n\n[The reply stopped here because the model reached its output limit. "
     "Say \"continue\" and it will pick up where it left off.]"
@@ -945,6 +947,8 @@ class ToolSession(object):
         """Ask the person before a tool runs, when approval is on for it.
         Yields the question for Tiger Build; returns "allow" or "deny"."""
         key = self._tool_key(call.get("name") or "")
+        if (call.get("name") or "") in READ_ONLY_TOOLS:
+            return "allow"
         if not self._needs_approval(key):
             return "allow"
         call_id = call.get("id") or call.get("call_id") or call.get("name") or "call"
@@ -1076,6 +1080,12 @@ class ToolSession(object):
             ) % (self.account(), self.home(), self.home())
             if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
+            if any(t.get("name") == "repo_info" for t in tools):
+                system += (" For source control on that Mac, call repo_info first to see whether a folder is a git repository or a "
+                           "Subversion working copy and which programs are installed. Use git_read and svn_read to look (status, diff, "
+                           "log), and git_write or svn_write to change things. Check status and diff before committing, give every "
+                           "commit a clear message, never commit files the person did not ask about, and do not force-push. These Macs "
+                           "are old: git may not be installed, and Subversion 1.4 to 1.6 does not know newer options.")
             if any(t.get("name") == "view_image" for t in tools):
                 system += (" To look at a picture file on that Mac (JPEG, PNG, GIF, TIFF, PDF and so on), call view_image "
                            "with its path; read_file only returns text.")

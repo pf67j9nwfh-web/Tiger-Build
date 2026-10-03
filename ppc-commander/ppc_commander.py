@@ -15,6 +15,7 @@ import grp
 import os
 import pwd
 import re
+import select
 import shutil
 import signal
 import socket
@@ -37,7 +38,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.3.2'
+VERSION = '0.4.0'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
@@ -2246,6 +2247,386 @@ def tool_view_image(args):
             pass
 
 
+# --- git and Subversion ---
+#
+# Structured wrappers for the version control programs this Mac has. git is not part of Mac OS X before
+# Lion and Subversion arrives with 10.5, so each tool says plainly when the program is missing. Nothing
+# here goes through a shell: the arguments are handed to the program as they are, only the sub-commands
+# listed below are allowed, and the options that make a program run another program or write to a
+# path of its choosing are refused. The read tools never change anything; the write tools are separate
+# so that Tiger Build can ask before they run.
+
+VCS_SEARCH = ['/usr/bin', '/usr/local/bin', '/usr/local/git/bin', '/opt/local/bin', '/sw/bin', '/opt/homebrew/bin']
+
+GIT_READ = ['status', 'diff', 'log', 'show', 'blame', 'annotate', 'branch', 'remote', 'ls-files', 'ls-tree', 'rev-parse',
+            'rev-list', 'describe', 'tag', 'stash', 'shortlog', 'grep', 'cat-file', 'config', 'reflog', 'diff-tree',
+            'name-rev', 'merge-base', 'whatchanged', 'count-objects', 'version', 'check-ignore', 'show-ref', 'for-each-ref']
+GIT_WRITE = ['add', 'rm', 'mv', 'restore', 'checkout', 'switch', 'commit', 'branch', 'tag', 'merge', 'rebase', 'cherry-pick',
+             'revert', 'reset', 'stash', 'pull', 'fetch', 'push', 'clone', 'init', 'remote', 'config', 'clean', 'apply']
+SVN_READ = ['status', 'stat', 'st', 'diff', 'di', 'log', 'info', 'list', 'ls', 'cat', 'blame', 'annotate', 'praise',
+            'propget', 'pg', 'proplist', 'pl', 'help']
+SVN_WRITE = ['add', 'delete', 'del', 'rm', 'remove', 'commit', 'ci', 'update', 'up', 'revert', 'move', 'mv', 'copy', 'cp',
+             'mkdir', 'checkout', 'co', 'switch', 'sw', 'merge', 'resolve', 'resolved', 'propset', 'ps', 'propdel', 'pd',
+             'import', 'cleanup', 'lock', 'unlock', 'patch']
+GIT_BAD_OPTIONS = ['--upload-pack', '--receive-pack', '--exec', '--exec-path', '--output', '-o', '--ext-diff', '--paginate',
+                   '--open-files-in-pager', '--git-dir', '--work-tree', '--namespace', '-c', '--config', '--template',
+                   '--ssh-command', '--no-verify', '--force', '-f', '--force-with-lease', '--force-if-includes', '--mirror',
+                   '--delete', '--prune']
+GIT_ALLOWED_CONFIG = ['user.name', 'user.email', 'core.autocrlf', 'core.filemode', 'core.ignorecase', 'pull.rebase',
+                      'init.defaultbranch', 'push.default', 'color.ui', 'core.safecrlf', 'core.quotepath']
+SVN_BAD_OPTIONS = ['--password', '--diff-cmd', '--diff3-cmd', '--editor-cmd', '--merge-cmd', '--config-option', '--config-dir',
+                   '--ssl-trust-server-cert', '--trust-server-cert']
+
+
+def find_program(name):
+    dirs = os.environ.get('PATH', '').split(':') + VCS_SEARCH
+    for folder in dirs:
+        if not folder:
+            continue
+        path = os.path.join(folder, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def run_argv(argv, cwd, timeout, extra_env):
+    """Run a program without a shell; returns (exit code, output). The output is stdout and stderr together."""
+    read_end, write_end = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.close(read_end)
+            os.dup2(write_end, 1)
+            os.dup2(write_end, 2)
+            null = os.open('/dev/null', os.O_RDONLY)
+            os.dup2(null, 0)
+            if cwd:
+                os.chdir(cwd)
+            for key in extra_env.keys():
+                os.environ[key] = extra_env[key]
+            os.execv(argv[0], argv)
+        except Exception:
+            pass
+        os._exit(127)
+    os.close(write_end)
+    chunks = []
+    total = 0
+    started = time.time()
+    timed_out = 0
+    while 1:
+        left = timeout - (time.time() - started)
+        if left <= 0:
+            timed_out = 1
+            break
+        ready = select.select([read_end], [], [], min(left, 1.0))[0]
+        if ready:
+            data = os.read(read_end, 8192)
+            if data == '':
+                break
+            if total < MAX_OUTPUT_CHARS * 2:
+                chunks.append(data)
+                total = total + len(data)
+    if timed_out:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    os.close(read_end)
+    code = 0
+    try:
+        code = os.waitpid(pid, 0)[1]
+    except OSError:
+        pass
+    if timed_out:
+        return -1, ''.join(chunks)
+    if os.WIFEXITED(code):
+        return os.WEXITSTATUS(code), ''.join(chunks)
+    return 128, ''.join(chunks)
+
+
+def vcs_directory(args):
+    raw = opt_str(args, 'path', None)
+    if not raw:
+        raw = WORKSPACE['root'] or os.path.expanduser('~')
+    path = check_path(raw)
+    if not os.path.isdir(path):
+        raise ToolError('not a directory: %s' % path)
+    return path
+
+
+def vcs_args(args):
+    if not isinstance(args.get('args'), list):
+        raise ToolError('args must be an array of strings, for example ["status", "--short"]')
+    items = as_str_list(args['args'])
+    if len(items) == 0:
+        raise ToolError('args is empty; the first item is the sub-command')
+    if len(items) > 60:
+        raise ToolError('too many arguments')
+    for item in items:
+        if item.find('\0') >= 0:
+            raise ToolError('arguments cannot contain a null character')
+    return items
+
+
+def vcs_check_options(items, bad, program):
+    for item in items:
+        name = item.split('=')[0]
+        if name in bad:
+            raise ToolError('%s is not allowed with this tool (%s). Ask the person to run it themselves.' % (item, program))
+    return None
+
+
+def vcs_paths_ok(items, cwd):
+    """Paths named after -- or as plain arguments must stay inside the allowed directories."""
+    after = 0
+    for item in items[1:]:
+        if item == '--':
+            after = 1
+            continue
+        if item.startswith('-') and not after:
+            continue
+        candidate = item
+        if candidate.find('/') < 0 and candidate.find('..') < 0:
+            continue
+        if candidate.startswith('http:') or candidate.startswith('https:') or candidate.find('://') > 0 or candidate.find('@') > 0:
+            continue
+        if candidate.find('..') >= 0 or candidate.startswith('/') or candidate.startswith('~'):
+            full = candidate
+            if not os.path.isabs(full):
+                full = os.path.join(cwd, full)
+            if not path_allowed(resolve_existing(os.path.normpath(os.path.expanduser(full)))):
+                raise ToolError('%s is outside the directories this chat may use' % item)
+    return None
+
+
+def vcs_finish(program, items, code, output, note):
+    text = output
+    if len(text) > MAX_OUTPUT_CHARS:
+        text = text[:MAX_OUTPUT_CHARS] + '\n... truncated at %d characters' % MAX_OUTPUT_CHARS
+    if code == -1:
+        raise ToolError('%s %s did not finish in time and was stopped.\n%s' % (program, items[0], clip(text, 2000)))
+    if code != 0:
+        raise ToolError('%s %s failed (exit %d):\n%s' % (program, items[0], code, text))
+    if text.strip() == '':
+        text = '(no output; %s %s finished)' % (program, items[0])
+    if note:
+        text = text + '\n' + note
+    return text
+
+
+def missing_vcs(kind):
+    if kind == 'git':
+        return ('git is not installed on this Mac. Mac OS X does not include it before 10.7 Lion. Install a build for this '
+                'system (for example from MacPorts or a git installer for 10.5/10.6), then try again. Subversion (svn_read, '
+                'svn_write) may be available instead.')
+    return ('svn (Subversion) is not installed on this Mac. It comes with Mac OS X 10.5 and later; on 10.4 Tiger install it '
+            '(for example from MacPorts). git_read and git_write may be available instead.')
+
+
+def git_query_only(items):
+    """For sub-commands that read or change depending on the options: True when this is a read."""
+    sub = items[0]
+    rest = items[1:]
+    plain = []
+    for item in rest:
+        if not item.startswith('-'):
+            plain.append(item)
+    if sub == 'branch':
+        for item in rest:
+            if item in ['-d', '-D', '-m', '-M', '-c', '-C', '--delete', '--move', '--copy', '-u', '--set-upstream-to',
+                        '--unset-upstream', '--edit-description', '-f']:
+                return 0
+        listing = 0
+        for item in rest:
+            if item in ['-a', '-r', '-v', '-vv', '--list', '-l', '--show-current', '--contains', '--merged', '--no-merged',
+                        '--all', '--remotes', '--verbose']:
+                listing = 1
+        return len(plain) == 0 or listing
+    if sub == 'remote':
+        if len(rest) == 0:
+            return 1
+        return rest[0] in ['-v', '--verbose', 'show', 'get-url']
+    if sub == 'tag':
+        if len(plain) == 0:
+            return 1
+        for item in rest:
+            if item in ['-l', '--list', '--contains', '--merged', '--no-merged', '-n']:
+                return 1
+        return 0
+    if sub == 'stash':
+        return len(rest) > 0 and rest[0] in ['list', 'show']
+    if sub == 'config':
+        for item in rest:
+            if item in ['--get', '--get-all', '--list', '-l', '--get-regexp', '--show-origin']:
+                return 1
+        return 0
+    return 1
+
+
+def tool_git(args, writing):
+    cwd = vcs_directory(args)
+    items = vcs_args(args)
+    sub = items[0]
+    allowed = GIT_WRITE
+    if not writing:
+        allowed = GIT_READ
+    if sub not in allowed:
+        if writing and sub in GIT_READ:
+            raise ToolError('git %s only reads; use git_read for it' % sub)
+        if not writing and sub in GIT_WRITE:
+            raise ToolError('git %s can change the repository; use git_write for it' % sub)
+        raise ToolError('git %s is not available. Allowed: %s' % (sub, ' '.join(allowed)))
+    if not writing and not git_query_only(items):
+        raise ToolError('git %s with those options changes the repository; use git_write' % sub)
+    vcs_check_options(items, GIT_BAD_OPTIONS, 'git')
+    if sub == 'rebase' and ('-i' in items or '--interactive' in items):
+        raise ToolError('interactive rebase needs an editor and cannot run here')
+    if sub == 'commit':
+        has_message = 0
+        for item in items:
+            if item in ['-m', '--message', '-F', '--file', '-C', '--reuse-message', '--amend'] or item.startswith('--message=') or item.startswith('-m'):
+                has_message = 1
+        if not has_message:
+            raise ToolError('give the commit message with -m "message"; there is no editor here')
+    if sub == 'config' and writing:
+        plain = []
+        for item in items[1:]:
+            if not item.startswith('-'):
+                plain.append(item)
+        if len(plain) == 0 or plain[0].lower() not in GIT_ALLOWED_CONFIG:
+            raise ToolError('only these settings can be changed: %s' % ' '.join(GIT_ALLOWED_CONFIG))
+    vcs_paths_ok(items, cwd)
+    program = find_program('git')
+    if not program:
+        raise ToolError(missing_vcs('git'))
+    full = [program, items[0]]
+    if sub in ['diff', 'log', 'show', 'whatchanged']:
+        full.append('--no-ext-diff')
+    full = full + items[1:]
+    env = {'GIT_TERMINAL_PROMPT': '0', 'GIT_EDITOR': 'true', 'GIT_PAGER': 'cat', 'PAGER': 'cat', 'GIT_ASKPASS': '/usr/bin/true',
+           'GIT_EXTERNAL_DIFF': '', 'LANG': 'C', 'LC_ALL': 'C', 'TERM': 'dumb'}
+    timeout = opt_int(args, 'timeout_ms', 60000) / 1000.0
+    if timeout > 300:
+        timeout = 300
+    code, output = run_argv(full, cwd, timeout, env)
+    note = ''
+    if code != 0 and output.find('not a git repository') >= 0:
+        note = 'Tip: use repo_info to see which folders are repositories.'
+    return vcs_finish('git', items, code, output, note)
+
+
+def tool_svn(args, writing):
+    cwd = vcs_directory(args)
+    items = vcs_args(args)
+    sub = items[0]
+    allowed = SVN_WRITE
+    if not writing:
+        allowed = SVN_READ
+    if sub not in allowed:
+        if writing and sub in SVN_READ:
+            raise ToolError('svn %s only reads; use svn_read for it' % sub)
+        if not writing and sub in SVN_WRITE:
+            raise ToolError('svn %s can change files or the repository; use svn_write for it' % sub)
+        raise ToolError('svn %s is not available. Allowed: %s' % (sub, ' '.join(allowed)))
+    vcs_check_options(items, SVN_BAD_OPTIONS, 'svn')
+    if sub in ['commit', 'ci']:
+        has_message = 0
+        for item in items:
+            if item in ['-m', '--message', '-F', '--file'] or item.startswith('--message=') or item.startswith('-m'):
+                has_message = 1
+        if not has_message:
+            raise ToolError('give the commit message with -m "message"; there is no editor here')
+    vcs_paths_ok(items, cwd)
+    program = find_program('svn')
+    if not program:
+        raise ToolError(missing_vcs('svn'))
+    full = [program, items[0], '--non-interactive'] + items[1:]
+    env = {'LANG': 'C', 'LC_ALL': 'C', 'TERM': 'dumb', 'SVN_EDITOR': '/usr/bin/true'}
+    timeout = opt_int(args, 'timeout_ms', 90000) / 1000.0
+    if timeout > 300:
+        timeout = 300
+    code, output = run_argv(full, cwd, timeout, env)
+    if code != 0 and output.find("doesn't accept option '--non-interactive'") >= 0:
+        # Subversion 1.4 takes the option only for commands that use the network.
+        full = [program, items[0]] + items[1:]
+        code, output = run_argv(full, cwd, timeout, env)
+    note = ''
+    if code != 0 and output.find('is not a working copy') >= 0:
+        note = 'Tip: use repo_info to see which folders are working copies.'
+    return vcs_finish('svn', items, code, output, note)
+
+
+def tool_git_read(args):
+    return tool_git(args, 0)
+
+
+def tool_git_write(args):
+    return tool_git(args, 1)
+
+
+def tool_svn_read(args):
+    return tool_svn(args, 0)
+
+
+def tool_svn_write(args):
+    return tool_svn(args, 1)
+
+
+def tool_repo_info(args):
+    """Which repository (git or Subversion) a folder belongs to, and which programs this Mac has."""
+    start = vcs_directory(args)
+    lines = []
+    git_program = find_program('git')
+    svn_program = find_program('svn')
+    if git_program:
+        code, out = run_argv([git_program, '--version'], None, 10, {'LANG': 'C'})
+        lines.append('git program: %s (%s)' % (git_program, out.strip()))
+    else:
+        lines.append('git program: not installed')
+    if svn_program:
+        code, out = run_argv([svn_program, '--version', '--quiet'], None, 10, {'LANG': 'C'})
+        lines.append('svn program: %s (version %s)' % (svn_program, out.strip()))
+    else:
+        lines.append('svn program: not installed')
+    folder = start
+    found = ''
+    kind = ''
+    while 1:
+        if os.path.exists(os.path.join(folder, '.git')):
+            found = folder
+            kind = 'git'
+            break
+        if os.path.isdir(os.path.join(folder, '.svn')):
+            found = folder
+            kind = 'svn'
+            # a Subversion 1.6 or older working copy has .svn in every folder; the top one is the highest that has it
+            parent = os.path.dirname(folder)
+            while parent != folder and os.path.isdir(os.path.join(parent, '.svn')):
+                folder = parent
+                found = folder
+                parent = os.path.dirname(folder)
+            break
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            break
+        folder = parent
+    if not found:
+        lines.append('%s is not inside a git repository or a Subversion working copy' % start)
+        return '\n'.join(lines)
+    lines.append('repository type: %s' % kind)
+    lines.append('top folder: %s' % found)
+    if kind == 'git' and git_program:
+        code, out = run_argv([git_program, 'status', '--short', '--branch'], found,
+                             30, {'GIT_TERMINAL_PROMPT': '0', 'LANG': 'C', 'GIT_PAGER': 'cat'})
+        lines.append(clip(out.strip(), 3000))
+    if kind == 'svn' and svn_program:
+        code, out = run_argv([svn_program, 'info', '--non-interactive'], found, 30, {'LANG': 'C'})
+        lines.append(clip(out.strip(), 1500))
+        code, out = run_argv([svn_program, 'status', '--non-interactive'], found, 60, {'LANG': 'C'})
+        lines.append('changes:\n' + clip(out.strip(), 2500))
+    return '\n'.join(lines)
+
+
 # --- config and history tools ---
 
 def tool_get_config(args):
@@ -2401,6 +2782,91 @@ def tool_defs():
             'inputSchema': {
                 'type': 'object',
                 'properties': {'max_width': prop('number', 'Widest the picture may be, in pixels. Default 1024.')},
+                'additionalProperties': True,
+            },
+        },
+        {
+            'name': 'repo_info',
+            'description': (
+                'Say which git repository or Subversion working copy a folder belongs to, its top folder, its current state '
+                '(branch and changes), and whether git and svn are installed on this Mac. Use it first when asked about '
+                'source control.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {'path': prop('string', 'Folder to look at. Default: the workspace folder or the home folder.')},
+                'additionalProperties': True,
+            },
+        },
+        {
+            'name': 'git_read',
+            'description': (
+                'Read-only git: status, diff, log, show, blame, branch (listing), remote -v, tag (listing), stash list, ls-files, '
+                'grep, rev-parse, describe, config --get and similar. Give the sub-command and its options as an array, for '
+                'example ["log", "--oneline", "-20"] or ["diff", "--stat"]. It never changes the repository.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {
+                    'args': {'type': 'array', 'items': {'type': 'string'}, 'description': 'git sub-command and options, one item each'},
+                    'path': prop('string', 'Repository folder. Default: the workspace folder.'),
+                    'timeout_ms': prop('number', 'Time limit, default 60000.'),
+                },
+                'required': ['args'],
+                'additionalProperties': True,
+            },
+        },
+        {
+            'name': 'git_write',
+            'description': (
+                'git commands that change things: add, rm, mv, restore, checkout, switch, commit (give -m "message"), branch, tag, '
+                'merge, rebase (not interactive), cherry-pick, revert, reset, stash, pull, fetch, push, clone, init, remote, '
+                'config (user.name, user.email and a few more), clean, apply. Force-pushing, deleting remote branches, skipping '
+                'hooks and options that run other programs are refused. Check with git_read status and diff before committing.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {
+                    'args': {'type': 'array', 'items': {'type': 'string'}, 'description': 'git sub-command and options, one item each'},
+                    'path': prop('string', 'Repository folder. Default: the workspace folder.'),
+                    'timeout_ms': prop('number', 'Time limit, default 60000.'),
+                },
+                'required': ['args'],
+                'additionalProperties': True,
+            },
+        },
+        {
+            'name': 'svn_read',
+            'description': (
+                'Read-only Subversion: status, diff, log, info, list, cat, blame, propget, proplist. Give the sub-command and '
+                'options as an array, for example ["log", "-l", "10"] or ["status"]. It never changes the working copy.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {
+                    'args': {'type': 'array', 'items': {'type': 'string'}, 'description': 'svn sub-command and options, one item each'},
+                    'path': prop('string', 'Working copy folder. Default: the workspace folder.'),
+                    'timeout_ms': prop('number', 'Time limit, default 90000.'),
+                },
+                'required': ['args'],
+                'additionalProperties': True,
+            },
+        },
+        {
+            'name': 'svn_write',
+            'description': (
+                'Subversion commands that change things: add, delete, commit (give -m "message"), update, revert, move, copy, '
+                'mkdir, checkout, switch, merge, resolve, propset, import, cleanup, lock, unlock, patch. Passwords on the command '
+                'line, and options that run other programs, are refused: use credentials Subversion has already saved.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {
+                    'args': {'type': 'array', 'items': {'type': 'string'}, 'description': 'svn sub-command and options, one item each'},
+                    'path': prop('string', 'Working copy folder. Default: the workspace folder.'),
+                    'timeout_ms': prop('number', 'Time limit, default 90000.'),
+                },
+                'required': ['args'],
                 'additionalProperties': True,
             },
         },
@@ -2745,6 +3211,11 @@ HANDLERS = {
     'kill_process': tool_kill_process,
     'take_screenshot': tool_take_screenshot,
     'view_image': tool_view_image,
+    'repo_info': tool_repo_info,
+    'git_read': tool_git_read,
+    'git_write': tool_git_write,
+    'svn_read': tool_svn_read,
+    'svn_write': tool_svn_write,
     'get_usage_stats': tool_get_usage_stats,
     'get_recent_tool_calls': tool_get_recent_tool_calls,
 }
@@ -2946,6 +3417,36 @@ def expect(name, cond, failures, detail):
     failures.append(name)
 
 
+def test_vcs_refusals():
+    """The sub-command and option rules, checked without running any program."""
+    cases = [
+        ('git_read', ['commit', '-m', 'x'], 'git_write'),
+        ('git_read', ['branch', 'newname'], 'git_write'),
+        ('git_read', ['config', 'user.name', 'x'], 'git_write'),
+        ('git_read', ['diff', '--output=/tmp/x'], 'not allowed'),
+        ('git_write', ['push', '--force'], 'not allowed'),
+        ('git_write', ['push', '--delete', 'origin', 'x'], 'not allowed'),
+        ('git_write', ['commit'], '-m'),
+        ('git_write', ['rebase', '-i', 'HEAD~2'], 'interactive'),
+        ('git_write', ['config', 'core.sshCommand', 'x'], 'only these settings'),
+        ('git_write', ['status'], 'git_read'),
+        ('svn_write', ['commit'], '-m'),
+        ('svn_write', ['update', '--password', 'x'], 'not allowed'),
+        ('svn_read', ['commit', '-m', 'x'], 'svn_write'),
+        ('svn_read', ['export', 'x'], 'not available'),
+    ]
+    handlers = {'git_read': tool_git_read, 'git_write': tool_git_write, 'svn_read': tool_svn_read, 'svn_write': tool_svn_write}
+    for tool, items, want in cases:
+        try:
+            handlers[tool]({'args': items, 'path': '/tmp'})
+        except ToolError, exc:
+            if str(exc).find(want) < 0:
+                return 0
+        else:
+            return 0
+    return 1
+
+
 def run_self_test():
     failures = []
     sample = {
@@ -3033,6 +3534,8 @@ def run_self_test():
         os.rmdir(work)
     expect('screenshot tool listed', 'take_screenshot' in [spec['name'] for spec in tool_defs()], failures, '')
     expect('screenshot handler', 'take_screenshot' in HANDLERS, failures, '')
+    expect('version control tools listed', 'git_write' in HANDLERS and 'svn_read' in HANDLERS and 'repo_info' in HANDLERS, failures, '')
+    expect('git_read refuses writing forms', test_vcs_refusals(), failures, '')
     expect('view_image listed', 'view_image' in [spec['name'] for spec in tool_defs()] and 'view_image' in HANDLERS, failures, '')
 
     names = []

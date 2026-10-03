@@ -35,7 +35,8 @@ class FakeClient(object):
         FakeClient.calls.append((method, params))
         if method == "tools/list":
             return {"tools": [{"name": "start_process", "inputSchema": {"type": "object"}},
-                              {"name": "take_screenshot", "inputSchema": {"type": "object"}}]}
+                              {"name": "take_screenshot", "inputSchema": {"type": "object"}},
+                              {"name": "git_read", "inputSchema": {"type": "object"}}]}
         if params["name"] == "take_screenshot":
             return {"content": [{"type": "image", "data": "QUJD", "mimeType": "image/jpeg"},
                                 {"type": "text", "text": "shot"}]}
@@ -151,6 +152,18 @@ class TurnTests(unittest.TestCase):
         self.assertEqual([c for c in FakeClient.calls if c[0] == "tools/call"], [])
         results = [plistlib.loads(t.encode()) for k, t in frames if k == "a"]
         self.assertTrue(results[-1]["failed"])
+
+    def test_read_only_repo_tools_never_ask(self):
+        session = self.session(approve={"commander": True})
+        asked = []
+        gen = session.iter_turn([{"role": "user", "content": "go"}], True, "claude", "m")
+        with patch.object(C, "stream_round", script_stream([{"calls": [call("git_read", args=["status"])]}, {"text": ["ok"]}])):
+            for kind, text in gen:
+                if kind == "q":
+                    asked.append(text)
+                    session.run.answer(plistlib.loads(text.encode())["id"], "deny")
+        self.assertEqual(asked, [])
+        self.assertEqual(len([c for c in FakeClient.calls if c[0] == "tools/call" and c[1]["name"] == "git_read"]), 1)
 
     def test_approval_allowed_runs_tool(self):
         session = self.session(approve={"commander": True})
@@ -500,7 +513,7 @@ class ConcurrencyTests(unittest.TestCase):
             [t.start() for t in threads]
             [t.join() for t in threads]
         self.assertEqual(len(starts), 1)
-        self.assertEqual(results, [2] * 8)
+        self.assertEqual(results, [3] * 8)
         C.invalidate_tools()
 
 

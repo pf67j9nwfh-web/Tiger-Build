@@ -195,6 +195,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [relayTimer invalidate];
     [relayTimer release];
     [self closeStream];
@@ -707,6 +708,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [attachButton setToolTip:@"Add a file to this chat: text, code, PDF, Word or RTF, or a picture. You can also drop files on the chat."];
     [chatPane addSubview:attachButton];
     [transcript setDropTarget:self];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applyTextScale) name:@"TBTextScaleChanged" object:nil];
 
     thinkingField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
     [thinkingField setStringValue:@""];
@@ -747,6 +749,14 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [contextField setDrawsBackground:NO];
     [contextField setAlignment:NSRightTextAlignment];
     [contextField setFont:[NSFont systemFontOfSize:12]];
+    /* Names for VoiceOver on controls that have no title of their own: it reads a control's tooltip as its help. */
+    [workspacePopup setToolTip:@"Workspace"];
+    [modelPopup setToolTip:@"Service"];
+    [variantPopup setToolTip:@"Model"];
+    [toolsPopup setToolTip:@"Tools for this chat"];
+    [input setToolTip:@"Message to send"];
+    [contextField setToolTip:@"Context size and cost"];
+    [table setToolTip:@"Chats"];
     [contextField setTextColor:[NSColor colorWithCalibratedWhite:0.25 alpha:1]];
     [chatPane addSubview:contextField];
 
@@ -1116,6 +1126,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Attach File..." action:@selector(attachFile:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Copy Last Code Block" action:@selector(copyLastCode:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
@@ -1238,7 +1250,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"f",@"showFind:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
@@ -1776,7 +1788,34 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self loadStore];
     [self buildWindow];
     [self layoutSubviews];
+    if ([TranscriptView textScale] != 1.0f)
+        [self applyTextScale];
+    
     [self reloadTableSelect:0 show:YES];
+    if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
+        /* What the controls and messages tell VoiceOver, for checking without it. */
+        NSArray *views = [transcript subviews];
+        unsigned v;
+        freopen("/tmp/tb-accessibility.txt", "w", stdout);
+        NSArray *named = [NSArray arrayWithObjects:workspacePopup, modelPopup, variantPopup, toolsPopup, input, contextField, editButton, retryButton,
+            attachButton, stopButton, sendButton, nil];
+        for (v = 0; v < [named count]; v++) {
+            id control = [named objectAtIndex:v];
+            id label = nil;
+            @try { label = [control accessibilityAttributeValue:NSAccessibilityHelpAttribute]; } @catch (id e) { label = @"(error)"; }
+            NSString *title = [control respondsToSelector:@selector(title)] ? [control title] : @"";
+            fprintf(stdout, "control %s: description %s, title %s\n", [NSStringFromClass([control class]) UTF8String],
+                label ? [[label description] UTF8String] : "(none)", title ? [title UTF8String] : "");
+        }
+        for (v = 0; v < [views count]; v++) {
+            id label = [[views objectAtIndex:v] accessibilityAttributeValue:NSAccessibilityDescriptionAttribute];
+            if (label)
+                fprintf(stdout, "message %u: %s\n", v, [[label description] UTF8String]);
+        }
+        fflush(stdout);
+        exit(0);
+    }
+    
     [window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     [window makeFirstResponder:input];

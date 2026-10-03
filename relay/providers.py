@@ -1105,12 +1105,30 @@ def _claude_limit(message):
     return int(found.group(1)) if found else 0
 
 
+def _prompt_chars(system, messages):
+    total = len(system or "")
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    total += len(block.get("text") or "") + len(str(block.get("content") or "")) + (3000 if block.get("type") == "image" else 0)
+    return total
+
+
 def claude_cache_marks(system, messages):
     """Mark where Claude may reuse what it has already read: the system prompt and tools, and
     everything up to the last message. The attached files and earlier turns of a long chat are then
     charged at the cache rate on the next turn instead of in full. Prompts too short to cache are
     ignored by the service."""
-    marked = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}] if system else system
+    # The cache lasts five minutes. A big prompt (about 15k tokens or more, such as long attached files) is worth the
+    # dearer one-hour entry, because a pause longer than five minutes would otherwise pay for the whole prompt again.
+    mark = {"type": "ephemeral"}
+    if _prompt_chars(system, messages) > 60000:
+        mark = {"type": "ephemeral", "ttl": "1h"}
+    marked = [{"type": "text", "text": system, "cache_control": dict(mark)}] if system else system
     if messages:
         last = messages[-1]
         content = last.get("content")
@@ -1120,7 +1138,7 @@ def claude_cache_marks(system, messages):
             block = content[-1]
             empty = block.get("type") == "text" and not (block.get("text") or "").strip()
             if block.get("type") in ("text", "image", "tool_result", "tool_use") and not empty:
-                block["cache_control"] = {"type": "ephemeral"}
+                block["cache_control"] = dict(mark)
     return marked
 
 

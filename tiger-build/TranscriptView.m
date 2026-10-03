@@ -22,7 +22,9 @@
 {
     BOOL activity;
     NSArray *copies;
+    NSString *speakerLabel;
 }
+- (void)setSpeakerLabel:(NSString *)label;
 - (void)setActivity:(BOOL)flag;
 - (void)setCopies:(NSArray *)list;
 @end
@@ -47,7 +49,32 @@
 - (void)dealloc
 {
     [copies release];
+    [speakerLabel release];
     [super dealloc];
+}
+
+/* What VoiceOver says before the words: who spoke, and what else the message holds. */
+- (void)setSpeakerLabel:(NSString *)label
+{
+    if (label == speakerLabel || [label isEqualToString:speakerLabel])
+        return;
+    [speakerLabel release];
+    speakerLabel = [label copy];
+}
+
+- (NSArray *)accessibilityAttributeNames
+{
+    NSArray *names = [super accessibilityAttributeNames];
+    if (speakerLabel && ![names containsObject:NSAccessibilityDescriptionAttribute])
+        return [names arrayByAddingObject:NSAccessibilityDescriptionAttribute];
+    return names;
+}
+
+- (id)accessibilityAttributeValue:(NSString *)attribute
+{
+    if ([attribute isEqualToString:NSAccessibilityDescriptionAttribute] && speakerLabel)
+        return speakerLabel;
+    return [super accessibilityAttributeValue:attribute];
 }
 
 - (NSMenu *)menuForEvent:(NSEvent *)event
@@ -1270,6 +1297,19 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         if (!text)
             text = @"";
         [(TBSelectText *)view setActivity:[[box objectForKey:@"activity"] boolValue]];
+        {
+            NSString *who = [[box objectForKey:@"status"] boolValue] ? ([[box objectForKey:@"activity"] boolValue] ? @"Tool activity" : @"Status")
+                : ([[box objectForKey:@"user"] boolValue] ? @"You said" : @"Assistant said");
+            if ([box objectForKey:@"imageRect"])
+                who = [who stringByAppendingString:@", with a picture"];
+            if ([box objectForKey:@"videoRect"])
+                who = [who stringByAppendingString:@", with a video"];
+            if ([box objectForKey:@"fileRect"])
+                who = [who stringByAppendingString:@", with a file to save"];
+            if ([box objectForKey:@"copies"] && [[box objectForKey:@"copies"] count] > 0)
+                who = [who stringByAppendingString:@", with code or a table. Use Copy Last Code Block in the Chat menu to copy it"];
+            [(TBSelectText *)view setSpeakerLabel:who];
+        }
         if (!NSEqualRects([view frame], textRect))
             [view setFrame:textRect];
         if (fabsf([[view textContainer] containerSize].width - NSWidth(textRect)) > 0.5f)

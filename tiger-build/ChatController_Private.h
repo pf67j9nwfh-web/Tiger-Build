@@ -103,6 +103,8 @@
 - (IBAction)showFind:(id)sender;
 - (IBAction)editInstructions:(id)sender;
 - (IBAction)biggerText:(id)sender;
+- (IBAction)copyLastCode:(id)sender;
+- (void)applyTextScale;
 - (IBAction)smallerText:(id)sender;
 - (IBAction)normalTextSize:(id)sender;
 @end

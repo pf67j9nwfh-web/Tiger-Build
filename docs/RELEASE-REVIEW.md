@@ -24,6 +24,10 @@
 
 - Conversion run on real documents from both Macs' desktops: .docx, .xlsx, .pptx, .pages, .numbers, .key, .heic, .webp, a phone-style JPEG with a rotation tag, and a truncated 20 MB .key (clear error). Models answered questions about each on Tiger and Snow Leopard.
 
+- **Last items:** text size now covers the chat list and message box; VoiceOver labels on controls and messages (checked by `--list-accessibility`, VoiceOver itself not run); Claude prompts over about 15k tokens use the one-hour cache (checked live: the second call reads from cache).
+
+- **Source control (Commander 0.4.0):** self-test passes on Python 2.3 (Tiger), 2.5 (Leopard) and 2.6 (Snow Leopard). Real Subversion repositories driven through the tools on Snow Leopard (1.6) and Leopard (1.4, which needed a retry without `--non-interactive`); a model did status, diff, commit and log through the relay on Snow Leopard. git with a stand-in program only: argument and environment handling, path limits, refusals, missing-git message.
+
 ### Not verified
 - Pages, Numbers and Keynote text is recovered, not exact: slide order can differ and table layout is lost. Real drag-and-drop, `.doc` through the OS, a Keynote saved as a folder (tested), and PDFs were all run on Tiger and Snow Leopard in round 2.
 - The `ppc64` slice (no G5 now: its power supply failed) and Intel Tiger hardware. Both byte orders are covered by other runs (PowerPC Tiger and Rosetta; Intel Leopard and Snow Leopard).

@@ -562,6 +562,7 @@ static NSString *newRunId(void)
     if (!busy) {
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];
+        [sendButton setToolTip:@"Send the message (Return)"];
     } else if (guide) {
         [sendButton setTitle:[NSString stringWithFormat:@"Guide %C", (unichar)((pulse % 2) ? 0x25CB : 0x25CF)]];
         [sendButton setEnabled:YES];
