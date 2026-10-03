@@ -37,7 +37,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.3.1'
+VERSION = '0.3.2'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
@@ -2203,6 +2203,49 @@ def tool_take_screenshot(args):
                 pass
 
 
+def sh_quote(text):
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def tool_view_image(args):
+    """A picture file on this Mac, shrunk to a JPEG the model can look at.
+    sips reads JPEG, PNG, GIF, TIFF, BMP, PICT, PDF (first page), icns and more."""
+    import base64
+    path = check_path(opt_str(args, 'path', ''))
+    if not os.path.isfile(path):
+        raise ToolError('not a file: %s' % path)
+    width = opt_int(args, 'max_width', 1280)
+    if width < 160:
+        width = 160
+    if width > 2048:
+        width = 2048
+    if os.path.getsize(path) > 200 * 1024 * 1024:
+        raise ToolError('file is larger than 200 MB')
+    jpg = '/tmp/ppc-view-%d-%d.jpg' % (os.getpid(), int(time.time() * 1000))
+    try:
+        os.system('/usr/bin/sips -Z %d -s format jpeg -s formatOptions 70 %s --out %s >/dev/null 2>&1' % (width, sh_quote(path), jpg))
+        if not os.path.isfile(jpg) or os.path.getsize(jpg) == 0:
+            raise ToolError('this Mac could not read %s as a picture. Use list_directory or get_file_info to check it is an image '
+                            '(JPEG, PNG, GIF, TIFF, BMP, PDF, icns).' % path)
+        f = open(jpg, 'rb')
+        try:
+            data = f.read()
+        finally:
+            f.close()
+        if len(data) > 4000000:
+            raise ToolError('the picture is still too large after shrinking; try a smaller max_width')
+        return {
+            'text': 'Picture %s, shrunk to at most %d pixels wide (%d bytes, JPEG).' % (path, width, len(data)),
+            'image': base64.encodestring(data).replace('\n', ''),
+            'mime': 'image/jpeg',
+        }
+    finally:
+        try:
+            os.unlink(jpg)
+        except OSError:
+            pass
+
+
 # --- config and history tools ---
 
 def tool_get_config(args):
@@ -2358,6 +2401,23 @@ def tool_defs():
             'inputSchema': {
                 'type': 'object',
                 'properties': {'max_width': prop('number', 'Widest the picture may be, in pixels. Default 1024.')},
+                'additionalProperties': True,
+            },
+        },
+        {
+            'name': 'view_image',
+            'description': (
+                'Look at a picture file on this Mac (JPEG, PNG, GIF, TIFF, BMP, PDF first page, icns). '
+                'The image is returned for you to see. Use it whenever the person asks about a picture '
+                'or image file; read_file only returns text.'
+            ),
+            'inputSchema': {
+                'type': 'object',
+                'properties': {
+                    'path': prop('string', 'Path of the image file on this Mac'),
+                    'max_width': prop('number', 'Widest the picture may be, in pixels. Default 1280.'),
+                },
+                'required': ['path'],
                 'additionalProperties': True,
             },
         },
@@ -2684,6 +2744,7 @@ HANDLERS = {
     'list_processes': tool_list_processes,
     'kill_process': tool_kill_process,
     'take_screenshot': tool_take_screenshot,
+    'view_image': tool_view_image,
     'get_usage_stats': tool_get_usage_stats,
     'get_recent_tool_calls': tool_get_recent_tool_calls,
 }
@@ -2972,6 +3033,7 @@ def run_self_test():
         os.rmdir(work)
     expect('screenshot tool listed', 'take_screenshot' in [spec['name'] for spec in tool_defs()], failures, '')
     expect('screenshot handler', 'take_screenshot' in HANDLERS, failures, '')
+    expect('view_image listed', 'view_image' in [spec['name'] for spec in tool_defs()] and 'view_image' in HANDLERS, failures, '')
 
     names = []
     for spec in tool_defs():

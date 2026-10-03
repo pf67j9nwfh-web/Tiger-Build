@@ -926,7 +926,7 @@ class ToolSession(object):
 
     def _screenshot_note(self, provider, model, images):
         if images and supports_images(provider, model):
-            return {"role": "user", "content": "This is the screenshot that take_screenshot returned.", "images": images}
+            return {"role": "user", "content": "This is the image that your last tool call returned.", "images": images}
         return None
 
     # ---- usage and cost ----
@@ -969,7 +969,7 @@ class ToolSession(object):
             if self.extra.config['ppc_enabled'] and "commander" not in skip:
                 tools = list(self.definitions())
                 if not supports_images(provider, chosen):
-                    tools = [t for t in tools if t.get("name") != SCREENSHOT_TOOL]
+                    tools = [t for t in tools if t.get("name") not in (SCREENSHOT_TOOL, "view_image")]
             tools = tools + self.extra.definitions(provider, skip)
             if self.extra.config.get("consult_enabled") and "consult" not in skip:
                 consult = self._consult_definition()
@@ -1019,6 +1019,9 @@ class ToolSession(object):
             ) % (self.account(), self.home(), self.home())
             if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
+            if any(t.get("name") == "view_image" for t in tools):
+                system += (" To look at a picture file on that Mac (JPEG, PNG, GIF, TIFF, PDF and so on), call view_image "
+                           "with its path; read_file only returns text.")
             if self.options["root"]:
                 system += (
                     " This workspace is restricted to the directory %s. File tools and shell commands "
@@ -1333,7 +1336,7 @@ class ToolSession(object):
                 if shot:
                     log.append(shot)
                 elif shots:
-                    log.append({"role": "user", "content": "(A screenshot was taken, but this model cannot view images.)"})
+                    log.append({"role": "user", "content": "(A picture was returned, but this model cannot view images, so describe what you can from the file name, size and other tools.)"})
                 notes = yield from self._guidance_items()
                 for note in notes:
                     log.append({"role": "user", "content": "Note from the person while you work: " + note})
