@@ -49,6 +49,50 @@ static NSMutableArray *extraWindows = nil;
    retain each other. */
 static NSMutableArray *allControllers = nil;
 
+/* The message box's text editor. Pasting a picture (a screenshot copied to the clipboard) or files
+   copied in the Finder attaches them to the chat instead of pasting nothing, or their names. */
+@interface TBFieldEditor : NSTextView {
+    id owner;
+}
+- (void)setOwner:(id)controller;
+@end
+
+@implementation TBFieldEditor
+
+- (void)setOwner:(id)controller
+{
+    owner = controller;
+}
+
+- (void)paste:(id)sender
+{
+    NSPasteboard *board = [NSPasteboard generalPasteboard];
+    NSArray *types = [board types];
+    if ([types containsObject:NSFilenamesPboardType]) {
+        NSArray *files = [board propertyListForType:NSFilenamesPboardType];
+        if ([files isKindOfClass:[NSArray class]] && [files count] > 0) {
+            [owner performSelector:@selector(attachPaths:) withObject:files];
+            return;
+        }
+    }
+    if (![types containsObject:NSStringPboardType] && [types containsObject:NSTIFFPboardType]) {
+        NSData *data = [board dataForType:NSTIFFPboardType];
+        if ([data length] > 0) {
+            static unsigned counter = 0;
+            NSString *path;
+            counter++;
+            path = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"Pasted Picture %u.tiff", counter]];
+            if ([data writeToFile:path atomically:YES]) {
+                [owner performSelector:@selector(attachPaths:) withObject:[NSArray arrayWithObject:path]];
+                return;
+            }
+        }
+    }
+    [super paste:sender];
+}
+
+@end
+
 static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void *info)
 {
     [(ChatController *)info handleStream:stream event:type];
@@ -152,6 +196,8 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [retryButton release];
     [attachButton release];
     [attachQueue release];
+    [fieldEditor release];
+    [finder release];
     [attachProblems release];
     [relayVersion release];
     [thinkingField release];
@@ -290,14 +336,23 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
         workspaceSettings = [[store settings] retain];
     }
     {
-        /* A conversion that was still running when the app quit leaves a note; drop it. */
+        /* A conversion that was still running when the app quit leaves a note; drop it. A reply that was
+           still arriving (saved along the way) is closed: its text is kept, an empty one is dropped. */
         unsigned c;
+        BOOL idle = ![self anyWindowBusy];
         for (c = 0; c < [chats count]; c++) {
             NSMutableArray *list = [[chats objectAtIndex:c] objectForKey:@"messages"];
             int m;
             for (m = (int)[list count] - 1; m >= 0; m--) {
-                if ([[list objectAtIndex:m] objectForKey:@"converting"])
+                NSMutableDictionary *message = [list objectAtIndex:m];
+                if ([message objectForKey:@"converting"]) {
                     [list removeObjectAtIndex:m];
+                } else if (idle && [[message objectForKey:@"open"] boolValue]) {
+                    if ([[message objectForKey:@"text"] length] == 0 && ![message objectForKey:@"image"] && ![message objectForKey:@"video"])
+                        [list removeObjectAtIndex:m];
+                    else
+                        [message setObject:[NSNumber numberWithBool:NO] forKey:@"open"];
+                }
             }
         }
     }
@@ -910,7 +965,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             unsigned mask = NSCommandKeyMask | (shifted ? NSShiftKeyMask : 0);
             if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
                 || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:)
-                || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:))
+                || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:)
+                || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
+                || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
                 mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
             [item setKeyEquivalentModifierMask:mask];
@@ -1040,6 +1097,12 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Attach File..." action:@selector(attachFile:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Attach PDF Pages..." action:@selector(attachPDFPages:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Export This Chat..." action:@selector(exportChat:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Import Chat..." action:@selector(importChat:) keyEquivalent:@""] autorelease];
@@ -1072,6 +1135,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             actions[2] = @selector(copyAnswer:); actions[3] = @selector(expandActivities:);
             actions[4] = @selector(collapseActivities:);
             for (i = 0; i < 5; i++) {
+                item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
+                [item setTarget:self]; [menu addItem:item];
+            }
+            [menu addItem:[NSMenuItem separatorItem]];
+            titles = [NSArray arrayWithObjects:@"Bigger Text", @"Smaller Text", @"Normal Text Size", nil];
+            actions[0] = @selector(biggerText:); actions[1] = @selector(smallerText:); actions[2] = @selector(normalTextSize:);
+            for (i = 0; i < 3; i++) {
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
                 [item setTarget:self]; [menu addItem:item];
             }
@@ -1149,7 +1219,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"A",@"attachFile:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"f",@"showFind:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
@@ -1630,6 +1700,20 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 }
 
 /* Files dropped on the Dock icon, or opened with Tiger Build, go into the current chat. */
+/* The window asks for a text editor for the message box; this one understands pasted pictures and files. */
+- (id)windowWillReturnFieldEditor:(NSWindow *)sender toObject:(id)client
+{
+    (void)sender;
+    if (client != input)
+        return nil;
+    if (!fieldEditor) {
+        fieldEditor = [[TBFieldEditor alloc] initWithFrame:NSMakeRect(0, 0, 100, 20)];
+        [fieldEditor setFieldEditor:YES];
+        [(TBFieldEditor *)fieldEditor setOwner:self];
+    }
+    return fieldEditor;
+}
+
 - (void)application:(NSApplication *)app openFiles:(NSArray *)filenames
 {
     (void)app;
@@ -1982,7 +2066,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return !busy && (editBackup || [self lastUserIndex] >= 0);
     if ([item action] == @selector(retryLast:))
         return !busy && [self lastUserIndex] >= 0;
-    if ([item action] == @selector(compactNow:) || [item action] == @selector(attachFile:)
+    if ([item action] == @selector(compactNow:) || [item action] == @selector(attachFile:) || [item action] == @selector(attachPDFPages:)
         || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:))
         return !busy;
     if ([[[item menu] title] isEqualToString:@"Workspace"]) return !busy && !naming;
@@ -3099,8 +3183,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self guidanceDelivered:text chat:chat];
     else if (kind == 'c')
         [self addStatus:text toChat:chat];
-    else if (kind == 't')
+    else if (kind == 't') {
         [self appendDelta:text toChat:chat];
+        /* A long reply is saved now and then as it arrives, so quitting or a crash does not lose it. */
+        if (lastFrame - lastPartialSave > 8) {
+            lastPartialSave = lastFrame;
+            [self saveStore];
+        }
+    }
     else if (kind == 'm')
         [self attachMedia:text toChat:chat];
     else if (kind == 's' || kind == 'e')

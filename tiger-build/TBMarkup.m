@@ -56,7 +56,178 @@ static NSString *tagFromInfo(NSString *info)
     return [tag lowercaseString];
 }
 
+/* ---- tables ---- */
+
+static NSArray *tableCells(NSString *line)
+{
+    NSMutableArray *cells = [NSMutableArray array];
+    NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSArray *parts;
+    unsigned i;
+    if ([trimmed hasPrefix:@"|"])
+        trimmed = [trimmed substringFromIndex:1];
+    if ([trimmed hasSuffix:@"|"])
+        trimmed = [trimmed substringToIndex:[trimmed length] - 1];
+    parts = [trimmed componentsSeparatedByString:@"|"];
+    for (i = 0; i < [parts count]; i++)
+        [cells addObject:[[parts objectAtIndex:i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
+    return cells;
+}
+
+static BOOL isTableSeparator(NSString *line)
+{
+    NSArray *cells = tableCells(line);
+    unsigned i;
+    BOOL dashes = NO;
+    if ([cells count] < 2)
+        return NO;
+    for (i = 0; i < [cells count]; i++) {
+        NSString *cell = [cells objectAtIndex:i];
+        unsigned j;
+        if ([cell length] == 0)
+            return NO;
+        for (j = 0; j < [cell length]; j++) {
+            unichar c = [cell characterAtIndex:j];
+            if (c == '-')
+                dashes = YES;
+            else if (c != ':' && c != ' ')
+                return NO;
+        }
+    }
+    return dashes;
+}
+
+/* Prose cut into text and tables. A table is a line of | cells | followed by a | --- | line; it is
+   laid out in aligned columns so it reads in a fixed-width panel. Each table block has the aligned
+   text as "text" and tab separated rows as "copy". */
+static NSArray *splitTables(NSString *prose)
+{
+    NSArray *lines = [prose componentsSeparatedByString:@"\n"];
+    NSMutableArray *out = [NSMutableArray array];
+    unsigned start = 0;
+    unsigned i = 0;
+    while (i < [lines count]) {
+        NSString *line = [lines objectAtIndex:i];
+        NSString *trim = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if ([trim hasPrefix:@"|"] && i + 1 < [lines count] && isTableSeparator([lines objectAtIndex:i + 1])) {
+            NSMutableArray *rows = [NSMutableArray array];
+            NSMutableArray *widths = [NSMutableArray array];
+            NSMutableString *aligned = [NSMutableString string];
+            NSMutableString *copy = [NSMutableString string];
+            unsigned j = i;
+            unsigned r;
+            unsigned c;
+            while (j < [lines count] && [[[lines objectAtIndex:j] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] hasPrefix:@"|"]) {
+                if (j != i + 1)
+                    [rows addObject:tableCells([lines objectAtIndex:j])];
+                j++;
+            }
+            for (r = 0; r < [rows count]; r++) {
+                NSArray *cells = [rows objectAtIndex:r];
+                for (c = 0; c < [cells count]; c++) {
+                    unsigned w = [[cells objectAtIndex:c] length];
+                    if (w > 48)
+                        w = 48;
+                    if (c >= [widths count])
+                        [widths addObject:[NSNumber numberWithUnsignedInt:w]];
+                    else if (w > [[widths objectAtIndex:c] unsignedIntValue])
+                        [widths replaceObjectAtIndex:c withObject:[NSNumber numberWithUnsignedInt:w]];
+                }
+            }
+            for (r = 0; r < [rows count]; r++) {
+                NSArray *cells = [rows objectAtIndex:r];
+                NSMutableString *row = [NSMutableString string];
+                for (c = 0; c < [widths count]; c++) {
+                    NSString *cell = c < [cells count] ? [cells objectAtIndex:c] : @"";
+                    unsigned w = [[widths objectAtIndex:c] unsignedIntValue];
+                    if ([cell length] > w)
+                        cell = [[cell substringToIndex:w - 1] stringByAppendingFormat:@"%C", (unichar)0x2026];
+                    if (c > 0)
+                        [row appendString:@" | "];
+                    [row appendString:[cell stringByPaddingToLength:w withString:@" " startingAtIndex:0]];
+                    if (c > 0)
+                        [copy appendString:@"\t"];
+                    [copy appendString:c < [cells count] ? [cells objectAtIndex:c] : @""];
+                }
+                [copy appendString:@"\n"];
+                [aligned appendString:[row stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
+                [aligned appendString:@"\n"];
+                if (r == 0) {
+                    NSMutableString *rule = [NSMutableString string];
+                    for (c = 0; c < [widths count]; c++) {
+                        if (c > 0)
+                            [rule appendString:@"-+-"];
+                        [rule appendString:[@"" stringByPaddingToLength:[[widths objectAtIndex:c] unsignedIntValue] withString:@"-" startingAtIndex:0]];
+                    }
+                    [aligned appendString:rule];
+                    [aligned appendString:@"\n"];
+                }
+            }
+            if (i > start) {
+                NSMutableDictionary *before = [NSMutableDictionary dictionary];
+                NSMutableString *joined = [NSMutableString string];
+                unsigned k;
+                for (k = start; k < i; k++) {
+                    if (k > start)
+                        [joined appendString:@"\n"];
+                    [joined appendString:[lines objectAtIndex:k]];
+                }
+                [before setObject:[NSNumber numberWithBool:NO] forKey:@"code"];
+                [before setObject:joined forKey:@"text"];
+                [out addObject:before];
+            }
+            {
+                NSMutableDictionary *table = [NSMutableDictionary dictionary];
+                [table setObject:[NSNumber numberWithBool:YES] forKey:@"code"];
+                [table setObject:[aligned stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]] forKey:@"text"];
+                [table setObject:[copy stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]] forKey:@"copy"];
+                [table setObject:@"table" forKey:@"lang"];
+                [table setObject:[NSNumber numberWithBool:YES] forKey:@"closed"];
+                [out addObject:table];
+            }
+            i = j;
+            start = j;
+            continue;
+        }
+        i++;
+    }
+    if (start == 0 && [out count] == 0)
+        return nil;
+    if (start < [lines count]) {
+        NSMutableDictionary *after = [NSMutableDictionary dictionary];
+        NSMutableString *joined = [NSMutableString string];
+        unsigned k;
+        for (k = start; k < [lines count]; k++) {
+            if (k > start)
+                [joined appendString:@"\n"];
+            [joined appendString:[lines objectAtIndex:k]];
+        }
+        [after setObject:[NSNumber numberWithBool:NO] forKey:@"code"];
+        [after setObject:joined forKey:@"text"];
+        [out addObject:after];
+    }
+    return out;
+}
+
+static NSArray *splitBlocksRaw(NSString *text);
+
 NSArray *TBSplitBlocks(NSString *text)
+{
+    NSArray *raw = splitBlocksRaw(text);
+    NSMutableArray *out = [NSMutableArray array];
+    unsigned i;
+    for (i = 0; i < [raw count]; i++) {
+        NSDictionary *block = [raw objectAtIndex:i];
+        NSArray *pieces = [[block objectForKey:@"code"] boolValue] ? nil : splitTables([block objectForKey:@"text"]);
+        if (pieces)
+            [out addObjectsFromArray:pieces];
+        else
+            [out addObject:block];
+    }
+    return out;
+}
+
+static NSArray *splitBlocksRaw(NSString *text)
 {
     NSMutableArray *out = [NSMutableArray array];
     NSArray *lines;
@@ -368,6 +539,8 @@ static const Language *sniffLanguage(NSString *code)
 NSString *TBLanguageTitle(NSString *tag, NSString *code)
 {
     const Language *language = findLanguage(tag);
+    if ([tag isEqualToString:@"table"])
+        return @"Table";
     if (language)
         return [NSString stringWithUTF8String:language->title];
     if (tag && [tag length] > 0) {
@@ -389,7 +562,7 @@ NSString *TBLanguageExtension(NSString *title)
             @"py", @"Python", @"js", @"JavaScript", @"ts", @"TypeScript", @"c", @"C", @"cpp", @"C++", @"m", @"Objective-C",
             @"java", @"Java", @"kt", @"Kotlin", @"swift", @"Swift", @"go", @"Go", @"rs", @"Rust", @"rb", @"Ruby", @"php", @"PHP",
             @"sh", @"Shell", @"sql", @"SQL", @"json", @"JSON", @"yml", @"YAML", @"toml", @"TOML", @"html", @"HTML", @"xml", @"XML",
-            @"css", @"CSS", @"lua", @"Lua", @"pl", @"Perl", @"r", @"R", @"diff", @"Diff", @"md", @"Markdown", @"txt", @"Text", nil];
+            @"css", @"CSS", @"lua", @"Lua", @"pl", @"Perl", @"r", @"R", @"diff", @"Diff", @"md", @"Markdown", @"txt", @"Text", @"tsv", @"Table", nil];
     ext = [table objectForKey:title];
     if (!ext && [title isEqualToString:@"Makefile"])
         return @"mk";
@@ -586,6 +759,8 @@ static void highlightDiff(const unichar *buf, unsigned n, unsigned char *kinds)
 NSData *TBHighlight(NSString *code, NSString *tag)
 {
     unsigned n = [code length];
+    if ([tag isEqualToString:@"table"])
+        return [NSMutableData dataWithLength:n];
     NSMutableData *result = [NSMutableData dataWithLength:n];
     unsigned char *kinds = (unsigned char *)[result mutableBytes];
     unichar *buf;

@@ -81,6 +81,7 @@
 /* ChatController+Run.m */
 @interface ChatController (Attachments)
 - (IBAction)attachFile:(id)sender;
+- (IBAction)attachPDFPages:(id)sender;
 - (void)attachPaths:(NSArray *)paths;
 - (NSArray *)attachmentsForPath:(NSString *)path problem:(NSString **)problem;
 - (void)sweepStoredFiles;
@@ -90,6 +91,16 @@
 @interface ChatController (ChatFile)
 - (IBAction)exportChat:(id)sender;
 - (IBAction)importChat:(id)sender;
+@end
+
+@interface ChatController (Extras)
+- (NSArray *)findResultsFor:(NSString *)query;
+- (void)openFindResult:(NSDictionary *)hit;
+- (IBAction)showFind:(id)sender;
+- (IBAction)editInstructions:(id)sender;
+- (IBAction)biggerText:(id)sender;
+- (IBAction)smallerText:(id)sender;
+- (IBAction)normalTextSize:(id)sender;
 @end
 
 @interface ChatController (EditAnywhere)

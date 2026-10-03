@@ -135,6 +135,8 @@ static NSString *newRunId(void)
     [out appendString:@"}"];
     if ([[workspaceSettings objectForKey:@"limitRoot"] boolValue] && [root length] > 0)
         [out appendFormat:@",\"root\":\"%@\"", TBJSONEscape(root)];
+    if ([[chat objectForKey:@"instructions"] length] > 0)
+        [out appendFormat:@",\"instructions\":\"%@\"", TBJSONEscape([chat objectForKey:@"instructions"])];
     return out;
 }
 

@@ -39,6 +39,104 @@
 - (NSMutableDictionary *)messageForAttachment:(NSMutableDictionary *)attachment;
 @end
 
+/* A small question box: one line of text, OK and Cancel. */
+@interface TBPagePrompt : NSObject {
+    NSPanel *panel;
+    NSTextField *field;
+}
++ (NSString *)ask:(NSString *)message title:(NSString *)title;
+- (void)accept:(id)sender;
+- (void)cancel:(id)sender;
+@end
+
+@implementation TBPagePrompt
+
++ (NSString *)ask:(NSString *)message title:(NSString *)title
+{
+    TBPagePrompt *prompt = [[[TBPagePrompt alloc] init] autorelease];
+    NSTextField *label;
+    NSButton *ok;
+    NSButton *cancel;
+    int result;
+    NSString *answer = nil;
+    prompt->panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 380, 150)
+        styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
+    [prompt->panel setTitle:title];
+    label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 78, 340, 56)] autorelease];
+    [label setStringValue:message];
+    [label setBezeled:NO];
+    [label setDrawsBackground:NO];
+    [label setEditable:NO];
+    [label setSelectable:NO];
+    prompt->field = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 50, 340, 22)] autorelease];
+    ok = [[[NSButton alloc] initWithFrame:NSMakeRect(280, 12, 80, 28)] autorelease];
+    [ok setTitle:@"OK"];
+    [ok setBezelStyle:NSRoundedBezelStyle];
+    [ok setKeyEquivalent:@"\r"];
+    [ok setTarget:prompt];
+    [ok setAction:@selector(accept:)];
+    cancel = [[[NSButton alloc] initWithFrame:NSMakeRect(190, 12, 80, 28)] autorelease];
+    [cancel setTitle:@"Cancel"];
+    [cancel setBezelStyle:NSRoundedBezelStyle];
+    [cancel setKeyEquivalent:@"\033"];
+    [cancel setTarget:prompt];
+    [cancel setAction:@selector(cancel:)];
+    [[prompt->panel contentView] addSubview:label];
+    [[prompt->panel contentView] addSubview:prompt->field];
+    [[prompt->panel contentView] addSubview:ok];
+    [[prompt->panel contentView] addSubview:cancel];
+    [prompt->panel center];
+    [prompt->panel makeFirstResponder:prompt->field];
+    result = [NSApp runModalForWindow:prompt->panel];
+    if (result == 1)
+        answer = [[[prompt->field stringValue] copy] autorelease];
+    [prompt->panel orderOut:nil];
+    [prompt->panel release];
+    prompt->panel = nil;
+    return answer;
+}
+
+- (void)accept:(id)sender
+{
+    (void)sender;
+    [NSApp stopModalWithCode:1];
+}
+
+- (void)cancel:(id)sender
+{
+    (void)sender;
+    [NSApp stopModalWithCode:0];
+}
+
+@end
+
+/* "1-3, 7" as page numbers, each once, in order, none past the last page. */
+static NSArray *pagesFromSpec(NSString *spec, unsigned total)
+{
+    NSMutableArray *found = [NSMutableArray array];
+    NSArray *parts = [[spec stringByReplacingCharactersInRange:NSMakeRange(0, 0) withString:@""] componentsSeparatedByString:@","];
+    unsigned i;
+    for (i = 0; i < [parts count]; i++) {
+        NSString *part = [[parts objectAtIndex:i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSArray *range = [part componentsSeparatedByString:@"-"];
+        int from = [part intValue];
+        int to = from;
+        int p;
+        if ([range count] == 2) {
+            from = [[range objectAtIndex:0] intValue];
+            to = [[range objectAtIndex:1] intValue];
+        }
+        if (from < 1 || to < from)
+            continue;
+        for (p = from; p <= to && p <= (int)total; p++) {
+            NSNumber *number = [NSNumber numberWithInt:p];
+            if (![found containsObject:number])
+                [found addObject:number];
+        }
+    }
+    return found;
+}
+
 @implementation ChatController (Attachments)
 
 - (NSString *)attachmentsDir
@@ -585,6 +683,55 @@ static unsigned pdfPageCount(NSString *path)
         }
     }
     return made;
+}
+
+/* Chat > Attach PDF Pages: some pages of a PDF as pictures, for drawings and layouts the text does not describe. */
+- (IBAction)attachPDFPages:(id)sender
+{
+    NSOpenPanel *panel;
+    NSString *path;
+    unsigned pages;
+    NSString *answer;
+    NSArray *wanted;
+    unsigned i;
+    (void)sender;
+    if (!current || busy)
+        return;
+    panel = [NSOpenPanel openPanel];
+    [panel setAllowsMultipleSelection:NO];
+    [panel setCanChooseDirectories:NO];
+    [panel setMessage:@"Choose a PDF. You will then pick which pages to add as pictures."];
+    if ([panel runModalForDirectory:nil file:nil types:[NSArray arrayWithObject:@"pdf"]] != NSOKButton)
+        return;
+    path = [panel filename];
+    pages = pdfPageCount(path);
+    if (pages == 0) {
+        NSRunAlertPanel(@"Could not attach", @"%@ could not be read as a PDF.", @"OK", nil, nil, [path lastPathComponent]);
+        return;
+    }
+    answer = [TBPagePrompt ask:[NSString stringWithFormat:@"Which pages of %@ (%u pages) should be added as pictures? For example 1-3, 7. Up to 12 at a time.",
+        [path lastPathComponent], pages] title:@"Attach PDF Pages"];
+    if (!answer)
+        return;
+    wanted = pagesFromSpec(answer, pages);
+    if ([wanted count] == 0) {
+        NSRunAlertPanel(@"Attach PDF Pages", @"No page numbers between 1 and %u were given.", @"OK", nil, nil, pages);
+        return;
+    }
+    if (busy || ![self confirmCloudAttach])
+        return;
+    if (!attachQueue)
+        attachQueue = [[NSMutableArray alloc] init];
+    if (!attachProblems)
+        attachProblems = [[NSMutableArray alloc] init];
+    for (i = 0; i < [wanted count] && i < 12; i++)
+        [attachQueue addObject:[NSDictionary dictionaryWithObjectsAndKeys:path, @"path", current, @"chat", @"pdfpage", @"kind",
+            [wanted objectAtIndex:i], @"page", [NSNumber numberWithUnsignedInt:pages], @"pages", nil]];
+    [self forgetEdit];
+    if (!attachWorking) {
+        attachWorking = YES;
+        [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.0];
+    }
 }
 
 - (IBAction)attachFile:(id)sender

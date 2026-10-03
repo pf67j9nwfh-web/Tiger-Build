@@ -121,6 +121,8 @@
         if([self model:model allowedForProvider:provider])[chat setObject:model forKey:@"model"];
         else [chat setObject:[self defaultModelForProvider:provider] forKey:@"model"];
     }
+    if([[workspaceSettings objectForKey:@"instructions"] length])
+        [chat setObject:[workspaceSettings objectForKey:@"instructions"] forKey:@"instructions"];
     /* The same tool switches as the chat before it. */
     if([last isKindOfClass:[NSDictionary class]]) {
         if([[last objectForKey:@"servers"] isKindOfClass:[NSDictionary class]]) {

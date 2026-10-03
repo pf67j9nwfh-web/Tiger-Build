@@ -251,6 +251,16 @@ int main(void)
             && [TBLanguageExtension(@"C++") isEqualToString:@"cpp"], @"file extension for a language");
         tbcheck([TBHumanSize(500) isEqualToString:@"500 bytes"] && [TBHumanSize(2048) isEqualToString:@"2 KB"], @"file sizes");
     }
+    {
+        NSArray *blocks = TBSplitBlocks(@"Before\n| Name | Qty |\n|---|--:|\n| Bolt | 4 |\n| Long nut | 12 |\nAfter");
+        NSDictionary *table = [blocks count] == 3 ? [blocks objectAtIndex:1] : nil;
+        tbcheck(table && [[table objectForKey:@"lang"] isEqualToString:@"table"], @"a pipe table becomes a table block");
+        tbcheck([[table objectForKey:@"text"] isEqualToString:@"Name     | Qty\n---------+----\nBolt     | 4\nLong nut | 12"], @"table columns are aligned");
+        tbcheck([[table objectForKey:@"copy"] isEqualToString:@"Name\tQty\nBolt\t4\nLong nut\t12"], @"table copies as tab separated rows");
+        tbcheck([[[blocks objectAtIndex:0] objectForKey:@"text"] isEqualToString:@"Before"] && [[[blocks objectAtIndex:2] objectForKey:@"text"] isEqualToString:@"After"], @"text around a table kept");
+        tbcheck([TBSplitBlocks(@"a | b without a separator row\nnext") count] == 1, @"pipes alone are not a table");
+        tbcheck([TBLanguageTitle(@"table", @"") isEqualToString:@"Table"] && [TBLanguageExtension(@"Table") isEqualToString:@"tsv"], @"table title and extension");
+    }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 
     tbcheck(TBEstimateTokens(chat, NO) == 406, @"token estimate");

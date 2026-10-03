@@ -339,6 +339,28 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 
 @implementation TranscriptView
 
+static float transcriptScale = 0;
+
++ (float)textScale
+{
+    if (transcriptScale <= 0) {
+        float saved = [[NSUserDefaults standardUserDefaults] floatForKey:@"TBTextScale"];
+        transcriptScale = (saved >= 0.8f && saved <= 1.8f) ? saved : 1.0f;
+    }
+    return transcriptScale;
+}
+
++ (void)setTextScale:(float)scale
+{
+    if (scale < 0.8f)
+        scale = 0.8f;
+    if (scale > 1.8f)
+        scale = 1.8f;
+    transcriptScale = scale;
+    [[NSUserDefaults standardUserDefaults] setFloat:scale forKey:@"TBTextScale"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"TBTextScaleChanged" object:nil];
+}
+
 /* The backdrop of iOS 6 Messages and iChat: a light blue-gray with very fine
    vertical lines. A tiled picture, so painting it costs one fill. */
 + (NSColor *)backgroundColor
@@ -359,9 +381,47 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     return color;
 }
 
-- (id)initWithFrame:(NSRect)frame
+/* The fonts messages are drawn in, at the chosen text size. */
+- (void)rebuildFonts
 {
     NSMutableParagraphStyle *style;
+    float scale = [TranscriptView textScale];
+    [bodyAttrs release];
+    [userAttrs release];
+    [statusAttrs release];
+    style = [[NSMutableParagraphStyle alloc] init];
+    [style setLineBreakMode:NSLineBreakByWordWrapping];
+    bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
+        [NSFont systemFontOfSize:14 * scale], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.08 alpha:1], NSForegroundColorAttributeName,
+        style, NSParagraphStyleAttributeName,
+        nil];
+    userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
+        [NSFont systemFontOfSize:14 * scale], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
+        style, NSParagraphStyleAttributeName,
+        nil];
+    statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
+        [NSFont systemFontOfSize:11 * scale], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName,
+        style, NSParagraphStyleAttributeName,
+        nil];
+    [style release];
+}
+
+- (void)textScaleChanged:(NSNotification *)note
+{
+    (void)note;
+    [self rebuildFonts];
+    [sizeCache removeAllObjects];
+    [richCache removeAllObjects];
+    forceTextReset = YES;
+    [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
+    forceTextReset = NO;
+}
+
+- (id)initWithFrame:(NSRect)frame
+{
     self = [super initWithFrame:frame];
     if (!self)
         return nil;
@@ -374,29 +434,14 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     richCache = [[NSMutableDictionary alloc] init];
     textViews = [[NSMutableArray alloc] init];
     [self registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
-    style = [[NSMutableParagraphStyle alloc] init];
-    [style setLineBreakMode:NSLineBreakByWordWrapping];
-    bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:14], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.08 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
-    userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:14], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
-    statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:11], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
-    [style release];
+    [self rebuildFonts];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(textScaleChanged:) name:@"TBTextScaleChanged" object:nil];
     return self;
 }
 
 - (void)dealloc
 {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [messages release];
     [boxes release];
     [movieViews release];
@@ -570,9 +615,10 @@ static NSColor *codeColor(int kind)
 
 static NSFont *codeFont(void)
 {
-    NSFont *font = [NSFont fontWithName:@"Monaco" size:11];
+    float size = 11 * [TranscriptView textScale];
+    NSFont *font = [NSFont fontWithName:@"Monaco" size:size];
     if (!font)
-        font = [NSFont userFixedPitchFontOfSize:11];
+        font = [NSFont userFixedPitchFontOfSize:size];
     return font;
 }
 
@@ -619,7 +665,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             level++;
         if (level >= 1 && level <= 6 && level < [trimmed length] && [trimmed characterAtIndex:level] == ' ') {
             work = [[trimmed substringFromIndex:level + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            [attrs setObject:[NSFont boldSystemFontOfSize:(level == 1 ? 17 : (level == 2 ? 16 : 14.5))] forKey:NSFontAttributeName];
+            [attrs setObject:[NSFont boldSystemFontOfSize:(level == 1 ? 17 : (level == 2 ? 16 : 14.5)) * [TranscriptView textScale]] forKey:NSFontAttributeName];
             baseFont = [attrs objectForKey:NSFontAttributeName];
             marked = YES;
         }
@@ -649,6 +695,68 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 if (![mono objectForKey:NSFontAttributeName])
                     [mono setObject:[NSFont userFixedPitchFontOfSize:[baseFont pointSize] - 2] forKey:NSFontAttributeName];
                 [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(i + 1, j - i - 1)] attributes:mono] autorelease]];
+                i = j + 1;
+                start = i;
+                marked = YES;
+                continue;
+            }
+        } else if (c == '[' || (c == 'h' && (i + 7 < n) && ([work compare:@"http://" options:0 range:NSMakeRange(i, 7)] == NSOrderedSame
+            || (i + 8 < n && [work compare:@"https://" options:0 range:NSMakeRange(i, 8)] == NSOrderedSame)))) {
+            /* [words](address), or an address on its own */
+            NSString *shown = nil;
+            NSString *address = nil;
+            unsigned after = i;
+            if (c == '[') {
+                unsigned close = i + 1;
+                while (close < n && [work characterAtIndex:close] != ']')
+                    close++;
+                if (close + 1 < n && [work characterAtIndex:close + 1] == '(') {
+                    unsigned end = close + 2;
+                    while (end < n && [work characterAtIndex:end] != ')' && [work characterAtIndex:end] != ' ')
+                        end++;
+                    if (end < n && [work characterAtIndex:end] == ')' && close > i + 1) {
+                        shown = [work substringWithRange:NSMakeRange(i + 1, close - i - 1)];
+                        address = [work substringWithRange:NSMakeRange(close + 2, end - close - 2)];
+                        after = end + 1;
+                    }
+                }
+            } else {
+                unsigned end = i;
+                while (end < n && [work characterAtIndex:end] != ' ' && [work characterAtIndex:end] != ')' && [work characterAtIndex:end] != '>'
+                    && [work characterAtIndex:end] != '"')
+                    end++;
+                while (end > i + 8 && ([work characterAtIndex:end - 1] == '.' || [work characterAtIndex:end - 1] == ',' || [work characterAtIndex:end - 1] == ';'
+                    || [work characterAtIndex:end - 1] == ':' || [work characterAtIndex:end - 1] == '!' || [work characterAtIndex:end - 1] == '?'))
+                    end--;
+                shown = address = [work substringWithRange:NSMakeRange(i, end - i)];
+                after = end;
+            }
+            if (address && ([address hasPrefix:@"http://"] || [address hasPrefix:@"https://"] || [address hasPrefix:@"mailto:"]) && [NSURL URLWithString:address]) {
+                NSMutableDictionary *link = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                if (i > start)
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(start, i - start)] attributes:attrs] autorelease]];
+                [link setObject:[NSURL URLWithString:address] forKey:NSLinkAttributeName];
+                [link setObject:[NSColor colorWithCalibratedRed:0.05 green:0.2 blue:0.75 alpha:1] forKey:NSForegroundColorAttributeName];
+                [link setObject:[NSNumber numberWithInt:NSSingleUnderlineStyle] forKey:NSUnderlineStyleAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:shown attributes:link] autorelease]];
+                i = after;
+                start = i;
+                marked = YES;
+                continue;
+            }
+        } else if (c == '*' && i + 1 < n && [work characterAtIndex:i + 1] != '*' && [work characterAtIndex:i + 1] != ' '
+            && (i == 0 || [work characterAtIndex:i - 1] == ' ' || [work characterAtIndex:i - 1] == '(')) {
+            /* *italic* */
+            unsigned j = i + 1;
+            while (j < n && !([work characterAtIndex:j] == '*' && [work characterAtIndex:j - 1] != ' '))
+                j++;
+            if (j < n && j > i + 1 && (j + 1 >= n || [work characterAtIndex:j + 1] != '*')) {
+                NSMutableDictionary *slanted = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                if (i > start)
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(start, i - start)] attributes:attrs] autorelease]];
+                /* The system font has no italic, so the letters are slanted. */
+                [slanted setObject:[NSNumber numberWithFloat:0.22f] forKey:NSObliquenessAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(i + 1, j - i - 1)] attributes:slanted] autorelease]];
                 i = j + 1;
                 start = i;
                 marked = YES;
@@ -688,6 +796,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     unsigned b;
     BOOL previousProse = NO;
     if ([text rangeOfString:@"`"].location == NSNotFound && [text rangeOfString:@"**"].location == NSNotFound
+        && [text rangeOfString:@"]("].location == NSNotFound && [text rangeOfString:@"http"].location == NSNotFound
+        && [text rangeOfString:@" *"].location == NSNotFound && [text rangeOfString:@"|"].location == NSNotFound
         && [text rangeOfString:@"\n#"].location == NSNotFound && ![text hasPrefix:@"#"]
         && [text rangeOfString:@"\n- "].location == NSNotFound && [text rangeOfString:@"\n* "].location == NSNotFound
         && ![text hasPrefix:@"- "] && ![text hasPrefix:@"* "])
@@ -701,6 +811,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         if ([[block objectForKey:@"code"] boolValue]) {
             NSString *tag = [block objectForKey:@"lang"];
             NSString *title = TBLanguageTitle(tag, content);
+            NSString *copyText = [block objectForKey:@"copy"] ? [block objectForKey:@"copy"] : content;
             NSString *shown = [[content componentsSeparatedByString:@"\t"] componentsJoinedByString:@"    "];
             NSData *kinds = TBHighlight(shown, tag);
             const unsigned char *k = (const unsigned char *)[kinds bytes];
@@ -716,7 +827,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             headerLoc = [out length];
             [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%C", (unichar)0xA0]
                 attributes:[NSDictionary dictionaryWithObjectsAndKeys:codeFont(), NSFontAttributeName,
-                    fixedLineStyle(26, 12, -12, NSLineBreakByClipping), NSParagraphStyleAttributeName, nil]] autorelease]];
+                    fixedLineStyle(26 * [TranscriptView textScale], 12, -12, NSLineBreakByClipping), NSParagraphStyleAttributeName, nil]] autorelease]];
             [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:attrs] autorelease]];
             while (run < n) {
                 unsigned e = run + 1;
@@ -739,7 +850,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             if (b + 1 < [blocks count])
                 appendBlankLine(out, 10, 0, 0);
             [codes addObject:[NSDictionary dictionaryWithObjectsAndKeys:
-                title, @"title", content, @"code",
+                title, @"title", copyText, @"code",
                 [NSNumber numberWithUnsignedInt:headerLoc], @"header",
                 [NSNumber numberWithUnsignedInt:footerLoc], @"footer", nil]];
             previousProse = NO;
@@ -845,6 +956,20 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     [self performSelector:@selector(forgetCopied) withObject:nil afterDelay:1.6];
 }
 
+/* Bring a message into view (used by Find in Chats). */
+- (void)scrollToMessage:(id)message
+{
+    unsigned i;
+    for (i = 0; i < [boxes count]; i++) {
+        NSDictionary *box = [boxes objectAtIndex:i];
+        if ([box objectForKey:@"message"] == message) {
+            NSRect rect = [[box objectForKey:@"rect"] rectValue];
+            [self scrollRectToVisible:NSInsetRect(rect, 0, -30)];
+            return;
+        }
+    }
+}
+
 - (void)setDropTarget:(id)target
 {
     dropTarget = target;
@@ -925,7 +1050,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             if([[message objectForKey:@"expanded"] boolValue]&&[[message objectForKey:@"detail"] length])
                 text=[text stringByAppendingFormat:@"\n%@",[message objectForKey:@"detail"]];
             NSMutableDictionary *mono=[NSMutableDictionary dictionaryWithDictionary:statusAttrs];
-            [mono setObject:[NSFont fontWithName:@"Monaco" size:11] forKey:NSFontAttributeName];
+            [mono setObject:[NSFont fontWithName:@"Monaco" size:11 * [TranscriptView textScale]] forKey:NSFontAttributeName];
             attrs=mono;
         }
         rich = nil;
@@ -1149,13 +1274,13 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         if (fabsf([[view textContainer] containerSize].width - NSWidth(textRect)) > 0.5f)
             [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
         if ([box objectForKey:@"rich"]) {
-            if (![[view string] isEqualToString:text])
+            if (forceTextReset || ![[view string] isEqualToString:text])
                 [[view textStorage] setAttributedString:[[box objectForKey:@"rich"] objectForKey:@"attr"]];
             [(TBSelectText *)view setCopies:[box objectForKey:@"copies"]];
             continue;
         }
         [(TBSelectText *)view setCopies:nil];
-        if (![[view string] isEqualToString:text]) {
+        if (forceTextReset || ![[view string] isEqualToString:text]) {
             [view setString:text];
             storage = [view textStorage];
             if ([text length] > 0)

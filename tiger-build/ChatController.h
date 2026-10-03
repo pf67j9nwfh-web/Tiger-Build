@@ -19,6 +19,9 @@
     NSButton *retryButton;
     NSButton *attachButton;
     NSMutableArray *attachQueue;
+    NSTextView *fieldEditor;
+    id finder;
+    double lastPartialSave;
     NSMutableArray *attachProblems;
     BOOL attachWorking;
     NSString *relayVersion;
