@@ -2119,7 +2119,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.3.1";
+        version = @"1.4";
     NSRunAlertPanel(@"About Tiger Build",
         @"Version %@\nLicensed under the MIT License.",
         @"OK", nil, nil, version);

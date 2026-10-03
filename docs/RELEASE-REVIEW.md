@@ -1,4 +1,24 @@
-# Tiger Build 1.3.1 — release review
+# Tiger Build release review
+
+## 1.4
+
+### What changed
+- **Attach files.** Attach... button (beside Edit Last and Retry), Chat → Attach File (⇧⌘A), drop on the chat or the Dock icon. Text and code files, PDF (text via PDFKit, or the first page as a picture when there is none), RTF, Word, HTML, and pictures (kept as they are when small, else redrawn as a JPEG of at most 1600 pixels). Each is a message in the chat; the model gets the text (with where the copy is on that Mac) or the picture, and keeps it for the rest of the conversation. Non-vision models are told a picture was attached. Compaction summarizes older attachments.
+- **Files from the model.** `agent_save_file` (not tied to the agent toolbox switch) puts a file in the chat with Save As. Each code block has Save and Copy.
+- **Pictures a tool looks at** (`view_image`, `take_screenshot`) are also shown in the chat.
+- **Code blocks.** Dark panels with the language named, syntax colours for about 30 languages and aliases, wrapping, selectable text; bold, inline code, headings and bullets in prose.
+- **One chat to a file and back.** Export This Chat (⌥⌘E): a Tiger Build file with its attachments and pictures inside, Markdown, or plain text. Import Chat (⌥⌘I) adds it to the current workspace. No relay involved.
+
+### Verified
+- `make test` on Tiger 10.4.11 PowerPC and Snow Leopard 10.6.8 (new checks: fence splitting, language names, colouring, attachment text, base64, file names); relay tests and self-test.
+- On both Macs, in the app: attaching text, RTF and pictures (Snow Leopard also PDF), a model reading them, Grok fixing an attached script through Commander and viewing the attached picture, `agent_save_file` giving a Save As file, export and import of a chat with a picture and a file, code blocks on PowerPC (including a long streamed answer). Pictures reach Claude, Grok, Gemini, ChatGPT and Mistral; the local model without vision is told.
+- Menu shortcuts unique on both Macs (`--list-shortcuts`: 0 problems).
+
+### Not verified
+- Dropping files by dragging (the same code path as the Dock icon and Attach, tested through those), Word documents (`.doc`/`.docx` rely on what the OS can open), PDFs on Tiger (no PDF tool there to make one).
+- Leopard 10.5 and the `ppc64` slice, as before.
+
+## 1.3
 
 ## What changed
 - **Platforms.** One universal app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard: `ppc` and `i386` (10.4 SDK) joined with `ppc64` and `x86_64` (10.6 SDK when installed, else 10.5) when built on Leopard or Snow Leopard. Brushed metal stays on Tiger; Leopard and Snow Leopard use their native textured look. 64-bit-safe delegate types (`TBCompat.h`), 64-bit CoreGraphics callbacks, inline QuickTime playback in the 32-bit slices and in x86_64 on 10.6+ (QTKit weak-linked, checked at run time; other 64-bit cases open the default player), Quick Look on 10.5+ for pictures, Tiger-only private menu calls skipped on 10.5+.

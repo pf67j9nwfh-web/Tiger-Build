@@ -3,7 +3,7 @@
 # Uses dpkg-deb on Linux, or scripts/pack_deb.py when that is not installed.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="1.3.1"
+VERSION="1.4"
 STAGE="$(mktemp -d)"
 DIST="$ROOT/dist"
 mkdir -p "$DIST"
@@ -25,7 +25,7 @@ Description: Tiger Build Relay
 EOF
 cat > "$STAGE/DEBIAN/postinst" << 'EOF'
 #!/bin/sh
-echo "Tiger Build Relay 1.3.1 is in /opt/tiger-build-relay."
+echo "Tiger Build Relay 1.4 is in /opt/tiger-build-relay."
 echo "As your user, run: python3 /opt/tiger-build-relay/scripts/setup.py"
 echo "Then open Tiger Build Relay from the application menu."
 chmod 755 /opt/tiger-build-relay/scripts/setup.py /opt/tiger-build-relay/scripts/setup.sh /opt/tiger-build-relay/relay/chat_proxy.py 2>/dev/null || true
@@ -36,7 +36,7 @@ mkdir -p "$STAGE/usr/share/applications" "$STAGE/usr/share/icons/hicolor/128x128
 cp "$ROOT/assets/icon-128.png" "$STAGE/usr/share/icons/hicolor/128x128/apps/tiger-build-relay.png"
 cat > "$STAGE/usr/share/applications/tiger-build-relay.desktop" << 'EOF'
 [Desktop Entry]
-Version=1.3.1
+Version=1.4
 Type=Application
 Name=Tiger Build Relay
 GenericName=Relay settings

@@ -846,7 +846,7 @@ def stream_openai_compatible(url, key, model, system, log, tools, holder, ssl_co
         payload["stream_options"] = {"include_usage": True}
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "TigerBuild-relay/1.3.1",
+        "User-Agent": "TigerBuild-relay/1.4",
     }
     if key:
         headers["Authorization"] = "Bearer " + key
@@ -1032,7 +1032,7 @@ def stream_openai_responses(key, model, system, log, tools, holder, ssl_context,
     headers = {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + key,
-        "User-Agent": "TigerBuild-relay/1.3.1",
+        "User-Agent": "TigerBuild-relay/1.4",
     }
     thinking = show_thinking() and not holder.get("probe")
     if thinking:
@@ -1114,7 +1114,7 @@ def stream_claude(key, model, system, log, tools, holder, ssl_context, api_error
         # Adaptive thinking text is omitted unless display is "summarized".
         # Older models take a bounded enabled budget instead.
         payload["thinking"]={"type":"adaptive","display":"summarized"} if kind=="adaptive" else {"type":"enabled","budget_tokens":2048}
-    headers={"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","User-Agent":"TigerBuild-relay/1.3.1"}
+    headers={"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","User-Agent":"TigerBuild-relay/1.4"}
     workspace=os.environ.get("ANTHROPIC_WORKSPACE_ID","").strip()
     if workspace:headers["anthropic-workspace-id"]=workspace
     try:
@@ -1196,7 +1196,7 @@ def stream_gemini(key, model, system, log, tools, holder, ssl_context, api_error
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": key,
-        "User-Agent": "TigerBuild-relay/1.3.1",
+        "User-Agent": "TigerBuild-relay/1.4",
     }
     thinking = show_thinking() and not holder.get("probe")
     if thinking:

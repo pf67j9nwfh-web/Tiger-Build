@@ -90,7 +90,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         ("Mistral", "mistral_api_key", true), ("Muse", "muse_api_key", true), ("Google / Gemini", "gemini_api_key", true),
         ("Local LLM server URL", "local_url", false), ("Local API key (optional)", "local_api_key", true)]
     @objc func showAbout(_ sender: Any?) {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.1"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4"
         let alert = NSAlert()
         alert.messageText = "About Tiger Build Relay"
         alert.informativeText = "Version \(version)\nLicensed under the MIT License."
@@ -251,7 +251,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if let error = result["error"] as? String { self.message.stringValue = error; return }
                 self.last = result
                 let pid = result["pid"] as? Int ?? 0
-                let ver = result["version"] as? String ?? "1.3.1"
+                let ver = result["version"] as? String ?? "1.4"
                 self.window.title = "Tiger Build Relay \(ver)"
                 self.status.stringValue = pid > 0 ? "Version \(ver), running in background (PID \(pid))" : "Version \(ver), stopped"
                 self.status.textColor = pid > 0 ? .systemGreen : .secondaryLabelColor

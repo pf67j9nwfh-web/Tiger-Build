@@ -319,7 +319,7 @@ def _keyed_search(query, provider, key, config):
     return json.dumps(rows, ensure_ascii=False)
 
 
-UA = "TigerBuildRelay/1.3.1 (Tiger Build chat relay; https://github.com/pf67j9nwfh-web/Tiger-Build) python-urllib"
+UA = "TigerBuildRelay/1.4 (Tiger Build chat relay; https://github.com/pf67j9nwfh-web/Tiger-Build) python-urllib"
 
 
 def _get(url, data=None, headers=None, timeout=20, limit=2000000):

@@ -266,7 +266,7 @@ def write_linux_desktop(gui):
     desktop = os.path.join(apps, "tiger-build-relay.desktop")
     lines = [
         "[Desktop Entry]",
-        "Version=1.3.1",
+        "Version=1.4",
         "Type=Application",
         "Name=Tiger Build Relay",
         "GenericName=Relay settings",
