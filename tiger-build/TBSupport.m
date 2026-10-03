@@ -379,6 +379,29 @@ NSString *TBDisplayFileName(NSString *stored)
     return name;
 }
 
+static NSString *pathHintRoot = nil;
+
+void TBSetPathHintRoot(NSString *root)
+{
+    [pathHintRoot release];
+    pathHintRoot = [root length] > 0 ? [root copy] : nil;
+}
+
+/* " A copy is on their Mac at ~/Library/...": the home folder is written as ~ so the account name
+   is not repeated to the service, and nothing is said when a workspace restriction hides the copy. */
+static NSString *copyHint(NSString *path, NSString *what)
+{
+    NSString *home = NSHomeDirectory();
+    NSString *shown = path;
+    if (![path isKindOfClass:[NSString class]] || [path length] == 0)
+        return @"";
+    if (pathHintRoot && ![path hasPrefix:pathHintRoot])
+        return @"";
+    if ([path hasPrefix:home])
+        shown = [@"~" stringByAppendingString:[path substringFromIndex:[home length]]];
+    return [NSString stringWithFormat:@" %@ is on their Mac at %@.", what, shown];
+}
+
 /* What a message says to the model: for an attached text file, the file. */
 NSString *TBMessageContent(NSDictionary *message)
 {
@@ -392,13 +415,13 @@ NSString *TBMessageContent(NSDictionary *message)
     name = [file objectForKey:@"name"];
     kind = [file objectForKey:@"kind"];
     if ([kind isEqualToString:@"image"])
-        return [NSString stringWithFormat:@"[The person attached a picture named \"%@\". A copy is on their Mac at %@.%@]",
-            name, [file objectForKey:@"path"], [file objectForKey:@"note"] ? [@" " stringByAppendingString:[file objectForKey:@"note"]] : @""];
+        return [NSString stringWithFormat:@"[The person attached a picture named \"%@\".%@%@]",
+            name, copyHint([file objectForKey:@"path"], @"A copy"), [file objectForKey:@"note"] ? [@" " stringByAppendingString:[file objectForKey:@"note"]] : @""];
     body = TBReadTextFile([file objectForKey:@"path"], TB_ATTACH_TEXT_MAX, &truncated);
     if (!body)
         return [NSString stringWithFormat:@"[The person attached a file named \"%@\", but it is no longer available on this Mac.]", name];
-    return [NSString stringWithFormat:@"[The person attached a file named \"%@\". Its contents%@ follow. A text copy is on their Mac at %@.%@]\n\n%@\n\n[End of \"%@\".]",
-        name, truncated ? @" (only the first part; the file is longer)" : @"", [file objectForKey:@"path"],
+    return [NSString stringWithFormat:@"[The person attached a file named \"%@\". Its contents%@ follow.%@%@]\n\n%@\n\n[End of \"%@\".]",
+        name, truncated ? @" (only the first part; the file is longer)" : @"", copyHint([file objectForKey:@"path"], @"A text copy"),
         [file objectForKey:@"note"] ? [@" Note: " stringByAppendingString:[file objectForKey:@"note"]] : @"", body, name];
 }
 

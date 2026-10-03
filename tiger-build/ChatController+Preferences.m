@@ -188,6 +188,8 @@ static NSString *splitBase(NSString *base, NSString **port)
         [[prefsFields objectForKey:@"relay_host"] setStringValue:host];
         [[prefsFields objectForKey:@"relay_port"] setStringValue:[NSString stringWithFormat:@"%d", number]];
     }
+    [relayVersion release];
+    relayVersion = nil;
     if (![RelayRequest saveServerBase:base token:([token length] ? token : nil)]) {
         NSRunAlertPanel(@"Preferences", @"Tiger Build could not save the relay address.", @"OK", nil, nil);
         return NO;

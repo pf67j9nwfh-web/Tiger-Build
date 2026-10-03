@@ -12,11 +12,20 @@
 
 @interface ChatController (RelayConversion)
 - (BOOL)relayConverts:(NSString *)path;
-- (BOOL)startRelayConversion:(NSString *)path problem:(NSString **)problem;
+- (BOOL)startRelayConversion:(NSDictionary *)job problem:(NSString **)problem;
 @end
 
 @interface ChatController (HistorySweep)
 - (NSDictionary *)allWorkspaces;
+@end
+
+@interface ChatController (AttachmentQueue)
+- (void)attachNext;
+- (void)attachRun:(NSDictionary *)job;
+- (void)finishJob:(NSDictionary *)job made:(NSArray *)made problem:(NSString *)problem;
+- (NSArray *)confirmedAttachments:(NSArray *)made chat:(NSMutableDictionary *)chat;
+- (BOOL)confirmCloudAttach;
+- (NSString *)tokenString:(int)count;
 @end
 
 @interface ChatController (AttachmentsPrivate)
@@ -24,7 +33,8 @@
 - (NSString *)savedPathForName:(NSString *)name extension:(NSString *)ext;
 - (NSMutableDictionary *)pictureAttachmentFromPath:(NSString *)path name:(NSString *)name pdf:(BOOL)pdf problem:(NSString **)problem;
 - (NSMutableDictionary *)pictureAttachmentFromImage:(NSImage *)image path:(NSString *)path name:(NSString *)name pdf:(BOOL)pdf problem:(NSString **)problem;
-- (NSArray *)pdfAttachmentsForPath:(NSString *)path name:(NSString *)name size:(double)size problem:(NSString **)problem;
+- (NSArray *)pdfAttachmentsForJob:(NSDictionary *)job size:(double)size problem:(NSString **)problem;
+- (NSArray *)pdfPageAttachmentForJob:(NSDictionary *)job problem:(NSString **)problem;
 - (NSMutableDictionary *)textAttachmentWithText:(NSString *)text name:(NSString *)name size:(double)size problem:(NSString **)problem;
 - (NSMutableDictionary *)messageForAttachment:(NSMutableDictionary *)attachment;
 @end
@@ -131,7 +141,16 @@
     [attachment setObject:saved forKey:@"path"];
     [attachment setObject:@"image" forKey:@"kind"];
     [attachment setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
-    [attachment setObject:[NSNumber numberWithInt:1000] forKey:@"tokens"];
+    {
+        /* About a token for every 750 pixels, between a small and a large picture. */
+        float pixels = floorf(width * scale) * floorf(height * scale);
+        int cost = (int)(pixels / 750.0f);
+        if (cost < 300)
+            cost = 300;
+        if (cost > 1600)
+            cost = 1600;
+        [attachment setObject:[NSNumber numberWithInt:cost] forKey:@"tokens"];
+    }
     [attachment setObject:TBImageMime(saved) forKey:@"mime"];
     return attachment;
 }
@@ -230,10 +249,12 @@ static unsigned pdfPageCount(NSString *path)
     return rep ? (unsigned)[rep pageCount] : 0;
 }
 
-/* A PDF: its text, cleaned, and when it is mostly drawing (little text for its pages)
-   the first pages as pictures too, because the model needs to see those. */
-- (NSArray *)pdfAttachmentsForPath:(NSString *)path name:(NSString *)name size:(double)size problem:(NSString **)problem
+/* A PDF: its text, cleaned. When it is mostly drawing (little text for its pages) or has no text,
+   its first pages are queued to follow as pictures, because the model needs to see those. */
+- (NSArray *)pdfAttachmentsForJob:(NSDictionary *)job size:(double)size problem:(NSString **)problem
 {
+    NSString *path = [job objectForKey:@"path"];
+    NSString *name = [path lastPathComponent];
     NSString *raw = pdfText(path);
     unsigned dropped = 0;
     NSString *text = raw ? cleanedPDFText(raw, &dropped) : @"";
@@ -241,46 +262,56 @@ static unsigned pdfPageCount(NSString *path)
     unsigned usable = [[text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length];
     BOOL scrap = pages > 0 && (usable / (float)pages < 700 || dropped > 200);
     NSMutableArray *found = [NSMutableArray array];
-    NSMutableDictionary *textPart = nil;
-    unsigned shown = 0;
-    unsigned p;
+    BOOL haveText = NO;
     if (usable > 20) {
-        NSString *note = nil;
-        textPart = [self textAttachmentWithText:text name:name size:size problem:problem];
+        NSMutableDictionary *textPart = [self textAttachmentWithText:text name:name size:size problem:problem];
         if (!textPart)
             return nil;
-        (void)note;
         [found addObject:textPart];
+        haveText = YES;
     }
-    if (!textPart || scrap) {
-        NSData *data = [NSData dataWithContentsOfMappedFile:path];
-        NSPDFImageRep *rep = [NSPDFImageRep imageRepWithData:data];
+    if (pages == 0 && !haveText) {
+        *problem = [NSString stringWithFormat:@"%@ could not be read as a PDF.", name];
+        return nil;
+    }
+    if (pages > 0 && (!haveText || scrap)) {
         unsigned want = pages < 3 ? pages : 3;
-        if (!rep) {
-            if (!textPart)
-                *problem = [NSString stringWithFormat:@"%@ could not be read as a PDF.", name];
-            return textPart ? found : nil;
+        unsigned p;
+        for (p = want; p > 0; p--) {
+            [attachQueue insertObject:[NSDictionary dictionaryWithObjectsAndKeys:path, @"path", [job objectForKey:@"chat"], @"chat",
+                @"pdfpage", @"kind", [NSNumber numberWithUnsignedInt:p], @"page", [NSNumber numberWithUnsignedInt:pages], @"pages",
+                [NSNumber numberWithBool:(p == want && pages > want)], @"more", nil] atIndex:0];
         }
-        for (p = 0; p < want; p++) {
-            NSImage *page = [[[NSImage alloc] initWithSize:[rep size]] autorelease];
-            NSString *pageName = [NSString stringWithFormat:@"%@ (page %u of %u)", name, p + 1, pages];
-            NSMutableDictionary *picture;
-            NSString *pictureProblem = nil;
-            [rep setCurrentPage:p];
-            [page addRepresentation:rep];
-            picture = [self pictureAttachmentFromImage:page path:path name:pageName pdf:YES problem:&pictureProblem];
-            [page removeRepresentation:rep];
-            if (picture) {
-                [found addObject:picture];
-                shown++;
-            }
-        }
-        if (shown > 0 && pages > shown)
-            [[found objectAtIndex:[found count] - 1] setObject:[NSString stringWithFormat:@"Only the first %u of %u pages were sent as pictures.", shown, pages] forKey:@"note"];
     }
-    if ([found count] == 0 && !*problem)
-        *problem = [NSString stringWithFormat:@"%@ has no text or pages that could be read.", name];
-    return [found count] ? found : nil;
+    return found;
+}
+
+/* One page of a PDF as a picture. */
+- (NSArray *)pdfPageAttachmentForJob:(NSDictionary *)job problem:(NSString **)problem
+{
+    NSString *path = [job objectForKey:@"path"];
+    NSString *name = [path lastPathComponent];
+    unsigned page = [[job objectForKey:@"page"] unsignedIntValue];
+    unsigned pages = [[job objectForKey:@"pages"] unsignedIntValue];
+    NSPDFImageRep *rep = [NSPDFImageRep imageRepWithData:[NSData dataWithContentsOfMappedFile:path]];
+    NSImage *picture;
+    NSMutableDictionary *attachment;
+    if (!rep || page < 1 || page > (unsigned)[rep pageCount]) {
+        *problem = [NSString stringWithFormat:@"%@ has no page %u.", name, page];
+        return nil;
+    }
+    [rep setCurrentPage:page - 1];
+    picture = [[[NSImage alloc] initWithSize:[rep size]] autorelease];
+    [picture addRepresentation:rep];
+    attachment = [self pictureAttachmentFromImage:picture path:path
+        name:[NSString stringWithFormat:@"%@ (page %u of %u)", name, page, pages] pdf:YES problem:problem];
+    [picture removeRepresentation:rep];
+    if (!attachment)
+        return nil;
+    if ([[job objectForKey:@"more"] boolValue])
+        [attachment setObject:[NSString stringWithFormat:@"Only the first %u of %u pages were sent as pictures. The person can add others with Chat > Attach PDF Pages.",
+            page, pages] forKey:@"note"];
+    return [NSArray arrayWithObject:attachment];
 }
 
 - (NSArray *)attachmentsForPath:(NSString *)path problem:(NSString **)problem
@@ -312,8 +343,10 @@ static unsigned pdfPageCount(NSString *path)
         NSMutableDictionary *one = [self pictureAttachmentFromPath:path name:name pdf:NO problem:problem];
         return one ? [NSArray arrayWithObject:one] : nil;
     }
-    if ([ext isEqualToString:@"pdf"])
-        return [self pdfAttachmentsForPath:path name:name size:size problem:problem];
+    if ([ext isEqualToString:@"pdf"]) {
+        *problem = @"PDFs are read in steps.";
+        return nil;
+    }
     if ([documents containsObject:ext]) {
         NSAttributedString *rich = [[[NSAttributedString alloc] initWithPath:path documentAttributes:NULL] autorelease];
         text = [rich string];
@@ -333,10 +366,37 @@ static unsigned pdfPageCount(NSString *path)
     return one ? [NSArray arrayWithObject:one] : nil;
 }
 
+/* ---- the queue ----
+   Files are read one at a time, each with a "Reading..." note in the chat, and the window is
+   free between steps, so a big PDF does not freeze it. */
+
+/* Attached files go to the service chosen for the chat when a message is sent. Say so once
+   for each service, and let the person decline. */
+- (BOOL)confirmCloudAttach
+{
+    NSString *provider = [self providerForChat:current];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSDictionary *known = [defaults dictionaryForKey:@"TBAttachConsent"];
+    NSMutableDictionary *updated;
+    NSString *service;
+    if ([provider isEqualToString:@"local"] || [[known objectForKey:provider] boolValue])
+        return YES;
+    service = [[ModelCatalog shared] titleForProvider:provider];
+    if (!service)
+        service = provider;
+    if (NSRunAlertPanel([NSString stringWithFormat:@"Send attached files to %@?", service],
+        @"Files you attach are sent to %@ together with your messages, so that service can read them. "
+        @"Attach only files you are happy to share with it. A model on your own local server keeps them on your network.",
+        @"Attach", @"Cancel", nil, service) != NSAlertDefaultReturn)
+        return NO;
+    updated = [NSMutableDictionary dictionaryWithDictionary:known];
+    [updated setObject:[NSNumber numberWithBool:YES] forKey:provider];
+    [defaults setObject:updated forKey:@"TBAttachConsent"];
+    return YES;
+}
+
 - (void)attachPaths:(NSArray *)paths
 {
-    NSMutableString *problems = [NSMutableString string];
-    unsigned added = 0;
     unsigned i;
     if (!current || [paths count] == 0)
         return;
@@ -345,39 +405,186 @@ static unsigned pdfPageCount(NSString *path)
         NSBeep();
         return;
     }
-    for (i = 0; i < [paths count]; i++) {
-        NSString *problem = nil;
-        NSArray *made;
-        if ([self relayConverts:[paths objectAtIndex:i]]) {
-            if ([self startRelayConversion:[paths objectAtIndex:i] problem:&problem]) {
-                added++;
-                continue;
-            }
-            made = nil;
-        } else {
-            made = [self attachmentsForPath:[paths objectAtIndex:i] problem:&problem];
-        }
-        if (made) {
-            unsigned k;
-            for (k = 0; k < [made count]; k++) {
-                [[current objectForKey:@"messages"] addObject:[self messageForAttachment:[made objectAtIndex:k]]];
-                added++;
-            }
-        } else {
-            if ([problems length] > 0)
-                [problems appendString:@"\n\n"];
-            [problems appendString:problem ? problem : @"That file could not be attached."];
-        }
+    if (![self confirmCloudAttach])
+        return;
+    if (!attachQueue)
+        attachQueue = [[NSMutableArray alloc] init];
+    if (!attachProblems)
+        attachProblems = [[NSMutableArray alloc] init];
+    for (i = 0; i < [paths count]; i++)
+        [attachQueue addObject:[NSDictionary dictionaryWithObjectsAndKeys:[paths objectAtIndex:i], @"path", current, @"chat", @"file", @"kind", nil]];
+    [self forgetEdit];
+    if (!attachWorking) {
+        attachWorking = YES;
+        [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.0];
     }
-    if (added > 0) {
-        [self forgetEdit];
+}
+
+- (void)attachNext
+{
+    NSDictionary *job;
+    NSMutableDictionary *chat;
+    NSMutableDictionary *placeholder;
+    NSString *name;
+    NSMutableDictionary *running;
+    if ([attachQueue count] == 0) {
+        attachWorking = NO;
         [self saveStore];
-        [self refreshTranscriptIfCurrent:current];
-        [self syncRunButtons];
-        [self updateContextReadout];
+        if ([attachProblems count] > 0) {
+            NSString *all = [attachProblems componentsJoinedByString:@"\n\n"];
+            [attachProblems removeAllObjects];
+            NSRunAlertPanel(@"Could not attach", @"%@", @"OK", nil, nil, all);
+        }
+        return;
     }
-    if ([problems length] > 0)
-        NSRunAlertPanel(@"Could not attach", @"%@", @"OK", nil, nil, problems);
+    job = [[[attachQueue objectAtIndex:0] retain] autorelease];
+    [attachQueue removeObjectAtIndex:0];
+    chat = [job objectForKey:@"chat"];
+    if ([chats indexOfObjectIdenticalTo:chat] == NSNotFound) {
+        [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.0];
+        return;
+    }
+    name = [[job objectForKey:@"path"] lastPathComponent];
+    placeholder = [NSMutableDictionary dictionary];
+    [placeholder setObject:@"user" forKey:@"role"];
+    [placeholder setObject:[[job objectForKey:@"kind"] isEqualToString:@"pdfpage"]
+        ? [NSString stringWithFormat:@"Reading page %u of %@...", [[job objectForKey:@"page"] unsignedIntValue], name]
+        : [NSString stringWithFormat:@"Reading %@...", name] forKey:@"text"];
+    [placeholder setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+    [placeholder setObject:[NSNumber numberWithBool:YES] forKey:@"converting"];
+    [[chat objectForKey:@"messages"] addObject:placeholder];
+    [self refreshTranscriptIfCurrent:chat];
+    running = [NSMutableDictionary dictionaryWithDictionary:job];
+    [running setObject:placeholder forKey:@"placeholder"];
+    /* A moment for the window to draw the note before the work starts. */
+    [self performSelector:@selector(attachRun:) withObject:running afterDelay:0.05];
+}
+
+- (void)attachRun:(NSDictionary *)job
+{
+    NSString *path = [job objectForKey:@"path"];
+    NSString *ext = [[path pathExtension] lowercaseString];
+    NSString *problem = nil;
+    NSArray *made = nil;
+    if ([[job objectForKey:@"kind"] isEqualToString:@"pdfpage"]) {
+        made = [self pdfPageAttachmentForJob:job problem:&problem];
+    } else if ([self relayConverts:path]) {
+        if ([self startRelayConversion:job problem:&problem])
+            return;
+    } else if ([ext isEqualToString:@"pdf"]) {
+        NSFileManager *manager = [NSFileManager defaultManager];
+        double size = [[[manager fileAttributesAtPath:path traverseLink:YES] objectForKey:NSFileSize] doubleValue];
+        if (![manager fileExistsAtPath:path])
+            problem = [NSString stringWithFormat:@"%@ is not there any more.", [path lastPathComponent]];
+        else if (size > TB_ATTACH_MAX_BYTES)
+            problem = [NSString stringWithFormat:@"%@ is %@. Files over 40 MB cannot be attached.", [path lastPathComponent], TBHumanSize(size)];
+        else
+            made = [self pdfAttachmentsForJob:job size:size problem:&problem];
+    } else {
+        made = [self attachmentsForPath:path problem:&problem];
+    }
+    [self finishJob:job made:made problem:problem];
+}
+
+/* The job is over: its "Reading..." note becomes the files, after a check that they fit. */
+- (void)finishJob:(NSDictionary *)job made:(NSArray *)made problem:(NSString *)problem
+{
+    NSMutableDictionary *placeholder = [job objectForKey:@"placeholder"];
+    NSMutableDictionary *chat = [job objectForKey:@"chat"];
+    NSMutableArray *messages = [chat objectForKey:@"messages"];
+    NSUInteger index = [messages indexOfObjectIdenticalTo:placeholder];
+    if (index != NSNotFound) {
+        [messages removeObjectAtIndex:index];
+        if ([made count] > 0) {
+            NSArray *kept = [self confirmedAttachments:made chat:chat];
+            unsigned k;
+            for (k = 0; k < [kept count]; k++)
+                [messages insertObject:[self messageForAttachment:[kept objectAtIndex:k]] atIndex:index + k];
+        }
+    }
+    if (problem && ![made count])
+        [attachProblems addObject:problem];
+    if ([chats indexOfObjectIdenticalTo:chat] != NSNotFound) {
+        [self saveStore];
+        [self refreshTranscriptIfCurrent:chat];
+        [self updateContextReadout];
+        [self syncRunButtons];
+    }
+    [self performSelector:@selector(attachNext) withObject:nil afterDelay:0.01];
+}
+
+/* Whether what was just read fits the model's context. A big file is offered shortened, and
+   a model with a small window is told so now instead of failing on the next message. */
+- (NSArray *)confirmedAttachments:(NSArray *)made chat:(NSMutableDictionary *)chat
+{
+    int limit = [[chat objectForKey:@"contextLimit"] intValue];
+    int incoming = 0;
+    int used;
+    unsigned i;
+    BOOL shortenable = NO;
+    int choice;
+    int act;
+    NSString *what;
+    if (limit < 1000)
+        return made;
+    for (i = 0; i < [made count]; i++) {
+        NSDictionary *item = [made objectAtIndex:i];
+        incoming += [[item objectForKey:@"tokens"] intValue] + 12;
+        if ([[item objectForKey:@"kind"] isEqualToString:@"text"])
+            shortenable = YES;
+    }
+    used = [self contextTokensForChat:chat];
+    if ((long)(used + incoming) * 100 <= (long)limit * 60)
+        return made;
+    what = [[made objectAtIndex:0] objectForKey:@"name"];
+    /* act: 0 attach as it is, 1 attach shortened, 2 do not attach */
+    if ((long)(used + incoming) > (long)limit * 95 / 100) {
+        NSString *message = [NSString stringWithFormat:@"%@ is about %@ tokens, and this chat already uses about %@ of the %@ that %@ can hold at once. "
+            @"The model would refuse the next message. Shorten the file, or choose a model with a larger context.",
+            what, [self tokenString:incoming], [self tokenString:used], [self tokenString:limit], [self modelForChat:chat]];
+        if (shortenable) {
+            choice = NSRunAlertPanel(@"This will not fit", @"%@", @"Attach Shortened", @"Cancel", @"Attach Anyway", message);
+            act = choice == NSAlertDefaultReturn ? 1 : (choice == NSAlertAlternateReturn ? 2 : 0);
+        } else {
+            choice = NSRunAlertPanel(@"This will not fit", @"%@", @"Cancel", @"Attach Anyway", nil, message);
+            act = choice == NSAlertDefaultReturn ? 2 : 0;
+        }
+    } else {
+        NSString *message = [NSString stringWithFormat:@"%@ is about %@ tokens, which brings this chat to about %d%% of what %@ can hold at once. "
+            @"A long file also makes every later message slower and costlier.",
+            what, [self tokenString:incoming], (int)((long)(used + incoming) * 100 / limit), [self modelForChat:chat]];
+        if (shortenable) {
+            choice = NSRunAlertPanel(@"This is a lot of context", @"%@", @"Attach", @"Cancel", @"Attach Shortened", message);
+            act = choice == NSAlertDefaultReturn ? 0 : (choice == NSAlertAlternateReturn ? 2 : 1);
+        } else {
+            choice = NSRunAlertPanel(@"This is a lot of context", @"%@", @"Attach", @"Cancel", nil, message);
+            act = choice == NSAlertDefaultReturn ? 0 : 2;
+        }
+    }
+    if (act == 2) {
+        for (i = 0; i < [made count]; i++)
+            [[NSFileManager defaultManager] removeFileAtPath:[[made objectAtIndex:i] objectForKey:@"path"] handler:nil];
+        return [NSArray array];
+    }
+    if (act == 1) {
+        int room = limit / 2 - used;
+        if (room < 2000)
+            room = 2000;
+        for (i = 0; i < [made count]; i++) {
+            NSMutableDictionary *item = [made objectAtIndex:i];
+            if ([[item objectForKey:@"kind"] isEqualToString:@"text"]) {
+                int share = room / (int)[made count];
+                NSString *body = TBReadTextFile([item objectForKey:@"path"], TB_ATTACH_TEXT_MAX, NULL);
+                if (body && (int)([body length] / 3.6) > share) {
+                    body = [body substringToIndex:(unsigned)(share * 3.6)];
+                    [body writeToFile:[item objectForKey:@"path"] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+                    [item setObject:[NSNumber numberWithInt:share + 40] forKey:@"tokens"];
+                    [item setObject:[NSNumber numberWithBool:YES] forKey:@"truncated"];
+                }
+            }
+        }
+    }
+    return made;
 }
 
 - (IBAction)attachFile:(id)sender
@@ -464,15 +671,15 @@ static unsigned pdfPageCount(NSString *path)
     return [kinds containsObject:[[path pathExtension] lowercaseString]];
 }
 
-- (BOOL)startRelayConversion:(NSString *)path problem:(NSString **)problem
+- (BOOL)startRelayConversion:(NSDictionary *)job problem:(NSString **)problem
 {
+    NSString *path = [job objectForKey:@"path"];
     NSString *name = [path lastPathComponent];
     NSFileManager *manager = [NSFileManager defaultManager];
     BOOL isDirectory = NO;
     NSData *data;
     NSString *zipped = nil;
-    NSMutableDictionary *placeholder;
-    NSDictionary *info;
+    NSMutableDictionary *info;
     double size;
     if (![manager fileExistsAtPath:path isDirectory:&isDirectory]) {
         *problem = [NSString stringWithFormat:@"%@ is not there any more.", name];
@@ -499,14 +706,10 @@ static unsigned pdfPageCount(NSString *path)
         *problem = [NSString stringWithFormat:@"%@ could not be read.", name];
         return NO;
     }
-    placeholder = [NSMutableDictionary dictionary];
-    [placeholder setObject:@"user" forKey:@"role"];
-    [placeholder setObject:[NSString stringWithFormat:@"Converting %@ on the relay...", name] forKey:@"text"];
-    [placeholder setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
-    [placeholder setObject:[NSNumber numberWithBool:YES] forKey:@"converting"];
-    [[current objectForKey:@"messages"] addObject:placeholder];
-    info = [NSDictionary dictionaryWithObjectsAndKeys:placeholder, @"placeholder", current, @"chat", name, @"name",
-        [NSNumber numberWithDouble:size], @"size", path, @"path", nil];
+    [[job objectForKey:@"placeholder"] setObject:[NSString stringWithFormat:@"Converting %@ on the relay...", name] forKey:@"text"];
+    [self refreshTranscriptIfCurrent:[job objectForKey:@"chat"]];
+    info = [NSMutableDictionary dictionaryWithDictionary:job];
+    [info setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
     [RelayRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
     return YES;
 }
@@ -514,17 +717,12 @@ static unsigned pdfPageCount(NSString *path)
 - (void)conversionArrived:(RelayRequest *)request
 {
     NSDictionary *info = [request context];
-    NSMutableDictionary *placeholder = [info objectForKey:@"placeholder"];
-    NSMutableDictionary *chat = [info objectForKey:@"chat"];
-    NSString *name = [info objectForKey:@"name"];
+    NSString *path = [info objectForKey:@"path"];
+    NSString *name = [path lastPathComponent];
     double size = [[info objectForKey:@"size"] doubleValue];
-    NSMutableArray *messages = [chat objectForKey:@"messages"];
-    NSUInteger index = [messages indexOfObjectIdenticalTo:placeholder];
     NSMutableArray *made = [NSMutableArray array];
     NSString *problem = nil;
     NSDictionary *result = nil;
-    if (index == NSNotFound)
-        return;
     if ([request ok]) {
         NSString *error = nil;
         result = [NSPropertyListSerialization propertyListFromData:[request data] mutabilityOption:NSPropertyListImmutable
@@ -536,14 +734,14 @@ static unsigned pdfPageCount(NSString *path)
     }
     if (!result) {
         NSString *why = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *ext = [[name pathExtension] lowercaseString];
         if ([request status] == 404 || [request status] == 405)
             why = @"The relay is too old to convert files. Update it to 1.4.";
         else if ([request status] == 0)
             why = [request timedOut] ? @"The relay took too long." : @"The relay could not be reached.";
-        NSString *ext = [[name pathExtension] lowercaseString];
         if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) {
             /* The relay only straightens photos; without it the picture is used as it is. */
-            NSMutableDictionary *plain = [self pictureAttachmentFromPath:[info objectForKey:@"path"] name:name pdf:NO problem:&problem];
+            NSMutableDictionary *plain = [self pictureAttachmentFromPath:path name:name pdf:NO problem:&problem];
             if (plain) {
                 [made addObject:plain];
                 problem = nil;
@@ -587,32 +785,26 @@ static unsigned pdfPageCount(NSString *path)
         if ([made count] == 0 && !problem)
             problem = [NSString stringWithFormat:@"Nothing could be read from %@.", name];
     }
-    [messages removeObjectAtIndex:index];
-    if ([made count] > 0) {
-        unsigned k;
-        for (k = 0; k < [made count]; k++)
-            [messages insertObject:[self messageForAttachment:[made objectAtIndex:k]] atIndex:index + k];
-    }
-    if ([chats indexOfObjectIdenticalTo:chat] != NSNotFound) {
-        [self saveStore];
-        [self refreshTranscriptIfCurrent:chat];
-        [self updateContextReadout];
-        [self syncRunButtons];
-    }
-    if (problem)
-        NSRunAlertPanel(@"Could not attach", @"%@", @"OK", nil, nil, problem);
+    [self finishJob:info made:made problem:problem];
 }
 
-/* The pictures to send with the next request: those of the last few attached pictures. */
 - (NSArray *)imageAttachmentsForChat:(NSDictionary *)chat
 {
     NSArray *messages = [chat objectForKey:@"messages"];
     NSMutableArray *found = [NSMutableArray array];
     int i;
+    double total = 0;
     for (i = (int)[messages count] - 1; i >= 0 && [found count] < 6; i--) {
         NSDictionary *file = [[messages objectAtIndex:i] objectForKey:@"attachment"];
-        if (file && [[file objectForKey:@"kind"] isEqualToString:@"image"])
+        if (file && [[file objectForKey:@"kind"] isEqualToString:@"image"]) {
+            double bytes = [[[[NSFileManager defaultManager] fileAttributesAtPath:[file objectForKey:@"path"] traverseLink:YES]
+                objectForKey:NSFileSize] doubleValue];
+            /* The relay takes 40 MB at most, and pictures travel as text a third larger. */
+            if (total + bytes > 18.0 * 1024 * 1024)
+                break;
+            total += bytes;
             [found insertObject:[messages objectAtIndex:i] atIndex:0];
+        }
     }
     return found;
 }

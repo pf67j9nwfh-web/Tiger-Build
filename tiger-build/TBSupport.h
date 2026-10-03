@@ -90,6 +90,9 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn);
    message; a picture is sent alongside it. */
 #define TB_ATTACH_TEXT_MAX 300000
 NSString *TBMessageContent(NSDictionary *message);
+/* While a request is built: the directory the workspace is limited to, or nil. A copy of an
+   attachment outside it is not mentioned to the model, whose file tools could not reach it. */
+void TBSetPathHintRoot(NSString *root);
 /* A file a model made is stored as "<16 hex digits>-name"; this is the name to show. */
 NSString *TBDisplayFileName(NSString *stored);
 NSString *TBReadTextFile(NSString *path, unsigned maxBytes, BOOL *truncated);

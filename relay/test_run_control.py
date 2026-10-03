@@ -330,6 +330,11 @@ class HttpTests(unittest.TestCase):
         response = conn.getresponse()
         return response.status, response.read()
 
+    def test_version_route(self):
+        from version import VERSION
+        status, data = self.call("GET", "/v1/version")
+        self.assertEqual((status, data.decode().strip()), (200, VERSION))
+
     def test_tools_catalogue(self):
         status, data = self.call("GET", "/v1/tools")
         self.assertEqual(status, 200)

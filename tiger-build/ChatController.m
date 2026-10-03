@@ -29,6 +29,8 @@ static NSMutableArray *extraWindows = nil;
 - (void)layoutPanes;
 - (void)updateContextReadout;
 - (BOOL)startCompactionIfNeeded;
+- (void)refreshRelayVersion;
+- (BOOL)relayTooOldForPictures:(NSDictionary *)chat;
 - (void)beginChatStream;
 - (void)autonameChat:(NSMutableDictionary *)chat;
 - (void)attachMedia:(NSString *)line toChat:(NSMutableDictionary *)chat;
@@ -149,6 +151,9 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [editButton release];
     [retryButton release];
     [attachButton release];
+    [attachQueue release];
+    [attachProblems release];
+    [relayVersion release];
     [thinkingField release];
     [runId release];
     [store release];
@@ -1324,6 +1329,47 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 
 /* Every 30 seconds: while the relay is unreachable or still testing models,
    ask again; otherwise refresh the model list every 10 minutes. */
+/* The relay's version, so a relay older than this app is not asked for what it cannot do. */
+- (void)refreshRelayVersion
+{
+    [RelayRequest send:@"GET" path:@"/v1/version" body:nil timeout:10 target:self action:@selector(relayVersionArrived:) context:nil];
+}
+
+- (void)relayVersionArrived:(RelayRequest *)request
+{
+    NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    [relayVersion release];
+    if ([request ok] && [text length] > 0 && [text length] < 20)
+        relayVersion = [text copy];
+    else if ([request status] == 404)
+        relayVersion = [@"1.3" copy];
+    else
+        relayVersion = nil;
+}
+
+/* "1.4" against "1.4.1": whether version a is older than b. */
+static BOOL versionOlder(NSString *a, NSString *b)
+{
+    NSArray *x = [a componentsSeparatedByString:@"."];
+    NSArray *y = [b componentsSeparatedByString:@"."];
+    unsigned i;
+    for (i = 0; i < 3; i++) {
+        int p = i < [x count] ? [[x objectAtIndex:i] intValue] : 0;
+        int q = i < [y count] ? [[y objectAtIndex:i] intValue] : 0;
+        if (p != q)
+            return p < q;
+    }
+    return NO;
+}
+
+/* A relay older than 1.4 drops attached pictures without a word. */
+- (BOOL)relayTooOldForPictures:(NSDictionary *)chat
+{
+    if (!relayVersion || !versionOlder(relayVersion, @"1.4"))
+        return NO;
+    return [[self imageAttachmentsForChat:chat] count] > 0;
+}
+
 - (void)relayTick:(NSTimer *)timer
 {
     double now = CFAbsoluteTimeGetCurrent();
@@ -1336,6 +1382,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [self refreshCatalog];
     if (relayReachable)
         [self refreshToolCatalog];
+    if (relayReachable && !relayVersion)
+        [self refreshRelayVersion];
     if (relayReachable && [[self providerForChat:current] isEqualToString:@"local"] && [localModels count] == 0)
         [self refreshLocalModels];
 }
@@ -2620,12 +2668,15 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     NSArray *sendImages = [self imageAttachmentsForChat:chat];
     unsigned i;
     BOOL first = YES;
+    TBSetPathHintRoot([[workspaceSettings objectForKey:@"limitRoot"] boolValue] ? [workspaceSettings objectForKey:@"root"] : nil);
     for (i = 0; i < [messages count]; i++) {
         NSDictionary *message = [messages objectAtIndex:i];
         NSString *role;
         NSString *text = TBMessageContent(message);
         if ([[message objectForKey:@"status"] boolValue])
             continue;
+        if ([[[message objectForKey:@"attachment"] objectForKey:@"kind"] isEqualToString:@"image"] && ![sendImages containsObject:message])
+            text = [text stringByAppendingString:@" (This picture is no longer sent with the conversation; ask the person to attach it again if you need to see it.)"];
         if ([[message objectForKey:@"open"] boolValue] && [text length] == 0)
             continue;
         if ([[message objectForKey:@"role"] isEqualToString:@"user"])
@@ -2658,6 +2709,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         TBJSONEscape(NSUserName()), TBJSONEscape(NSHomeDirectory())];
     [body appendString:[self runOptionsJSONForChat:chat]];
     [body appendString:@"}"];
+    TBSetPathHintRoot(nil);
     return body;
 }
 
@@ -2707,6 +2759,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         else
             [self setRelayProblem:[NSString stringWithFormat:@"%@ cannot be used (%@). Pick another model or add its key in Preferences.",
                 [[ModelCatalog shared] titleForProvider:pid], note ? note : @"unavailable"]];
+        NSBeep();
+        return;
+    }
+    if ([self relayTooOldForPictures:current]) {
+        [self setRelayProblem:[NSString stringWithFormat:@"The relay is version %@, which does not pass attached pictures to the model. Update it to 1.4 (or remove the pictures from this chat).", relayVersion]];
         NSBeep();
         return;
     }
@@ -2788,6 +2845,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     lastFrame = CFAbsoluteTimeGetCurrent();
     sideRequest = nil;
     payload = [[self requestBodyForChat:chat] dataUsingEncoding:NSUTF8StringEncoding];
+    if ([payload length] > 38 * 1024 * 1024) {
+        [self addStatus:[NSString stringWithFormat:@"This chat with its attached files is %.0f MB, more than the relay accepts (38 MB). Remove or shorten some attachments, or start a new chat.",
+            [payload length] / 1048576.0] toChat:chat];
+        [self finishWithoutStream:chat];
+        return;
+    }
     message = [RelayRequest copyMessage:@"POST" path:@"/v1/chat" body:payload];
     if (!message) {
         [self addStatus:@"Set the relay address and token in Preferences first." toChat:chat];

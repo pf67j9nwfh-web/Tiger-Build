@@ -1721,6 +1721,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/history":
             self._history_download()
             return
+        if path == "/v1/version":
+            from version import VERSION
+            self._send(200, VERSION + "\n")
+            return
         if path == "/v1/tools":
             from integrations import catalogue
             target, _address = self._client_target()

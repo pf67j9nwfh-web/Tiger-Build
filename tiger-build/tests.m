@@ -228,6 +228,15 @@ int main(void)
             && [TBMessageContent(message) rangeOfString:@"notes.txt"].location != NSNotFound, @"attachment goes to the model as its text");
         tbcheck([TBMessageContent([NSDictionary dictionaryWithObject:@"hi" forKey:@"text"]) isEqualToString:@"hi"], @"plain message unchanged");
         tbcheck(TBEstimateTokens([NSArray arrayWithObject:message], NO) == 400 + 100 + 12, @"attachment counted by its saved size");
+        {
+            NSString *hinted = TBMessageContent(message);
+            tbcheck([hinted rangeOfString:@"is on their Mac at"].location != NSNotFound, @"the model is told where the copy is");
+            TBSetPathHintRoot(@"/Some/Other/Project");
+            tbcheck([TBMessageContent(message) rangeOfString:@"is on their Mac at"].location == NSNotFound, @"no path is given outside a restricted workspace");
+            TBSetPathHintRoot(NSTemporaryDirectory());
+            tbcheck([TBMessageContent(message) rangeOfString:@"is on their Mac at"].location != NSNotFound, @"a path inside the restricted workspace is given");
+            TBSetPathHintRoot(nil);
+        }
         [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
         tbcheck([TBMessageContent(message) rangeOfString:@"no longer available"].location != NSNotFound, @"missing attachment explained");
         [[NSData dataWithBytes:"ab\0cd" length:5] writeToFile:file atomically:YES];

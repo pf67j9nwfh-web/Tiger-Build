@@ -18,6 +18,10 @@
     NSButton *editButton;
     NSButton *retryButton;
     NSButton *attachButton;
+    NSMutableArray *attachQueue;
+    NSMutableArray *attachProblems;
+    BOOL attachWorking;
+    NSString *relayVersion;
     NSTextField *thinkingField;
     NSString *runId;
     NSMutableDictionary *workspaceSettings;
