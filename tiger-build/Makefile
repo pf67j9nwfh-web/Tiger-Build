@@ -29,8 +29,8 @@ LIBS32 := -framework Cocoa -framework CoreServices -framework QTKit
 LIBS64 := -framework Cocoa -framework CoreServices
 comma := ,
 LIBSX86 := -framework Cocoa -framework CoreServices $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m RelayClient.m TBSupport.m TBMachine.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TranscriptView.h
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
@@ -60,8 +60,8 @@ endif
 	if [ -d ppc-commander ]; then mkdir -p $(APP)/Contents/Resources/ppc-commander && cp ppc-commander/ppc_commander.py ppc-commander/service.py $(APP)/Contents/Resources/ppc-commander/; fi
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
-tbtests: tests.m TBSupport.m TBMachine.m TBSupport.h TBCompat.h
-	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m -framework Foundation
+tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBSupport.h TBMarkup.h TBCompat.h
+	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m TBMarkup.m -framework Foundation
 
 test: tbtests
 	./tbtests

@@ -14,6 +14,8 @@
     NSMutableDictionary *imageCache;
     NSMutableArray *textViews;
     NSMutableDictionary *sizeCache;
+    NSMutableDictionary *richCache;
+    NSString *copiedKey;
 }
 
 + (NSColor *)backgroundColor;

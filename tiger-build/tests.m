@@ -1,6 +1,7 @@
 /* make test: checks the pieces of Tiger Build that do not need a window. */
 #import <Foundation/Foundation.h>
 #import "TBSupport.h"
+#import "TBMarkup.h"
 #import <unistd.h>
 
 static int failures = 0;
@@ -172,6 +173,43 @@ int main(void)
         tbcheck([TBStore storeAtPath:[file stringByAppendingString:@".other"]] != a, @"different workspaces get different stores");
         [TBStore forgetAll];
         [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+    }
+
+    {
+        NSArray *blocks = TBSplitBlocks(@"Here:\n```python\nprint(1)\n```\nDone.");
+        tbcheck([blocks count] == 3 && [[[blocks objectAtIndex:1] objectForKey:@"code"] boolValue], @"fence splits prose and code");
+        tbcheck([[[blocks objectAtIndex:1] objectForKey:@"lang"] isEqualToString:@"python"]
+            && [[[blocks objectAtIndex:1] objectForKey:@"text"] isEqualToString:@"print(1)"]
+            && [[[blocks objectAtIndex:1] objectForKey:@"closed"] boolValue], @"fence tag and body read");
+        tbcheck([[[blocks objectAtIndex:2] objectForKey:@"text"] isEqualToString:@"Done."], @"prose after the fence kept");
+        blocks = TBSplitBlocks(@"Start\n```js\nlet a = 1;");
+        tbcheck([blocks count] == 2 && ![[[blocks objectAtIndex:1] objectForKey:@"closed"] boolValue], @"open fence while streaming");
+        blocks = TBSplitBlocks(@"no code here");
+        tbcheck([blocks count] == 1 && ![[[blocks objectAtIndex:0] objectForKey:@"code"] boolValue], @"plain text is one block");
+        blocks = TBSplitBlocks(@"````\n```\ninner\n```\n````");
+        tbcheck([blocks count] == 1 && [[[blocks objectAtIndex:0] objectForKey:@"text"] hasPrefix:@"```"], @"longer fence holds a shorter one");
+        tbcheck([TBLanguageTitle(@"py", @"") isEqualToString:@"Python"] && [TBLanguageTitle(@"sh", @"") isEqualToString:@"Shell"]
+            && [TBLanguageTitle(@"c++", @"") isEqualToString:@"C++"], @"language names");
+        tbcheck([TBLanguageTitle(@"haskell", @"") isEqualToString:@"Haskell"], @"unknown tag shown as written");
+        tbcheck([TBLanguageTitle(@"", @"#!/usr/bin/env python3\nprint(1)") isEqualToString:@"Python"]
+            && [TBLanguageTitle(@"", @"hello there") isEqualToString:@"Code"], @"untagged code is guessed or called Code");
+    }
+    {
+        NSString *code = @"def f(x):  # note\n    return \"a\" + 12";
+        const unsigned char *k = (const unsigned char *)[TBHighlight(code, @"python") bytes];
+        tbcheck(k[0] == TBTokKeyword && k[4] == TBTokFunction, @"python keyword and function name");
+        tbcheck(k[11] == TBTokComment && k[16] == TBTokComment, @"python comment");
+        tbcheck(k[[code rangeOfString:@"\"a\""].location] == TBTokString, @"python string");
+        tbcheck(k[[code rangeOfString:@"12"].location] == TBTokNumber, @"python number");
+        k = (const unsigned char *)[TBHighlight(@"{\"name\": \"x\", \"n\": 3}", @"json") bytes];
+        tbcheck(k[1] == TBTokProperty && k[9] == TBTokString && k[16] == TBTokProperty, @"json keys and values");
+        k = (const unsigned char *)[TBHighlight(@"#include <stdio.h>\nint main() { return 0; /* x */ }", @"c") bytes];
+        tbcheck(k[0] == TBTokKeyword && k[9] == TBTokString && k[19] == TBTokType, @"c preprocessor, header and type");
+        k = (const unsigned char *)[TBHighlight(@"+added\n-gone\n same", @"diff") bytes];
+        tbcheck(k[0] == TBTokInsert && k[7] == TBTokDelete && k[13] == TBTokPlain, @"diff lines");
+        k = (const unsigned char *)[TBHighlight(@"echo $HOME # hi", @"bash") bytes];
+        tbcheck(k[5] == TBTokProperty && k[11] == TBTokComment, @"shell variable and comment");
+        tbcheck([TBHighlight(@"", @"python") length] == 0 && [TBHighlight(@"x = 'unterminated", @"python") length] == 17, @"empty and unterminated input");
     }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 
