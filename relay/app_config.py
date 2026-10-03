@@ -87,7 +87,7 @@ def write_config(data):
     finally:
         handle.close()
     os.chmod(temporary, 0o600)
-    os.rename(temporary, path)
+    os.replace(temporary, path)
     os.chmod(path, 0o600)
     return payload
 

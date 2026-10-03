@@ -44,7 +44,7 @@ def relay_token(config):
         handle.write(value + "\n")
     finally:
         handle.close()
-    os.rename(temporary, path)
+    os.replace(temporary, path)
     return value
 
 

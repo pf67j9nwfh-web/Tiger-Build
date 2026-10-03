@@ -325,7 +325,7 @@ class Discovery(object):
                 json.dump(data, handle, indent=1, sort_keys=True)
             finally:
                 handle.close()
-            os.rename(temporary, self.cache_path)
+            os.replace(temporary, self.cache_path)
         except (IOError, OSError):
             pass
 

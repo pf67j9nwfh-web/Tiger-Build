@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import zipfile
@@ -103,6 +104,22 @@ def upright_tag(jpeg):
     return jpeg[:at] + struct.pack(endian + "H", 1) + jpeg[at + 2:]
 
 
+def _shrunk(jpeg, longest):
+    """The picture no larger than `longest` pixels, when Pillow is there to do it."""
+    try:
+        from PIL import Image
+        image = Image.open(io.BytesIO(jpeg))
+        if max(image.size) <= longest:
+            return jpeg
+        image = image.convert("RGB")
+        image.thumbnail((longest, longest))
+        out = io.BytesIO()
+        image.save(out, "JPEG", quality=85)
+        return out.getvalue()
+    except Exception:
+        return jpeg
+
+
 def to_jpeg(data, ext, longest=2400):
     """JPEG bytes for a picture in a format the old Macs cannot show."""
     sips = shutil.which("sips")
@@ -134,6 +151,26 @@ def to_jpeg(data, ext, longest=2400):
                 return handle.read()
         except Exception:
             pass
+        if sys.platform == "win32":
+            script = (
+                "Add-Type -AssemblyName PresentationCore;"
+                "$s=[IO.File]::OpenRead($args[0]);"
+                "$d=[Windows.Media.Imaging.BitmapDecoder]::Create($s,'PreservePixelFormat','OnLoad');"
+                "$f=$d.Frames[0];$longest=[int]$args[2];$m=[Math]::Max($f.PixelWidth,$f.PixelHeight);"
+                "if($m -gt $longest){$k=$longest/$m;"
+                "$f=New-Object Windows.Media.Imaging.TransformedBitmap($f,(New-Object Windows.Media.ScaleTransform($k,$k)))};"
+                "$e=New-Object Windows.Media.Imaging.JpegBitmapEncoder;$e.QualityLevel=85;"
+                "$e.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($f));"
+                "$o=[IO.File]::Create($args[1]);$e.Save($o);$o.Close();$s.Close()")
+            script_path = os.path.join(folder, "convert.ps1")
+            with open(script_path, "w") as handle:
+                handle.write(script)
+            result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                                     "-File", script_path, source, target, str(longest)], capture_output=True, timeout=120)
+            if result.returncode == 0 and os.path.isfile(target) and os.path.getsize(target) > 0:
+                with open(target, "rb") as handle:
+                    jpeg = handle.read()
+                return upright_tag(jpeg)
         for command in (["magick", source, "-auto-orient", "-resize", "%dx%d>" % (longest, longest), target],
                         ["convert", source, "-auto-orient", "-resize", "%dx%d>" % (longest, longest), target],
                         ["heif-convert", source, target], ["dwebp", source, "-o", target]):
@@ -141,7 +178,7 @@ def to_jpeg(data, ext, longest=2400):
                 result = subprocess.run(command, capture_output=True, timeout=120)
                 if result.returncode == 0 and os.path.isfile(target) and os.path.getsize(target) > 0:
                     with open(target, "rb") as handle:
-                        return handle.read()
+                        return _shrunk(handle.read(), longest)
     raise Unsupported("This computer cannot convert %s pictures. On the relay computer, install Pillow "
                       "(and pillow-heif for HEIC) or ImageMagick." % ext.upper())
 
