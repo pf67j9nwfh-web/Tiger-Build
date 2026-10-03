@@ -31,8 +31,12 @@ TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, f
     TBChatLayout layout;
     float sendW = 76;
     float stopW = 76;
-    float gap = 8;
-    float fieldW = paneWidth - 16 - sendW - stopW - 2 * gap;
+    /* The rounded bezels are drawn about 9 pixels in from the left of their frames and
+       5 from the right, so frames that sit side by side look 14 pixels apart. These
+       positions make the drawn gaps equal: text box to Stop, Stop to Send, and Send to
+       the window edge are each about 14 pixels. */
+    float edgeInset = 9;
+    float fieldW = paneWidth - 8 - (edgeInset + sendW + stopW + 7);
     float maxField;
     float inputTop;
     float transcriptY;
@@ -82,8 +86,8 @@ TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, f
         actionsW = 0;
     layout.fieldHeight = wanted;
     layout.input = NSMakeRect(8, 14, fieldW, wanted);
-    layout.stop = NSMakeRect(paneWidth - 8 - sendW - gap - stopW, buttonY, stopW, 28);
-    layout.send = NSMakeRect(paneWidth - 8 - sendW, buttonY, sendW, 28);
+    layout.stop = NSMakeRect(paneWidth - edgeInset - sendW - stopW, buttonY, stopW, 28);
+    layout.send = NSMakeRect(paneWidth - edgeInset - sendW, buttonY, sendW, 28);
     layout.transcript = NSMakeRect(8, transcriptY, paneWidth - 16, transcriptH);
     layout.actions = NSMakeRect(8, rowY, actionsW, 20);
     layout.context = NSMakeRect(8 + actionsW + 4, rowY, paneWidth - 16 - actionsW - 4, 18);
