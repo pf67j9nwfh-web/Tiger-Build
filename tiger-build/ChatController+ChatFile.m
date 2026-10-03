@@ -14,6 +14,9 @@
 
 @interface ChatController (ChatFilePrivate)
 - (NSDictionary *)portableChat:(NSDictionary *)chat;
+- (NSDictionary *)historyRoot;
+- (void)embedFilesInChat:(NSMutableDictionary *)copy into:(NSMutableDictionary *)files budget:(double *)budget;
+- (void)restoreFilesInChat:(NSMutableDictionary *)chat from:(NSDictionary *)files;
 - (NSString *)readableChat:(NSDictionary *)chat markdown:(BOOL)markdown;
 - (NSString *)restoredPathForEmbedded:(NSData *)data name:(NSString *)name directory:(NSString *)directory;
 @end
@@ -46,21 +49,15 @@ static NSString *safeFileStem(NSString *title)
 
 /* ---- export ---- */
 
-- (NSDictionary *)portableChat:(NSDictionary *)chat
+/* Put the files a chat uses into `files` and point the chat at them ("tbfile:name"), so the
+   chat can travel without the Mac it was made on. budget is how many more bytes may be added. */
+- (void)embedFilesInChat:(NSMutableDictionary *)copy into:(NSMutableDictionary *)files budget:(double *)budget
 {
-    NSMutableDictionary *copy = mutableCopyOfPlist(chat);
-    NSMutableDictionary *files = [NSMutableDictionary dictionary];
     NSArray *messages = [copy objectForKey:@"messages"];
     NSFileManager *manager = [NSFileManager defaultManager];
     NSArray *fields = [NSArray arrayWithObjects:@"image", @"video", @"file", nil];
-    unsigned counter = 0;
     unsigned i;
     unsigned f;
-    if (!copy)
-        return nil;
-    [copy removeObjectForKey:@"id"];
-    [copy removeObjectForKey:@"ctxTokens"];
-    [copy removeObjectForKey:@"ctxAt"];
     for (i = 0; i < [messages count]; i++) {
         NSMutableDictionary *message = [messages objectAtIndex:i];
         NSMutableDictionary *attachment = [message objectForKey:@"attachment"];
@@ -70,24 +67,134 @@ static NSString *safeFileStem(NSString *title)
             NSMutableDictionary *holder = f < [fields count] ? message : attachment;
             NSString *key = f < [fields count] ? [fields objectAtIndex:f] : @"path";
             NSString *path = [holder objectForKey:key];
-            NSData *data;
+            double size;
+            NSData *data = nil;
             NSString *name;
             if (!holder || ![path isKindOfClass:[NSString class]])
                 continue;
-            data = [[[manager fileAttributesAtPath:path traverseLink:YES] objectForKey:NSFileSize] doubleValue] <= TB_EMBED_LIMIT
-                ? [NSData dataWithContentsOfFile:path] : nil;
+            size = [[[manager fileAttributesAtPath:path traverseLink:YES] objectForKey:NSFileSize] doubleValue];
+            if (size <= TB_EMBED_LIMIT && size <= *budget)
+                data = [NSData dataWithContentsOfFile:path];
             if (!data) {
                 [holder removeObjectForKey:key];
                 continue;
             }
-            counter++;
-            name = [NSString stringWithFormat:@"%u-%@", counter, [path lastPathComponent]];
+            *budget -= size;
+            name = [NSString stringWithFormat:@"%u-%@", (unsigned)[files count] + 1, [path lastPathComponent]];
             [files setObject:data forKey:name];
             [holder setObject:[TB_FILE_PREFIX stringByAppendingString:name] forKey:key];
         }
     }
+}
+
+/* The reverse: write the files a chat carries back into this Mac's folders and point the chat at them. */
+- (void)restoreFilesInChat:(NSMutableDictionary *)chat from:(NSDictionary *)files
+{
+    NSArray *messages = [chat objectForKey:@"messages"];
+    NSArray *fields = [NSArray arrayWithObjects:@"image", @"video", @"file", nil];
+    unsigned i;
+    unsigned f;
+    for (i = 0; i < [messages count]; i++) {
+        NSMutableDictionary *message = [messages objectAtIndex:i];
+        NSMutableDictionary *attachment = [message objectForKey:@"attachment"];
+        [message removeObjectForKey:@"open"];
+        [message removeObjectForKey:@"pendingMedia"];
+        for (f = 0; f < [fields count] + 1; f++) {
+            NSMutableDictionary *holder = f < [fields count] ? message : attachment;
+            NSString *key = f < [fields count] ? [fields objectAtIndex:f] : @"path";
+            NSString *value = [holder objectForKey:key];
+            NSString *name;
+            NSData *embedded;
+            NSString *restored;
+            if (!holder || ![value isKindOfClass:[NSString class]])
+                continue;
+            if (![value hasPrefix:TB_FILE_PREFIX]) {
+                [holder removeObjectForKey:key];
+                continue;
+            }
+            name = [value substringFromIndex:[TB_FILE_PREFIX length]];
+            embedded = [files objectForKey:name];
+            restored = [embedded isKindOfClass:[NSData class]]
+                ? [self restoredPathForEmbedded:embedded name:name directory:f < [fields count] ? @"media" : @"attachments"] : nil;
+            if (restored)
+                [holder setObject:restored forKey:key];
+            else
+                [holder removeObjectForKey:key];
+        }
+    }
+}
+
+- (NSDictionary *)portableChat:(NSDictionary *)chat
+{
+    NSMutableDictionary *copy = mutableCopyOfPlist(chat);
+    NSMutableDictionary *files = [NSMutableDictionary dictionary];
+    double budget = 400.0 * 1024 * 1024;
+    if (!copy)
+        return nil;
+    [copy removeObjectForKey:@"id"];
+    [copy removeObjectForKey:@"ctxTokens"];
+    [copy removeObjectForKey:@"ctxAt"];
+    [self embedFilesInChat:copy into:files budget:&budget];
     return [NSDictionary dictionaryWithObjectsAndKeys:TB_CHAT_FORMAT, @"format", [NSNumber numberWithInt:1], @"version",
         [NSDate date], @"exported", copy, @"chat", files, @"files", nil];
+}
+
+/* The history of every workspace, with the files its chats use inside it. For an export to a file;
+   the copy on the relay and the backup before an import carry references only. */
+- (NSData *)historyDataIncludingFiles
+{
+    NSDictionary *root = [self historyRoot];
+    NSMutableDictionary *copy = mutableCopyOfPlist(root);
+    NSMutableDictionary *files = [NSMutableDictionary dictionary];
+    NSDictionary *spaces = [copy objectForKey:@"workspaces"];
+    NSEnumerator *names = [spaces keyEnumerator];
+    NSString *name;
+    double budget = 800.0 * 1024 * 1024;
+    NSString *error = nil;
+    NSData *data;
+    if (!copy)
+        return nil;
+    while ((name = [names nextObject])) {
+        NSArray *list = [[spaces objectForKey:name] objectForKey:@"chats"];
+        unsigned c;
+        for (c = 0; c < [list count]; c++)
+            [self embedFilesInChat:[list objectAtIndex:c] into:files budget:&budget];
+    }
+    [copy setObject:files forKey:@"files"];
+    data = [NSPropertyListSerialization dataFromPropertyList:copy format:NSPropertyListBinaryFormat_v1_0 errorDescription:&error];
+    if (error)
+        [error release];
+    return data;
+}
+
+/* A chat made from this one up to and including a message, in the same workspace. */
+- (void)branchFromMessage:(NSMutableDictionary *)message
+{
+    NSMutableDictionary *copy;
+    NSMutableArray *messages;
+    NSUInteger index;
+    NSString *title;
+    if (busy || !current)
+        return;
+    index = [[current objectForKey:@"messages"] indexOfObjectIdenticalTo:message];
+    if (index == NSNotFound)
+        return;
+    copy = mutableCopyOfPlist(current);
+    if (!copy)
+        return;
+    messages = [copy objectForKey:@"messages"];
+    while ([messages count] > index + 1)
+        [messages removeLastObject];
+    title = [copy objectForKey:@"title"];
+    [copy setObject:[NSString stringWithFormat:@"%@ (branch)", title ? title : @"Chat"] forKey:@"title"];
+    [copy setObject:[NSNumber numberWithBool:NO] forKey:@"autoTitle"];
+    [copy setObject:[NSString stringWithFormat:@"%d", [store takeNextId]] forKey:@"id"];
+    [copy removeObjectForKey:@"ctxTokens"];
+    [copy removeObjectForKey:@"ctxAt"];
+    [self forgetEdit];
+    [chats insertObject:copy atIndex:0];
+    [self saveStore];
+    [self reloadTableSelect:0 show:YES];
 }
 
 - (NSString *)readableChat:(NSDictionary *)chat markdown:(BOOL)markdown
@@ -218,12 +325,8 @@ static NSString *safeFileStem(NSString *title)
     NSDictionary *root;
     NSMutableDictionary *chat;
     NSDictionary *files;
-    NSArray *messages;
-    NSArray *fields = [NSArray arrayWithObjects:@"image", @"video", @"file", nil];
     NSString *problem;
     NSString *error = nil;
-    unsigned i;
-    unsigned f;
     (void)sender;
     if (busy || !current) {
         NSBeep();
@@ -262,35 +365,7 @@ static NSString *safeFileStem(NSString *title)
         return;
     }
     files = [[root objectForKey:@"files"] isKindOfClass:[NSDictionary class]] ? [root objectForKey:@"files"] : [NSDictionary dictionary];
-    messages = [chat objectForKey:@"messages"];
-    for (i = 0; i < [messages count]; i++) {
-        NSMutableDictionary *message = [messages objectAtIndex:i];
-        NSMutableDictionary *attachment = [message objectForKey:@"attachment"];
-        [message removeObjectForKey:@"open"];
-        [message removeObjectForKey:@"pendingMedia"];
-        for (f = 0; f < [fields count] + 1; f++) {
-            NSMutableDictionary *holder = f < [fields count] ? message : attachment;
-            NSString *key = f < [fields count] ? [fields objectAtIndex:f] : @"path";
-            NSString *value = [holder objectForKey:key];
-            NSString *name;
-            NSData *embedded;
-            NSString *restored;
-            if (!holder || ![value isKindOfClass:[NSString class]])
-                continue;
-            if (![value hasPrefix:TB_FILE_PREFIX]) {
-                [holder removeObjectForKey:key];
-                continue;
-            }
-            name = [value substringFromIndex:[TB_FILE_PREFIX length]];
-            embedded = [files objectForKey:name];
-            restored = [embedded isKindOfClass:[NSData class]]
-                ? [self restoredPathForEmbedded:embedded name:name directory:f < [fields count] ? @"media" : @"attachments"] : nil;
-            if (restored)
-                [holder setObject:restored forKey:key];
-            else
-                [holder removeObjectForKey:key];
-        }
-    }
+    [self restoreFilesInChat:chat from:files];
     [chat setObject:[NSString stringWithFormat:@"%d", [store takeNextId]] forKey:@"id"];
     [chat removeObjectForKey:@"ctxTokens"];
     [chat removeObjectForKey:@"ctxAt"];

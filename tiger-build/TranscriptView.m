@@ -13,6 +13,7 @@
 - (BOOL)performDragOperation:(id <NSDraggingInfo>)sender;
 - (void)saveCode:(NSString *)code title:(NSString *)title;
 - (void)saveFileAtPath:(NSString *)path;
+- (NSMenu *)menuForTextView:(NSTextView *)view base:(NSMenu *)base;
 @end
 
 /* One of these sits on each message so the words can be highlighted and copied.
@@ -47,6 +48,11 @@
 {
     [copies release];
     [super dealloc];
+}
+
+- (NSMenu *)menuForEvent:(NSEvent *)event
+{
+    return [(TranscriptView *)[self superview] menuForTextView:self base:[super menuForEvent:event]];
 }
 
 /* A file dropped on a message goes to the chat, not into the message. */
@@ -1317,6 +1323,50 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     return NO;
 }
 
+/* The menu for one message: copy it, and for what the person wrote, edit from there; for any, branch. */
+- (NSMenu *)messageMenuForBox:(NSDictionary *)box
+{
+    NSMenu *menu;
+    NSMenuItem *item;
+    NSDictionary *message=[box objectForKey:@"message"];
+    NSString *content=[[box objectForKey:@"activity"] boolValue]?[message objectForKey:@"detail"]:[message objectForKey:@"text"];
+    menu=[[[NSMenu alloc] initWithTitle:@"Message"] autorelease];
+    item=[[[NSMenuItem alloc] initWithTitle:@"Copy Whole Message" action:@selector(copyMessageText:) keyEquivalent:@""] autorelease];
+    [item setTarget:self];[item setRepresentedObject:content?content:@""];[menu addItem:item];
+    if(dropTarget&&![[message objectForKey:@"status"] boolValue]&&![message objectForKey:@"activityKind"]) {
+        BOOL fromPerson=[[message objectForKey:@"role"] isEqualToString:@"user"]&&![message objectForKey:@"attachment"];
+        [menu addItem:[NSMenuItem separatorItem]];
+        if(fromPerson&&[dropTarget respondsToSelector:@selector(editFromMessage:)]) {
+            item=[[[NSMenuItem alloc] initWithTitle:@"Edit From Here" action:@selector(editFromHere:) keyEquivalent:@""] autorelease];
+            [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
+        }
+        if([dropTarget respondsToSelector:@selector(branchFromMessage:)]) {
+            item=[[[NSMenuItem alloc] initWithTitle:@"Branch Chat From Here" action:@selector(branchFromHere:) keyEquivalent:@""] autorelease];
+            [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
+        }
+    }
+    return menu;
+}
+
+/* Right-click on a message's own text: the text view's usual menu, then this one's items. */
+- (NSMenu *)menuForTextView:(NSTextView *)view base:(NSMenu *)base
+{
+    NSUInteger index=[textViews indexOfObject:view];
+    NSMenu *extra;
+    unsigned i;
+    if(index==NSNotFound||index>=[boxes count])return base;
+    extra=[self messageMenuForBox:[boxes objectAtIndex:index]];
+    if(!base)return extra;
+    [base addItem:[NSMenuItem separatorItem]];
+    while([extra numberOfItems]>0) {
+        NSMenuItem *moved=[[[extra itemAtIndex:0] retain] autorelease];
+        [extra removeItemAtIndex:0];
+        [base addItem:moved];
+    }
+    (void)i;
+    return base;
+}
+
 - (NSMenu *)menuForEvent:(NSEvent *)event
 {
     NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
@@ -1350,11 +1400,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         for(i=0;i<[boxes count];i++) {
             NSDictionary *box=[boxes objectAtIndex:i];
             if(!NSPointInRect(point,[[box objectForKey:@"rect"] rectValue]))continue;
-            NSDictionary *message=[box objectForKey:@"message"];
-            NSString *content=[[box objectForKey:@"activity"] boolValue]?[message objectForKey:@"detail"]:[message objectForKey:@"text"];
-            menu=[[[NSMenu alloc] initWithTitle:@"Message"] autorelease];
-            item=[[[NSMenuItem alloc] initWithTitle:@"Copy Text" action:@selector(copyMessageText:) keyEquivalent:@"c"] autorelease];
-            [item setTarget:self];[item setRepresentedObject:content?content:@""];[menu addItem:item];return menu;
+            return [self messageMenuForBox:box];
         }
         return [super menuForEvent:event];
     }
@@ -1384,6 +1430,16 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     }
     [[NSWorkspace sharedWorkspace] openFile:path];
 }
+- (void)editFromHere:(id)sender
+{
+    [dropTarget performSelector:@selector(editFromMessage:) withObject:[sender representedObject]];
+}
+
+- (void)branchFromHere:(id)sender
+{
+    [dropTarget performSelector:@selector(branchFromMessage:) withObject:[sender representedObject]];
+}
+
 - (void)copyMessageText:(id)sender
 {
     NSPasteboard *p=[NSPasteboard generalPasteboard];[p declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];

@@ -602,6 +602,28 @@ static unsigned pdfPageCount(NSString *path)
     [self attachPaths:[panel filenames]];
 }
 
+/* Every file path a property list mentions under the keys chats use. */
+static void collectStoredPaths(id plist, NSMutableSet *used)
+{
+    if ([plist isKindOfClass:[NSDictionary class]]) {
+        NSEnumerator *keys = [plist keyEnumerator];
+        NSString *key;
+        while ((key = [keys nextObject])) {
+            id value = [plist objectForKey:key];
+            if ([value isKindOfClass:[NSString class]]) {
+                if ([key isEqualToString:@"path"] || [key isEqualToString:@"image"] || [key isEqualToString:@"video"] || [key isEqualToString:@"file"])
+                    [used addObject:value];
+            } else {
+                collectStoredPaths(value, used);
+            }
+        }
+    } else if ([plist isKindOfClass:[NSArray class]]) {
+        unsigned i;
+        for (i = 0; i < [plist count]; i++)
+            collectStoredPaths([plist objectAtIndex:i], used);
+    }
+}
+
 /* Files kept for chats that no longer exist are removed: attachments, and pictures and files
    the model made. A file stays while any chat in any workspace points to it, and while it is
    under ten minutes old (a message taken back for editing is not in a chat for a moment). */
@@ -631,6 +653,20 @@ static unsigned pdfPageCount(NSString *path)
                     [used addObject:path];
                 if ((path = [message objectForKey:@"file"]))
                     [used addObject:path];
+            }
+        }
+    }
+    {
+        /* A backup made before an import still points at its files. */
+        NSArray *support = [manager directoryContentsAtPath:[self supportDir]];
+        unsigned b;
+        for (b = 0; b < [support count]; b++) {
+            NSString *file = [support objectAtIndex:b];
+            if ([file hasPrefix:@"history-before-import-"] && [file hasSuffix:@".plist"]) {
+                NSData *raw = [NSData dataWithContentsOfFile:[[self supportDir] stringByAppendingPathComponent:file]];
+                id plist = raw ? [NSPropertyListSerialization propertyListFromData:raw mutabilityOption:NSPropertyListImmutable
+                    format:NULL errorDescription:NULL] : nil;
+                collectStoredPaths(plist, used);
             }
         }
     }

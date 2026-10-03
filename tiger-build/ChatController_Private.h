@@ -92,6 +92,12 @@
 - (IBAction)importChat:(id)sender;
 @end
 
+@interface ChatController (EditAnywhere)
+- (void)editAtIndex:(int)index;
+- (void)editFromMessage:(NSMutableDictionary *)message;
+- (void)branchFromMessage:(NSMutableDictionary *)message;
+@end
+
 @interface ChatController (Run)
 - (NSArray *)currentToolCatalog;
 - (BOOL)serverEnabled:(NSString *)key chat:(NSDictionary *)chat;

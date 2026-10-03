@@ -414,6 +414,9 @@ NSString *TBMessageContent(NSDictionary *message)
         return [message objectForKey:@"text"];
     name = [file objectForKey:@"name"];
     kind = [file objectForKey:@"kind"];
+    if ([[file objectForKey:@"stub"] boolValue])
+        return [NSString stringWithFormat:@"[The person attached \"%@\" earlier in the conversation. Its content is summarized in the summary above to save space.%@]",
+            name, copyHint([file objectForKey:@"path"], @"The original")];
     if ([kind isEqualToString:@"image"])
         return [NSString stringWithFormat:@"[The person attached a picture named \"%@\".%@%@]",
             name, copyHint([file objectForKey:@"path"], @"A copy"), [file objectForKey:@"note"] ? [@" " stringByAppendingString:[file objectForKey:@"note"]] : @""];

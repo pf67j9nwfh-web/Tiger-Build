@@ -547,7 +547,7 @@ static NSString *newRunId(void)
         [sendButton setEnabled:NO];
         [sendButton setToolTip:nil];
     }
-    [editButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
+    [editButton setEnabled:!busy && (editBackup || [self lastUserIndex] >= 0) && ![self chatIsBusyElsewhere:current]];
     [retryButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
     [attachButton setEnabled:!busy && current && ![self chatIsBusyElsewhere:current]];
     [editButton setTitle:editBackup ? @"Cancel Edit" : @"Edit Last"];
@@ -588,8 +588,18 @@ static NSString *newRunId(void)
     }
     messages = [current objectForKey:@"messages"];
     userMessage = [[messages objectAtIndex:index] retain];
-    while ((int)[messages count] > index)
-        [messages removeLastObject];
+    {
+        /* Files attached after that message stay, and go in front of it again. */
+        NSMutableArray *kept = [NSMutableArray array];
+        unsigned k;
+        for (k = index + 1; k < [messages count]; k++) {
+            if ([[messages objectAtIndex:k] objectForKey:@"attachment"])
+                [kept addObject:[messages objectAtIndex:k]];
+        }
+        while ((int)[messages count] > index)
+            [messages removeLastObject];
+        [messages addObjectsFromArray:kept];
+    }
     [messages addObject:userMessage];
     [userMessage release];
     openMessage = [NSMutableDictionary dictionary];
@@ -606,10 +616,6 @@ static NSString *newRunId(void)
 
 - (IBAction)editLast:(id)sender
 {
-    NSMutableArray *messages;
-    NSMutableArray *removed;
-    int index;
-    NSString *text;
     (void)sender;
     if (busy || !current || [self chatIsBusyElsewhere:current])
         return;
@@ -617,16 +623,48 @@ static NSString *newRunId(void)
         [self cancelEdit:nil];
         return;
     }
-    index = [self lastUserIndex];
+    [self editAtIndex:[self lastUserIndex]];
+}
+
+/* Edit From Here, from the right-click menu of any message the person wrote. */
+- (void)editFromMessage:(NSMutableDictionary *)message
+{
+    NSUInteger index;
+    if (busy || !current || [self chatIsBusyElsewhere:current])
+        return;
+    if (editBackup)
+        [self cancelEdit:nil];
+    index = [[current objectForKey:@"messages"] indexOfObjectIdenticalTo:message];
+    if (index == NSNotFound)
+        return;
+    [self editAtIndex:(int)index];
+}
+
+/* Take the message at this position back into the message box, with everything after it set aside
+   (Cancel Edit puts it back). Files attached after it are kept, since they are not part of what is redone. */
+- (void)editAtIndex:(int)index
+{
+    NSMutableArray *messages;
+    NSMutableArray *removed;
+    NSMutableArray *kept;
+    NSString *text;
+    unsigned k;
     if (index < 0)
         return;
     messages = [current objectForKey:@"messages"];
     removed = [NSMutableArray array];
+    kept = [NSMutableArray array];
     text = [[messages objectAtIndex:index] objectForKey:@"text"];
-    while ((int)[messages count] > index) {
-        [removed insertObject:[messages lastObject] atIndex:0];
-        [messages removeLastObject];
+    for (k = index; k < [messages count]; k++) {
+        NSMutableDictionary *message = [messages objectAtIndex:k];
+        if ((int)k > index && [message objectForKey:@"attachment"])
+            [kept addObject:message];
+        else
+            [removed addObject:message];
     }
+    while ((int)[messages count] > index)
+        [messages removeLastObject];
+    [messages addObjectsFromArray:kept];
     [editBackup release];
     editBackup = [removed retain];
     [input setStringValue:text ? text : @""];

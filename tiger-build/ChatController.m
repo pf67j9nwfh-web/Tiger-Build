@@ -1978,7 +1978,9 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     if ([item action] == @selector(stopRun:))
         return busy && !stopping;
-    if ([item action] == @selector(retryLast:) || [item action] == @selector(editLast:))
+    if ([item action] == @selector(editLast:))
+        return !busy && (editBackup || [self lastUserIndex] >= 0);
+    if ([item action] == @selector(retryLast:))
         return !busy && [self lastUserIndex] >= 0;
     if ([item action] == @selector(compactNow:) || [item action] == @selector(attachFile:)
         || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:))
@@ -2545,6 +2547,23 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
                 if (!inserted) {
                     [rebuilt addObject:summary];
                     inserted = YES;
+                }
+                /* A small attachment stays as it was. A large one is replaced by a note: the summary
+                   has its substance, and the file is still on this Mac. */
+                if ([message objectForKey:@"attachment"]) {
+                    NSDictionary *file = [message objectForKey:@"attachment"];
+                    if ([[file objectForKey:@"tokens"] intValue] <= 3000) {
+                        [rebuilt addObject:message];
+                    } else {
+                        NSMutableDictionary *stub = [NSMutableDictionary dictionaryWithDictionary:file];
+                        NSMutableDictionary *note = [NSMutableDictionary dictionaryWithDictionary:message];
+                        [stub setObject:[NSNumber numberWithBool:YES] forKey:@"stub"];
+                        [stub setObject:[NSNumber numberWithInt:40] forKey:@"tokens"];
+                        [note setObject:stub forKey:@"attachment"];
+                        [note removeObjectForKey:@"image"];
+                        [note setObject:[NSString stringWithFormat:@"Attached earlier: %@ (summarized to save space)", [file objectForKey:@"name"]] forKey:@"text"];
+                        [rebuilt addObject:note];
+                    }
                 }
                 continue;
             }

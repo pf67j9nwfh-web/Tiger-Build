@@ -5,6 +5,9 @@
    chats and still imports, into the current workspace. */
 
 @interface ChatController (HistoryPrivate)
+- (NSDictionary *)historyRoot;
+- (NSData *)historyDataIncludingFiles;
+- (void)restoreFilesInChat:(NSMutableDictionary *)chat from:(NSDictionary *)files;
 - (NSDictionary *)allWorkspaces;
 - (NSString *)pathForWorkspace:(NSString *)name;
 - (NSArray *)workspaceNames;
@@ -45,10 +48,15 @@
     return all;
 }
 
+- (NSDictionary *)historyRoot
+{
+    return [NSDictionary dictionaryWithObjectsAndKeys:@"TigerBuild-history", @"format",
+        [NSNumber numberWithInt:2], @"version", [self workspaceName], @"current", [self allWorkspaces], @"workspaces", nil];
+}
+
 - (NSData *)historyData
 {
-    NSDictionary *root = [NSDictionary dictionaryWithObjectsAndKeys:@"TigerBuild-history", @"format",
-        [NSNumber numberWithInt:2], @"version", [self workspaceName], @"current", [self allWorkspaces], @"workspaces", nil];
+    NSDictionary *root = [self historyRoot];
     NSString *error = nil;
     NSData *data = [NSPropertyListSerialization dataFromPropertyList:root
         format:NSPropertyListXMLFormat_v1_0 errorDescription:&error];
@@ -107,7 +115,7 @@
     [panel setRequiredFileType:@"plist"];
     if ([panel runModalForDirectory:[NSHomeDirectory() stringByAppendingPathComponent:@"Desktop"]
         file:@"TigerBuild-history.plist"] != NSOKButton) return;
-    data = [self historyData];
+    data = [self historyDataIncludingFiles];
     if (!data || ![data writeToFile:[panel filename] atomically:YES])
         NSRunAlertPanel(@"History", @"Could not export the history.", @"OK", nil, nil);
 }
@@ -193,6 +201,17 @@
     return out;
 }
 
+/* A history file made with files inside: write them out and point the chats at them. */
+- (void)restoreWorkspaceFiles:(NSMutableDictionary *)space from:(NSDictionary *)files
+{
+    NSArray *list = [space objectForKey:@"chats"];
+    unsigned c;
+    if (![files isKindOfClass:[NSDictionary class]])
+        files = [NSDictionary dictionary];
+    for (c = 0; c < [list count]; c++)
+        [self restoreFilesInChat:[list objectAtIndex:c] from:files];
+}
+
 - (void)importHistoryData:(NSData *)data
 {
     NSString *error = nil;
@@ -239,14 +258,19 @@
         NSArray *old = [self workspaceNamesOnDisk];
         for (i = 0; i < [old count]; i++)
             [[NSFileManager defaultManager] removeFileAtPath:[self pathForWorkspace:[old objectAtIndex:i]] handler:nil];
-        for (i = 0; i < [names count]; i++)
-            [self writeWorkspace:[names objectAtIndex:i] data:[self cleanedWorkspace:[spaces objectForKey:[names objectAtIndex:i]]]];
+        for (i = 0; i < [names count]; i++) {
+            NSMutableDictionary *cleaned = [self cleanedWorkspace:[spaces objectForKey:[names objectAtIndex:i]]];
+            [self restoreWorkspaceFiles:cleaned from:[root objectForKey:@"files"]];
+            [self writeWorkspace:[names objectAtIndex:i] data:cleaned];
+        }
         open = [bundle objectForKey:@"current"];
         if (!open)
             open = [names objectAtIndex:0];
     } else {
+        NSMutableDictionary *cleaned = [self cleanedWorkspace:[spaces objectForKey:[names objectAtIndex:0]]];
         open = [self workspaceName];
-        [self writeWorkspace:open data:[self cleanedWorkspace:[spaces objectForKey:[names objectAtIndex:0]]]];
+        [self restoreWorkspaceFiles:cleaned from:[root objectForKey:@"files"]];
+        [self writeWorkspace:open data:cleaned];
     }
     [self setWorkspaceChoice:open];
     current = nil;
