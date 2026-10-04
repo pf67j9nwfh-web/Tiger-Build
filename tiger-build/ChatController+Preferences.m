@@ -659,9 +659,21 @@ static NSString *splitBase(NSString *base, NSString **port)
     [self preferencesButton:@"Test" frame:NSMakeRect(172, y, 80, 28) action:@selector(testSSH:) inView:tab];
     [self preferencesButton:@"Forget Host Key" frame:NSMakeRect(258, y, 130, 28) action:@selector(forgetSSHHostKey:) inView:tab];
     [self preferencesButton:@"Disconnect" frame:NSMakeRect(394, y, 110, 28) action:@selector(disconnectCommander:) inView:tab];
-    y -= 56;
-    note = [self preferencesNote:@"" frame:NSMakeRect(16, y, 520, 54) inView:tab];
+    note = [self preferencesNote:@"" frame:NSMakeRect(16, 76, 520, 34) inView:tab];
     [prefsFields setObject:note forKey:@"ssh.status"];
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, 46, 400, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Let agents run administrator (sudo) commands on this Mac"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [button setTarget:self];
+    [button setAction:@selector(toggleSudoMode:)];
+    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain, so commands with sudo just work."];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"sudo.check"];
+    [self preferencesButton:@"Set Password..." frame:NSMakeRect(396, 42, 140, 28) action:@selector(setAdministratorPassword:) inView:tab];
+    note = [self preferencesLabel:@"" frame:NSMakeRect(34, 20, 502, 16) inView:tab];
+    [note setFont:[NSFont systemFontOfSize:11]];
+    [prefsFields setObject:note forKey:@"sudo.status"];
 
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 360, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
@@ -794,6 +806,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     if (!prefsWindow)
         [self buildPreferencesWindow];
     [self loadPreferenceForm];
+    [self refreshSudoStatus];
     [prefsWindow makeKeyAndOrderFront:nil];
 }
 

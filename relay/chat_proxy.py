@@ -984,6 +984,8 @@ class ToolSession(object):
         self.run.ask(call_id)
         args = self._call_args(call)
         detail = args.get("command") or args.get("path") or args.get("query") or args.get("question") or json.dumps(args, ensure_ascii=False)
+        if re.search(r"\bsudo\b", str(args.get("command") or "")):
+            detail = "As administrator (sudo): %s" % detail
         yield ("q", _plist({"id": call_id, "name": call.get("name") or "tool", "server": key,
                             "detail": str(detail)[:4000]}))
         decision = self.run.wait(call_id)

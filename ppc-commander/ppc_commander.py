@@ -38,7 +38,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.4.0'
+VERSION = '0.5.0'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
@@ -70,14 +70,21 @@ DEFAULT_CONFIG = {
     'fileReadLineLimit': 1000,
     'fileWriteLineLimit': 1000,
     'telemetryEnabled': False,
+    'sudoMode': False,
 }
 
 
 # These keys decide what the model may run and touch, so the model may not
 # change them. They come from config.json, which the file tools may not edit,
 # and a root-owned /etc/ppc-commander.json overrides them when it exists.
-LOCKED_KEYS = ['blockedCommands', 'allowedDirectories', 'defaultShell']
+LOCKED_KEYS = ['blockedCommands', 'allowedDirectories', 'defaultShell', 'sudoMode']
 POLICY_PATH = '/etc/ppc-commander.json'
+
+# Administrator (sudo) mode. Off unless a person turns it on, in Tiger Build's preferences or with
+# `ppc_commander.py --sudo on`. The password is typed once in Tiger Build, which keeps it in this
+# user's Keychain; it is read from there only when a command needs sudo and is never shown to the model.
+KEYCHAIN_SERVICE = 'Tiger Build Commander administrator'
+SECURITY_PROGRAM = '/usr/bin/security'
 
 # Programs that run the word after them. A blocked name anywhere after one of
 # these, in the same command, is treated as the program being run.
@@ -558,6 +565,8 @@ def apply_policy():
     for key in ('allowedDirectories', 'defaultShell'):
         if key in policy:
             CONFIG[key] = policy[key]
+    if policy.get('sudoMode') == False:
+        CONFIG['sudoMode'] = False
 
 
 def save_config():
@@ -1960,6 +1969,52 @@ def detach_command(command, shell):
     return child
 
 
+def uses_sudo(command):
+    return 'sudo' in command_words(command)
+
+
+def sudo_enabled():
+    return CONFIG.get('sudoMode') == True
+
+
+def sudo_password():
+    """The administrator password from the Keychain. Raises ToolError, saying what to do, when it cannot."""
+    try:
+        user = os.environ.get('USER') or pwd.getpwuid(os.getuid())[0]
+    except Exception:
+        raise ToolError('cannot tell which user this is')
+    if not os.path.isfile(SECURITY_PROGRAM):
+        raise ToolError('this Mac has no security program, so the administrator password cannot be read')
+    code, out = run_argv([SECURITY_PROGRAM, 'find-generic-password', '-a', user, '-s', KEYCHAIN_SERVICE, '-w'], None, 20, {})
+    if code == 0 and out.strip() != '':
+        return out.split('\n')[0]
+    if out.find('could not be found') != -1:
+        raise ToolError('no administrator password is saved. A person can set it in Tiger Build: Preferences, Commander tab.')
+    raise ToolError('the administrator password could not be read from the Keychain (is the login keychain unlocked? '
+                    'stay logged in at this Mac). The Keychain said: %s' % clip(out.strip(), 200))
+
+
+def with_sudo(command, detach):
+    """(command to run, read end of a pipe holding the password or None). The password reaches sudo through a file
+    descriptor that is closed before the model's command starts, so it is in no command line, file or environment."""
+    if not uses_sudo(command):
+        return command, None
+    if not sudo_enabled():
+        raise ToolError('administrator (sudo) commands are off on this Mac. A person can turn them on in '
+                        'Tiger Build: Preferences, Commander tab. Do not try to work around this.')
+    if detach:
+        raise ToolError('sudo cannot be used with detach. Run it in the foreground.')
+    password = sudo_password()
+    if len(password) > 1000:
+        raise ToolError('the saved administrator password is too long')
+    read_end, write_end = os.pipe()
+    os.write(write_end, password + '\n')
+    os.close(write_end)
+    prefix = ('sudo -S -v -p "" <&%d 2>/dev/null || { echo "sudo: the saved administrator password was not accepted. '
+              'A person can set it again in Tiger Build." >&2; exit 1; }; exec %d<&-; ' % (read_end, read_end))
+    return prefix + command, read_end
+
+
 def tool_start_process(args):
     if pty is None:
         raise ToolError('this Python has no pty module')
@@ -1988,6 +2043,8 @@ def tool_start_process(args):
     why = workspace_command_problem(command)
     if why:
         raise ToolError('blocked by the workspace directory restriction: %s' % why)
+    shown_command = command
+    command, password_pipe = with_sudo(command, opt_bool(args, 'detach', False))
     if opt_bool(args, 'detach', False):
         child = detach_command(command, shell)
         lines = [
@@ -2013,7 +2070,9 @@ def tool_start_process(args):
             fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
         except Exception:
             pass
-    session = Session(pid, fd, command)
+    if password_pipe is not None:
+        os.close(password_pipe)
+    session = Session(pid, fd, shown_command)
     thread = threading.Thread(target=read_pty, args=(session,))
     thread.setDaemon(True)
     thread.start()
@@ -2616,6 +2675,7 @@ def tool_get_config(args):
         'fileReadLineLimit: %s' % CONFIG.get('fileReadLineLimit', ''),
         'fileWriteLineLimit: %s' % CONFIG.get('fileWriteLineLimit', ''),
         'telemetryEnabled: %s' % telemetry_text,
+        'sudoMode: %s' % (sudo_enabled() and 'on (commands with sudo run as administrator)' or 'off'),
         'telemetry: this server does not send telemetry anywhere',
         'python: %s' % SYSINFO.get('python', ''),
         'model: %s' % SYSINFO.get('model', ''),
@@ -3052,7 +3112,8 @@ def tool_defs():
                 'Set detach true for a GUI or anything that should keep running after this call: '
                 'it is started in its own session, with no terminal, and closing the chat does not stop it. '
                 'Use open for a Mac .app. '
-                'Include a trailing newline yourself when talking to an interactive program later.'
+                'sudo works only when a person has turned administrator mode on for this Mac; then just write sudo in the command '
+                '(not with detach). Include a trailing newline yourself when talking to an interactive program later.'
             ),
             'inputSchema': {
                 'type': 'object',
@@ -3624,6 +3685,52 @@ def run_self_test():
     except OSError:
         pass
 
+    try:
+        fakebin = os.path.join(base, 'fakebin')
+        os.makedirs(fakebin)
+        f = open(os.path.join(fakebin, 'sudo'), 'w')
+        f.write('#!/bin/sh\nif [ "$1" = "-S" ] && [ "$2" = "-v" ]; then read pw; [ "$pw" = "secret" ] && exit 0; exit 1; fi\n'
+                'echo "fake sudo ran: $*"\n')
+        f.close()
+        os.chmod(os.path.join(fakebin, 'sudo'), 0755)
+        old_path = os.environ.get('PATH', '')
+        os.environ['PATH'] = fakebin + ':' + old_path
+        saved_mode = CONFIG.get('sudoMode')
+        saved_password = globals()['sudo_password']
+        try:
+            CONFIG['sudoMode'] = False
+            try:
+                tool_start_process({'command': 'sudo echo hi', 'timeout_ms': 3000})
+                expect('sudo off', False, failures, 'ran with the mode off')
+            except ToolError, exc:
+                expect('sudo off', str(exc.args[0]).find('are off on this Mac') != -1, failures, str(exc.args[0]))
+            CONFIG['sudoMode'] = True
+            globals()['sudo_password'] = lambda: 'secret'
+            out = tool_start_process({'command': 'sudo echo hi', 'timeout_ms': 5000})
+            expect('sudo on', out.find('fake sudo ran: echo hi') != -1 and out.find('secret') == -1, failures, out)
+            out = tool_start_process({'command': 'echo plain', 'timeout_ms': 5000})
+            expect('no sudo no prefix', out.find('plain') != -1 and out.find('fake sudo') == -1, failures, out)
+            globals()['sudo_password'] = lambda: 'wrong'
+            out = tool_start_process({'command': 'sudo echo hi', 'timeout_ms': 5000})
+            expect('sudo wrong password', out.find('was not accepted') != -1 and out.find('fake sudo ran') == -1, failures, out)
+            try:
+                tool_start_process({'command': 'sudo echo hi', 'timeout_ms': 3000, 'detach': True})
+                expect('sudo detach', False, failures, 'detached')
+            except ToolError, exc:
+                expect('sudo detach', str(exc.args[0]).find('detach') != -1, failures, str(exc.args[0]))
+            try:
+                tool_set_config_value({'key': 'sudoMode', 'value': False})
+                expect('sudo locked', False, failures, 'changed by a tool')
+            except ToolError, exc:
+                expect('sudo locked', str(exc.args[0]).find('locked') != -1, failures, str(exc.args[0]))
+        finally:
+            CONFIG['sudoMode'] = saved_mode
+            globals()['sudo_password'] = saved_password
+            os.environ['PATH'] = old_path
+            shutil.rmtree(base)
+    except ToolError, exc:
+        expect('sudo tests', False, failures, str(exc.args[0]))
+
     if failures:
         # The blocked-command success path above can append the name before the exception handler.
         uniq = []
@@ -3633,6 +3740,27 @@ def run_self_test():
         sys.stderr.write('%d failed: %s\n' % (len(uniq), ', '.join(uniq)))
         return 1
     sys.stderr.write('all passed\n')
+    return 0
+
+
+def sudo_command(words):
+    """ppc_commander.py --sudo on|off|status, for Tiger Build and for people. The first line says on or off."""
+    action = 'status'
+    if len(words) > 0:
+        action = words[0]
+    if action not in ('on', 'off', 'status'):
+        sys.stderr.write('usage: ppc_commander.py --sudo on|off|status\n')
+        return 2
+    if action != 'status':
+        CONFIG['sudoMode'] = (action == 'on')
+        save_config()
+        load_config()
+    if sudo_enabled():
+        print 'on'
+    else:
+        print 'off'
+        if action == 'on':
+            print 'a policy file (%s) keeps administrator mode off on this Mac' % POLICY_PATH
     return 0
 
 
@@ -3647,6 +3775,8 @@ def main(argv):
     collect_sysinfo()
     if len(argv) > 1 and argv[1] == '--self-test':
         sys.exit(run_self_test())
+    if len(argv) > 1 and argv[1] == '--sudo':
+        sys.exit(sudo_command(argv[2:]))
     # Explicit Stop in Tiger Build blocks even newly opened SSH sessions.
     state = os.path.expanduser('~/Library/Application Support/Tiger Build/commander')
     if os.path.isfile(os.path.join(state, 'disabled')):

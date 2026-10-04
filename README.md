@@ -178,6 +178,8 @@ Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`, pp
 
 ## Using Tiger Build
 
+Skip this section if you don't want an ultra detailed description of this app's functionality.
+
 **Chats**
 - **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander to one folder.
 - **Chat list.** Hover a chat to see its full title. Each service shows its own icon in the provider popup and the Model menu.
@@ -250,6 +252,7 @@ the latest and greatest models available for you to use excluding an API updates
 - SSH uses the strongest settings Tiger's OpenSSH 5.1 supports.
 - A model cannot change ppc-commander's blocked commands, allowed folders or shell, or edit its files.
 - File conversion refuses XML entity definitions and oversized archives, and the relay deletes the files it hands out after three days.
+- **Administrator (sudo) mode** is off. To let agents run commands as root on a Mac, open Preferences, Commander, tick *Let agents run administrator (sudo) commands*, and type the account password once. Tiger Build checks it and keeps it in that Mac's Keychain; Commander reads it only when a command contains `sudo` (it reaches sudo through a pipe that is closed before the model's command starts) and the model never sees it. `ppc_commander.py --sudo on|off|status` does the same from a terminal, and a root-owned `/etc/ppc-commander.json` containing `{"sudoMode": false}` keeps it off. Blocked commands such as `shutdown` stay blocked under sudo, the approval question marks sudo commands, and `sudo` is refused with `detach`. The login keychain must be unlocked, so stay logged in at that Mac.
 - With tools on, a model runs shell commands as the Tiger Mac account. The guards stop mistakes and simple tricks, not a determined attacker; use a separate account for real separation.
 
 ## Encrypting the connection to the relay
