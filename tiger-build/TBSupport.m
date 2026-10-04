@@ -1,4 +1,5 @@
 #import "TBSupport.h"
+#import "TBMarkup.h"
 
 NSString *TBJSONEscape(NSString *value)
 {
@@ -532,6 +533,73 @@ NSString *TBDisplayText(NSString *text)
         }
     }
     return out;
+}
+
+NSString *TBSpeechText(NSString *text)
+{
+    NSArray *blocks = TBSplitBlocks(text);
+    NSMutableString *out = [NSMutableString string];
+    unsigned b;
+    for (b = 0; b < [blocks count]; b++) {
+        NSDictionary *block = [blocks objectAtIndex:b];
+        NSString *body;
+        NSArray *lines;
+        unsigned l;
+        if ([[block objectForKey:@"code"] boolValue]) {
+            [out appendString:[[block objectForKey:@"lang"] isEqualToString:@"table"] ? @"\nThere is a table here.\n" : @"\nThere is a block of code here.\n"];
+            continue;
+        }
+        body = [block objectForKey:@"text"];
+        lines = [body componentsSeparatedByString:@"\n"];
+        for (l = 0; l < [lines count]; l++) {
+            NSString *line = [[lines objectAtIndex:l] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableString *clean = [NSMutableString string];
+            unsigned i = 0;
+            unsigned n;
+            while ([line hasPrefix:@"#"])
+                line = [[line substringFromIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if ([line hasPrefix:@"- "] || [line hasPrefix:@"* "])
+                line = [line substringFromIndex:2];
+            n = [line length];
+            while (i < n) {
+                unichar c = [line characterAtIndex:i];
+                if (c == '[') {
+                    /* [words](address): keep the words */
+                    unsigned close = i + 1;
+                    while (close < n && [line characterAtIndex:close] != ']')
+                        close++;
+                    if (close + 1 < n && [line characterAtIndex:close + 1] == '(') {
+                        unsigned end = close + 2;
+                        while (end < n && [line characterAtIndex:end] != ')')
+                            end++;
+                        if (end < n) {
+                            [clean appendString:[line substringWithRange:NSMakeRange(i + 1, close - i - 1)]];
+                            i = end + 1;
+                            continue;
+                        }
+                    }
+                }
+                if (c == 'h' && (([line compare:@"http://" options:0 range:NSMakeRange(i, MIN(7u, n - i))] == NSOrderedSame)
+                    || ([line compare:@"https://" options:0 range:NSMakeRange(i, MIN(8u, n - i))] == NSOrderedSame))) {
+                    while (i < n && [line characterAtIndex:i] != ' ')
+                        i++;
+                    [clean appendString:@"a link"];
+                    continue;
+                }
+                if (c == '*' || c == '`' || c == '_' || c == '|' || c == 0xFE0F || c == 0x200D || (c >= 0xD800 && c <= 0xDFFF)) {
+                    i++;
+                    continue;
+                }
+                [clean appendFormat:@"%C", c];
+                i++;
+            }
+            if ([clean length] > 0) {
+                [out appendString:clean];
+                [out appendString:@"\n"];
+            }
+        }
+    }
+    return [out stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
 /* Before a workspace file is replaced, keep the old one: five copies in a ring, one slot for each half hour, and one

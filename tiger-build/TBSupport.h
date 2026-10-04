@@ -94,6 +94,9 @@ void TBRollingBackup(NSString *path);
 /* The text as it can be drawn on this Mac. Mac OS X before Lion has no emoji font, so emoji would show as
    boxes; common ones become words or emoticons and the rest are left out. The stored message is unchanged. */
 NSString *TBDisplayText(NSString *text);
+/* A reply as it should be read aloud: code and tables are not spoken (a short note takes their place), markdown marks
+   and addresses are dropped, links keep their words, and emoji are left out. */
+NSString *TBSpeechText(NSString *text);
 /* While a request is built: the directory the workspace is limited to, or nil. A copy of an
    attachment outside it is not mentioned to the model, whose file tools could not reach it. */
 void TBSetPathHintRoot(NSString *root);

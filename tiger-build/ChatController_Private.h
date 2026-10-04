@@ -109,6 +109,18 @@
 - (IBAction)normalTextSize:(id)sender;
 @end
 
+@interface ChatController (Voice)
+- (IBAction)speakLast:(id)sender;
+- (IBAction)stopSpeaking:(id)sender;
+- (IBAction)toggleAutoSpeak:(id)sender;
+- (IBAction)toggleVoiceCommands:(id)sender;
+- (IBAction)chooseVoice:(id)sender;
+- (BOOL)isSpeakingNow;
+- (BOOL)voiceCommandsOn;
+- (void)speakFinishedReplyIfWanted:(NSMutableDictionary *)chat;
+- (void)resumeVoiceIfWanted;
+@end
+
 @interface ChatController (EditAnywhere)
 - (void)editAtIndex:(int)index;
 - (void)editFromMessage:(NSMutableDictionary *)message;

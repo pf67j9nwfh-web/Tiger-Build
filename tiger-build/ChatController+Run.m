@@ -387,6 +387,7 @@ static NSString *newRunId(void)
         return;
     }
     stopping = YES;
+    [self stopSpeaking:nil];
     if (sideRequest) {
         /* Still compacting, before the chat stream started. */
         [sideRequest cancel];

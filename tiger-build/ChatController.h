@@ -23,6 +23,10 @@
     int attachGeneration;
     NSTextView *fieldEditor;
     id finder;
+    NSSpeechSynthesizer *voiceSynth;
+    NSSpeechSynthesizer *voiceSample;
+    NSSpeechRecognizer *voiceRecognizer;
+    NSPopUpButton *voicePopup;
     double lastPartialSave;
     NSMutableArray *attachProblems;
     BOOL attachWorking;

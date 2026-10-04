@@ -28,6 +28,8 @@
 
 - **Source control (Commander 0.4.0):** self-test passes on Python 2.3 (Tiger), 2.5 (Leopard) and 2.6 (Snow Leopard). Real Subversion repositories driven through the tools on Snow Leopard (1.6) and Leopard (1.4, which needed a retry without `--non-interactive`); a model did status, diff, commit and log through the relay on Snow Leopard. git with a stand-in program only: argument and environment handling, path limits, refusals, missing-git message.
 
+- **Voice (optional):** reading replies aloud heard working on Snow Leopard (the user confirmed); voice commands start and stop cleanly on Tiger and Snow Leopard, but the spoken phrases themselves (NSSpeechRecognizer) were not exercised because that needs a microphone and a person. Dictation (speech to free text) does not exist on these systems, so recording and transcribing on the relay is not done.
+
 ### Not verified
 - Pages, Numbers and Keynote text is recovered, not exact: slide order can differ and table layout is lost. Real drag-and-drop, `.doc` through the OS, a Keynote saved as a folder (tested), and PDFs were all run on Tiger and Snow Leopard in round 2.
 - The `ppc64` slice (no G5 now: its power supply failed) and Intel Tiger hardware. Both byte orders are covered by other runs (PowerPC Tiger and Rosetta; Intel Leopard and Snow Leopard).

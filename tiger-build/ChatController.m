@@ -218,6 +218,13 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [attachQueue release];
     [fieldEditor release];
     [finder release];
+    [voiceSynth release];
+    [voiceSample release];
+    if (voiceRecognizer) {
+        [voiceRecognizer stopListening];
+        [voiceRecognizer setDelegate:nil];
+        [voiceRecognizer release];
+    }
     [attachProblems release];
     [relayVersion release];
     [thinkingField release];
@@ -995,6 +1002,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
                 || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:)
                 || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:)
+                || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
+                || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
                 || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
                 || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
                 mask |= NSAlternateKeyMask;
@@ -1128,6 +1137,22 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Copy Last Code Block" action:@selector(copyLastCode:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        {
+            NSMenu *voiceMenu = [[[NSMenu alloc] initWithTitle:@"Voice"] autorelease];
+            NSMenuItem *voiceSlot = [[[NSMenuItem alloc] initWithTitle:@"Voice" action:NULL keyEquivalent:@""] autorelease];
+            NSArray *titles = [NSArray arrayWithObjects:@"Speak Last Reply", @"Stop Speaking", @"Speak Replies Automatically", @"Voice Commands", @"Choose Voice...", nil];
+            SEL actions[5];
+            unsigned v;
+            actions[0] = @selector(speakLast:); actions[1] = @selector(stopSpeaking:); actions[2] = @selector(toggleAutoSpeak:);
+            actions[3] = @selector(toggleVoiceCommands:); actions[4] = @selector(chooseVoice:);
+            for (v = 0; v < 5; v++) {
+                NSMenuItem *entry = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:v] action:actions[v] keyEquivalent:@""] autorelease];
+                [entry setTarget:self];
+                [voiceMenu addItem:entry];
+            }
+            [voiceSlot setSubmenu:voiceMenu];
+            [chat addItem:voiceSlot];
+        }
         item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
@@ -1250,7 +1275,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
@@ -1792,6 +1817,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self applyTextScale];
     
     [self reloadTableSelect:0 show:YES];
+    [self resumeVoiceIfWanted];
     if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
         /* What the controls and messages tell VoiceOver, for checking without it. */
         NSArray *views = [transcript subviews];
@@ -2149,6 +2175,16 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     if ([item action] == @selector(stopRun:))
         return (busy && !stopping) || [self attachmentsRunning];
+    if ([item action] == @selector(toggleAutoSpeak:)) {
+        [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBVoiceAutoSpeak"] ? NSOnState : NSOffState];
+        return YES;
+    }
+    if ([item action] == @selector(toggleVoiceCommands:)) {
+        [item setState:[self voiceCommandsOn] ? NSOnState : NSOffState];
+        return YES;
+    }
+    if ([item action] == @selector(stopSpeaking:))
+        return [self isSpeakingNow];
     if ([item action] == @selector(editLast:))
         return !busy && (editBackup || [self lastUserIndex] >= 0);
     if ([item action] == @selector(retryLast:))
@@ -2961,6 +2997,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         NSBeep();
         return;
     }
+    [self stopSpeaking:nil];
     [self forgetEdit];
     [input setStringValue:@""];
     if (editor)
@@ -3193,8 +3230,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self updateContextReadout];
     }
     [self setBusy:NO];
-    if (chat)
+    if (chat) {
+        [self speakFinishedReplyIfWanted:chat];
         [self autonameChat:chat];
+    }
 }
 
 - (void)dispatchFrameKind:(char)kind payload:(NSData *)payload

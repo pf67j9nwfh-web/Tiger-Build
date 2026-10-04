@@ -274,6 +274,14 @@ int main(void)
         tbcheck([TBDisplayText(@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713") isEqualToString:@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713"], @"other characters are untouched");
         tbcheck(![TBDisplayText([NSString stringWithFormat:@"a%C%C%Cb", (unichar)0xD83E, (unichar)0xDD2F, (unichar)0xFE0F]) hasPrefix:@"a\xed"], @"unknown pictographs dropped");
     }
+    {
+        NSString *said = TBSpeechText(@"## Title\nSee [the docs](https://example.com/x) or https://apple.com now. **Bold** and `code`.\n- one\n```python\nprint(1)\n```\n| a | b |\n|---|---|\n| 1 | 2 |\nDone.");
+        tbcheck([said rangeOfString:@"the docs"].location != NSNotFound && [said rangeOfString:@"example.com"].location == NSNotFound
+            && [said rangeOfString:@"a link"].location != NSNotFound, @"links are spoken as their words");
+        tbcheck([said rangeOfString:@"print"].location == NSNotFound && [said rangeOfString:@"block of code"].location != NSNotFound
+            && [said rangeOfString:@"table"].location != NSNotFound && [said rangeOfString:@"|"].location == NSNotFound, @"code and tables are not read out");
+        tbcheck([said rangeOfString:@"**"].location == NSNotFound && [said rangeOfString:@"#"].location == NSNotFound && [said hasPrefix:@"Title"], @"markdown marks are dropped");
+    }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 
     tbcheck(TBEstimateTokens(chat, NO) == 406, @"token estimate");
