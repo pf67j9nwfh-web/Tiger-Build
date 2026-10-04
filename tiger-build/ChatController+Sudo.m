@@ -1,9 +1,14 @@
 #import "ChatController_Private.h"
 #import <Security/Security.h>
+#import <sys/socket.h>
+#import <sys/un.h>
+#import <sys/stat.h>
+#import <unistd.h>
 
 /* Administrator (sudo) mode for Commander. The person turns it on here and types the administrator password
-   once; it is kept in the Keychain, where only this app and /usr/bin/security (which Commander uses when a
-   command needs sudo) may read it. The model never sees it. */
+   once; it is kept in the Keychain, readable only by this app. Commander runs in an SSH session, which cannot
+   open that Keychain, so when a command needs sudo it asks this app for the password over a socket only this
+   account can use. The model never sees it. */
 
 static NSString *kSudoService = @"Tiger Build Commander administrator";
 
@@ -52,40 +57,45 @@ static BOOL savePassword(NSString *password)
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
     const char *secret = [password UTF8String];
-    SecTrustedApplicationRef me = NULL;
-    SecTrustedApplicationRef security = NULL;
-    SecAccessRef access = NULL;
-    SecKeychainItemRef item = NULL;
-    SecKeychainAttribute attributes[2];
-    SecKeychainAttributeList list;
-    const void *apps[2];
-    CFArrayRef trusted;
-    OSStatus status = -1;
     forgetPassword();
-    if (SecTrustedApplicationCreateFromPath(NULL, &me) != noErr || SecTrustedApplicationCreateFromPath("/usr/bin/security", &security) != noErr)
-        return NO;
-    apps[0] = me;
-    apps[1] = security;
-    trusted = CFArrayCreate(NULL, apps, 2, &kCFTypeArrayCallBacks);
-    if (SecAccessCreate((CFStringRef)@"Tiger Build administrator password", trusted, &access) == noErr) {
-        attributes[0].tag = kSecServiceItemAttr;
-        attributes[0].length = strlen(service);
-        attributes[0].data = (void *)service;
-        attributes[1].tag = kSecAccountItemAttr;
-        attributes[1].length = strlen(account);
-        attributes[1].data = (void *)account;
-        list.count = 2;
-        list.attr = attributes;
-        status = SecKeychainItemCreateFromContent(kSecGenericPasswordItemClass, &list, strlen(secret), secret, NULL, access, &item);
+    return SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) == noErr;
+}
+
+/* ---- handing the password to Commander ---- */
+
+/* The same path Commander uses (sudo_socket_path in ppc_commander.py). */
+static NSString *brokerPath(void)
+{
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/commander/sudo.sock"];
+    if ([path length] > 100)
+        path = [NSString stringWithFormat:@"/tmp/tigerbuild-%d-sudo.sock", (int)getuid()];
+    return path;
+}
+
+static void answerCommander(int client)
+{
+    char request[40];
+    ssize_t got = read(client, request, sizeof(request) - 1);
+    const char *service = [kSudoService UTF8String];
+    const char *account = [NSUserName() UTF8String];
+    UInt32 length = 0;
+    void *data = NULL;
+    uid_t uid;
+    gid_t gid;
+    if (got <= 0 || getpeereid(client, &uid, &gid) != 0 || uid != getuid())
+        return;
+    request[got] = 0;
+    if (strcmp(request, "password\n") != 0)
+        return;
+    if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL) == noErr) {
+        write(client, data, length);
+        write(client, "\n", 1);
+        memset(data, 0, length);
+        SecKeychainItemFreeContent(NULL, data);
+    } else {
+        const char *none = "error: no administrator password is saved. A person can set it in Tiger Build: Preferences, Commander.\n";
+        write(client, none, strlen(none));
     }
-    if (item)
-        CFRelease(item);
-    if (access)
-        CFRelease(access);
-    CFRelease(trusted);
-    CFRelease(me);
-    CFRelease(security);
-    return status == noErr;
 }
 
 /* Whether sudo takes this password for this account. */
@@ -112,6 +122,55 @@ static BOOL passwordAccepted(NSString *password)
 
 @implementation ChatController (Sudo)
 
+- (void)sudoBrokerLoop:(NSNumber *)listener
+{
+    int fd = [listener intValue];
+    for (;;) {
+        NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+        int client = accept(fd, NULL, NULL);
+        if (client >= 0) {
+            struct timeval wait;
+            wait.tv_sec = 5;
+            wait.tv_usec = 0;
+            setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &wait, sizeof(wait));
+            answerCommander(client);
+            close(client);
+        }
+        [pool release];
+    }
+}
+
+/* Called once at launch. */
+- (void)startSudoBroker
+{
+    static BOOL started = NO;
+    NSString *path = brokerPath();
+    struct sockaddr_un address;
+    int fd;
+    if (started)
+        return;
+    started = YES;
+    {
+        NSString *folder = [path stringByDeletingLastPathComponent];
+        NSDictionary *private = [NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0700] forKey:NSFilePosixPermissions];
+        [[NSFileManager defaultManager] createDirectoryAtPath:[folder stringByDeletingLastPathComponent] attributes:nil];
+        [[NSFileManager defaultManager] createDirectoryAtPath:folder attributes:private];
+    }
+    unlink([path fileSystemRepresentation]);
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return;
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strlcpy(address.sun_path, [path fileSystemRepresentation], sizeof(address.sun_path));
+    if (bind(fd, (struct sockaddr *)&address, sizeof(address)) != 0 || listen(fd, 4) != 0) {
+        close(fd);
+        return;
+    }
+    chmod([path fileSystemRepresentation], 0600);
+    [NSThread detachNewThreadSelector:@selector(sudoBrokerLoop:) toTarget:self withObject:[NSNumber numberWithInt:fd]];
+}
+
 - (void)sudoPanelOK:(id)sender
 {
     (void)sender;
@@ -137,7 +196,7 @@ static BOOL passwordAccepted(NSString *password)
     int result;
     [panel setTitle:@"Administrator Password"];
     [label setStringValue:[NSString stringWithFormat:@"Password for %@ on this Mac, so agents can run commands with sudo:", NSFullUserName()]];
-    [note setStringValue:@"It is kept in your Keychain and used only when a command needs sudo. The model never sees it."];
+    [note setStringValue:@"It is kept in your Keychain, used only when a command needs sudo, and handed to Commander only while Tiger Build is open. The model never sees it."];
     [label setFont:[NSFont systemFontOfSize:12]];
     [note setFont:[NSFont systemFontOfSize:11]];
     [label setBezeled:NO];
@@ -209,7 +268,7 @@ static BOOL passwordAccepted(NSString *password)
     [check setEnabled:YES];
     [check setState:on ? NSOnState : NSOffState];
     if (on && saved)
-        [status setStringValue:@"On. Agents can use sudo here; the password is in your Keychain."];
+        [status setStringValue:@"On. Agents can use sudo here while Tiger Build is open."];
     else if (on)
         [status setStringValue:@"On, but no password is saved. Choose Set Password."];
     else

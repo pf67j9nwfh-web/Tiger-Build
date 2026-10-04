@@ -113,6 +113,7 @@
 BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle);
 
 @interface ChatController (Sudo)
+- (void)startSudoBroker;
 - (void)refreshSudoStatus;
 - (IBAction)toggleSudoMode:(id)sender;
 - (IBAction)setAdministratorPassword:(id)sender;

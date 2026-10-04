@@ -38,7 +38,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.5.0'
+VERSION = '0.5.2'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
@@ -81,10 +81,10 @@ LOCKED_KEYS = ['blockedCommands', 'allowedDirectories', 'defaultShell', 'sudoMod
 POLICY_PATH = '/etc/ppc-commander.json'
 
 # Administrator (sudo) mode. Off unless a person turns it on, in Tiger Build's preferences or with
-# `ppc_commander.py --sudo on`. The password is typed once in Tiger Build, which keeps it in this
-# user's Keychain; it is read from there only when a command needs sudo and is never shown to the model.
-KEYCHAIN_SERVICE = 'Tiger Build Commander administrator'
-SECURITY_PROGRAM = '/usr/bin/security'
+# `ppc_commander.py --sudo on`. The person types the password once in Tiger Build, which keeps it in the
+# Keychain. SSH sessions cannot open that Keychain, so when a command needs sudo this asks Tiger Build for
+# it over a private socket. It is never shown to the model.
+SUDO_SOCKET = None
 
 # Programs that run the word after them. A blocked name anywhere after one of
 # these, in the same command, is treated as the program being run.
@@ -1977,21 +1977,43 @@ def sudo_enabled():
     return CONFIG.get('sudoMode') == True
 
 
+def sudo_socket_path():
+    if SUDO_SOCKET:
+        return SUDO_SOCKET
+    path = os.path.expanduser('~/Library/Application Support/Tiger Build/commander/sudo.sock')
+    if len(path) > 100:
+        path = '/tmp/tigerbuild-%d-sudo.sock' % os.getuid()
+    return path
+
+
 def sudo_password():
-    """The administrator password from the Keychain. Raises ToolError, saying what to do, when it cannot."""
+    """The administrator password, from Tiger Build. Raises ToolError, saying what to do, when it cannot."""
+    path = sudo_socket_path()
+    if not os.path.exists(path):
+        raise ToolError('the administrator password is held by Tiger Build, which is not running on this Mac. '
+                        'Open Tiger Build there, and check that Preferences, Commander has administrator mode on.')
+    data = ''
     try:
-        user = os.environ.get('USER') or pwd.getpwuid(os.getuid())[0]
-    except Exception:
-        raise ToolError('cannot tell which user this is')
-    if not os.path.isfile(SECURITY_PROGRAM):
-        raise ToolError('this Mac has no security program, so the administrator password cannot be read')
-    code, out = run_argv([SECURITY_PROGRAM, 'find-generic-password', '-a', user, '-s', KEYCHAIN_SERVICE, '-w'], None, 20, {})
-    if code == 0 and out.strip() != '':
-        return out.split('\n')[0]
-    if out.find('could not be found') != -1:
-        raise ToolError('no administrator password is saved. A person can set it in Tiger Build: Preferences, Commander tab.')
-    raise ToolError('the administrator password could not be read from the Keychain (is the login keychain unlocked? '
-                    'stay logged in at this Mac). The Keychain said: %s' % clip(out.strip(), 200))
+        conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        conn.settimeout(10)
+        try:
+            conn.connect(path)
+            conn.send('password\n')
+            while data.find('\n') == -1:
+                chunk = conn.recv(256)
+                if chunk == '':
+                    break
+                data = data + chunk
+        finally:
+            conn.close()
+    except (socket.error, socket.timeout), exc:
+        raise ToolError('Tiger Build did not answer the request for the administrator password (%s)' % exc)
+    line = data.split('\n')[0]
+    if line.startswith('error:'):
+        raise ToolError(line[6:].strip())
+    if line == '':
+        raise ToolError('Tiger Build sent no administrator password')
+    return line
 
 
 def with_sudo(command, detach):
@@ -3685,6 +3707,40 @@ def run_self_test():
     except OSError:
         pass
 
+    try:
+        sock_path = os.path.join('/tmp', 'ppc-selftest-%d.sock' % os.getpid())
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(sock_path)
+        server.listen(1)
+        global SUDO_SOCKET
+        SUDO_SOCKET = sock_path
+        answer = ['pass word\n']
+        def serve_once():
+            conn, addr = server.accept()
+            conn.recv(64)
+            conn.send(answer[0])
+            conn.close()
+        for reply in (['pass word\n'], ['error: no password is saved\n']):
+            answer[0] = reply[0]
+            thread = threading.Thread(target=serve_once)
+            thread.start()
+            try:
+                got = sudo_password()
+                expect('sudo socket', got == 'pass word' and reply[0][0] != 'e', failures, got)
+            except ToolError, exc:
+                expect('sudo socket error', reply[0][0] == 'e' and str(exc.args[0]).find('no password is saved') != -1, failures, str(exc.args[0]))
+            thread.join()
+        server.close()
+        os.unlink(sock_path)
+        SUDO_SOCKET = None
+        expect('sudo no socket', True, failures, '')
+        try:
+            sudo_password()
+            expect('sudo no tiger build', False, failures, 'got a password with nothing listening')
+        except ToolError, exc:
+            expect('sudo no tiger build', str(exc.args[0]).find('not running') != -1, failures, str(exc.args[0]))
+    except (socket.error, ToolError), exc:
+        expect('sudo socket test', False, failures, str(exc))
     try:
         fakebin = os.path.join(base, 'fakebin')
         os.makedirs(fakebin)

@@ -908,9 +908,17 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     {
         NSRect actions = chatLayout.actions;
         float third = floorf((NSWidth(actions) - 8) / 3.0f);
+        NSRect old = NSUnionRect(NSUnionRect([editButton frame], [retryButton frame]), [attachButton frame]);
+        NSRect now;
         [editButton setFrame:NSMakeRect(NSMinX(actions), NSMinY(actions) - 1, third, 20)];
         [retryButton setFrame:NSMakeRect(NSMinX(actions) + third + 4, NSMinY(actions) - 1, third, 20)];
         [attachButton setFrame:NSMakeRect(NSMinX(actions) + 2 * (third + 4), NSMinY(actions) - 1, third, 20)];
+        now = NSUnionRect(NSUnionRect([editButton frame], [retryButton frame]), [attachButton frame]);
+        if (!NSEqualRects(old, now)) {
+            /* The bezels they leave behind are not repainted by -setFrame: on Tiger (three black lines). */
+            [chatPane setNeedsDisplayInRect:NSInsetRect(NSUnionRect(old, now), -4, -4)];
+            moved = YES;
+        }
     }
     if (!NSEqualRects(oldSendFrame, chatLayout.send)) {
         [sendButton setFrame:chatLayout.send];
@@ -1842,6 +1850,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [window makeFirstResponder:input];
     [window display];
     [self ensureCommanderInstalled];
+    [self startSudoBroker];
     [self refreshCommanderStatus];
     [self refreshCatalog];
     [self refreshToolCatalog];
