@@ -25,7 +25,7 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 | --- | --- |
 | ![The approval question for a notebook tool, with the live thinking strip](docs/screenshots/client-approval.png) | ![The Tools menu: Commander and every MCP server, Ask Before Running, and settings](docs/screenshots/client-tools-menu.png) |
 
-**Preferences** are in tabs so they fit a 1024x768 screen, and **MCP servers** are a list with an edit sheet:
+**Preferences** are in tabs so they fit a 800x600 screen (iBook G3 Clamshell), and **MCP servers** are a list with an edit sheet:
 
 | Commander | Local LLM Server | MCP servers |
 | --- | --- | --- |
