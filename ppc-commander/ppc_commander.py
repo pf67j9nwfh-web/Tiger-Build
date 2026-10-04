@@ -10,6 +10,7 @@
 # and upload it again. Stdio is the MCP stream: logs go to stderr only.
 
 import difflib
+import errno
 import fnmatch
 import grp
 import os
@@ -38,7 +39,7 @@ try:
 except ImportError:
     pty = None
 
-VERSION = '0.5.2'
+VERSION = '0.5.3'
 MAX_MESSAGE = 16 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_OUTPUT_CHARS = 180000
@@ -1989,9 +1990,10 @@ def sudo_socket_path():
 def sudo_password():
     """The administrator password, from Tiger Build. Raises ToolError, saying what to do, when it cannot."""
     path = sudo_socket_path()
+    not_running = ('the administrator password is held by Tiger Build, which is not running on this Mac. '
+                   'Open Tiger Build there, and check that Preferences, Commander has administrator mode on.')
     if not os.path.exists(path):
-        raise ToolError('the administrator password is held by Tiger Build, which is not running on this Mac. '
-                        'Open Tiger Build there, and check that Preferences, Commander has administrator mode on.')
+        raise ToolError(not_running)
     data = ''
     try:
         conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -2007,6 +2009,8 @@ def sudo_password():
         finally:
             conn.close()
     except (socket.error, socket.timeout), exc:
+        if len(exc.args) > 0 and exc.args[0] in (errno.ECONNREFUSED, errno.ENOENT):
+            raise ToolError(not_running)
         raise ToolError('Tiger Build did not answer the request for the administrator password (%s)' % exc)
     line = data.split('\n')[0]
     if line.startswith('error:'):
@@ -3732,13 +3736,13 @@ def run_self_test():
             thread.join()
         server.close()
         os.unlink(sock_path)
-        SUDO_SOCKET = None
-        expect('sudo no socket', True, failures, '')
+        SUDO_SOCKET = sock_path + '.none'
         try:
             sudo_password()
             expect('sudo no tiger build', False, failures, 'got a password with nothing listening')
         except ToolError, exc:
             expect('sudo no tiger build', str(exc.args[0]).find('not running') != -1, failures, str(exc.args[0]))
+        SUDO_SOCKET = None
     except (socket.error, ToolError), exc:
         expect('sudo socket test', False, failures, str(exc))
     try:
