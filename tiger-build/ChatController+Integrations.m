@@ -14,7 +14,7 @@
 
 /* Data source for the server table. Rows are the same dictionaries the relay
    saves, so checking a box changes the data directly. */
-@interface TBServerSource : NSObject {
+@interface TBServerSource : NSObject TB_PROTOCOLS(NSTableViewDataSource) {
     NSMutableArray *servers;
 }
 - (NSMutableArray *)servers;

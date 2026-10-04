@@ -30,7 +30,6 @@ static NSMutableArray *extraWindows = nil;
 - (void)updateContextReadout;
 - (BOOL)startCompactionIfNeeded;
 - (NSString *)versionNote;
-- (BOOL)chatHasAttachments:(NSDictionary *)chat;
 - (BOOL)confirmCloudAttach;
 - (void)refreshRelayVersion;
 - (BOOL)relayTooOldForPictures:(NSDictionary *)chat;
@@ -1458,19 +1457,6 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [relayStatusField setTextColor:[NSColor colorWithCalibratedRed:0.72 green:0.35 blue:0.0 alpha:1]];
     }
     [self relayStatusChanged];
-}
-
-/* Every 30 seconds: while the relay is unreachable or still testing models,
-   ask again; otherwise refresh the model list every 10 minutes. */
-- (BOOL)chatHasAttachments:(NSDictionary *)chat
-{
-    NSArray *messages = [chat objectForKey:@"messages"];
-    unsigned i;
-    for (i = 0; i < [messages count]; i++) {
-        if ([[messages objectAtIndex:i] objectForKey:@"attachment"])
-            return YES;
-    }
-    return NO;
 }
 
 /* The relay's version, so a relay older than this app is not asked for what it cannot do. */

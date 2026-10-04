@@ -17,6 +17,14 @@ typedef unsigned int NSUInteger;
 #define NSINTEGER_DEFINED 1
 #endif
 
+/* The 10.6 SDK declares delegates as formal protocols and warns when a class
+   uses one without saying so. Older SDKs have none, so the list is empty there. */
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
+#define TB_PROTOCOLS(...) <__VA_ARGS__>
+#else
+#define TB_PROTOCOLS(...)
+#endif
+
 #ifndef CGFLOAT_DEFINED
 typedef float CGFloat;
 #define CGFLOAT_DEFINED 1

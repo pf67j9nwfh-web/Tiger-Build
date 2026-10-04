@@ -9,7 +9,7 @@
 
 /* ---- Find in Chats ---- */
 
-@interface TBFinder : NSObject {
+@interface TBFinder : NSObject TB_PROTOCOLS(NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate) {
     NSPanel *panel;
     NSTextField *field;
     NSTableView *table;
@@ -133,13 +133,13 @@
         [owner openFindResult:[results objectAtIndex:row]];
 }
 
-- (int)numberOfRowsInTableView:(NSTableView *)view
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)view
 {
     (void)view;
     return (int)[results count];
 }
 
-- (id)tableView:(NSTableView *)view objectValueForTableColumn:(NSTableColumn *)column row:(int)row
+- (id)tableView:(NSTableView *)view objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     NSDictionary *hit = [results objectAtIndex:row];
     (void)view;

@@ -486,6 +486,17 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 }
 
 /* Attached files go to the service chosen for the chat when a message is sent. Say so once for each service. */
+- (BOOL)chatHasAttachments:(NSDictionary *)chat
+{
+    NSArray *messages = [chat objectForKey:@"messages"];
+    unsigned i;
+    for (i = 0; i < [messages count]; i++) {
+        if ([[messages objectAtIndex:i] objectForKey:@"attachment"])
+            return YES;
+    }
+    return NO;
+}
+
 - (BOOL)confirmCloudAttach
 {
     NSString *provider = [self providerForChat:current];

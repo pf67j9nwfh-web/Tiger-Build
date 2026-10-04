@@ -22,9 +22,9 @@ endif
 # The 10.4 SDK needs gcc 4.0; on Xcode 3.2 that is installed next to gcc 4.2.
 CC32 ?= $(if $(wildcard /usr/bin/gcc-4.0),gcc-4.0,gcc)
 CC64 ?= $(if $(wildcard /usr/bin/gcc-4.2),gcc-4.2,gcc)
-CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -O2
-CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -O2
-CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -O2 $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
+CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -Wno-deprecated-declarations -fobjc-exceptions -O2
+CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2
+CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
 LIBS32 := -framework Cocoa -framework CoreServices -framework CoreAudio -framework QTKit
 LIBS64 := -framework Cocoa -framework CoreServices -framework CoreAudio
 comma := ,
@@ -45,7 +45,7 @@ all: $(BIN)
 $(BIN): $(SOURCES) $(HEADERS) Info.plist TigerBuild.icns models.txt
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	rm -rf build && mkdir build
-	$(CC32) $(CFLAGS32) -o build/TigerBuild32 $(SOURCES) $(LIBS32)
+	$(CC32) $(CFLAGS32) -Wl,-w -o build/TigerBuild32 $(SOURCES) $(LIBS32)
 ifneq ($(strip $(ARCHS64)),)
 	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -o build/TigerBuildP64 $(SOURCES) $(LIBS64))
 	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -o build/TigerBuildX64 $(SOURCES) $(LIBSX86))

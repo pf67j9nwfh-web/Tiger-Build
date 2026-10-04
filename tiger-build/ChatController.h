@@ -4,7 +4,8 @@
 @class RelayRequest;
 @class TBStore;
 
-@interface ChatController : NSObject {
+@interface ChatController : NSObject TB_PROTOCOLS(NSApplicationDelegate, NSWindowDelegate, NSSplitViewDelegate, NSTableViewDataSource,
+    NSTableViewDelegate, NSTextFieldDelegate, NSMenuDelegate, NSSpeechRecognizerDelegate) {
     NSWindow *window;
     NSPopUpButton *workspacePopup;
     NSView *content;
