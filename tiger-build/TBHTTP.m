@@ -2,6 +2,11 @@
 
 static const char *kRoots = NULL;
 
+@interface TBHTTP (Private)
+- (void)noteStatus:(int)code headers:(const char *)text;
+- (int)noteBytes:(const unsigned char *)bytes length:(size_t)length;
+@end
+
 @implementation TBHTTP
 
 + (void)loadRoots
@@ -113,6 +118,7 @@ static int bodyArrived(void *context, const unsigned char *bytes, size_t length)
         raised = [exception retain];
         return 1;
     }
+    return 0;
 }
 
 - (int)perform

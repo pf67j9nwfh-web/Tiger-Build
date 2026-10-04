@@ -48,6 +48,11 @@
 
 /* ---- the answer stream: <think> and tool-call markup are kept out of the visible text ---- */
 
+@interface TBAnswerStream (Private)
+- (NSArray *)drain:(BOOL)final;
+- (void)think:(NSString *)text;
+@end
+
 @implementation TBAnswerStream
 
 - (id)init

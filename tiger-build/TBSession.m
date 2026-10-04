@@ -2,6 +2,7 @@
 #import "TBJSON.h"
 #import "TBHTTP.h"
 #import "TBPricing.h"
+#import "TBLocal.h"
 
 static NSString *const kSystem = @"You are an assistant chatting inside Tiger Build on {machine} running "
     "{os}. You have ppc-commander tools that read files, "
@@ -17,6 +18,7 @@ static NSString *const kSystem = @"You are an assistant chatting inside Tiger Bu
     "The shell is bash and the system Python is 2.3. "
     "After the tools finish, answer in a few plain sentences.";
 static BOOL truthyValue(id v);
+static BOOL mentionsWord(NSString *line, NSString *word);
 static NSString *const kLimitNote = @"\n\n[The reply stopped here because the model reached its output limit. Say \"continue\" and it will pick up where it left off.]";
 static NSString *const kStepNote = @"\n\n[Stopped after %d tool steps in one turn. Say \"continue\" to keep going.]";
 static NSString *const kConsultTool = @"consult_model";
@@ -479,7 +481,7 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (int)contextLimitForProvider:(NSString *)provider model:(NSString *)model
 {
-    int live = [TBPricing liveContextForProvider:provider model:model];
+    int live = [provider isEqualToString:@"local"] ? [TBLocal contextForModel:model] : [TBPricing liveContextForProvider:provider model:model];
     return live ? live : [TBProviders contextLimitForModel:model];
 }
 
@@ -544,6 +546,24 @@ static NSDictionary *callArguments(NSDictionary *call)
     if (stats)
         [event addEntriesFromDictionary:stats];
     return [TBSession propertyListText:event];
+}
+
+/* Whether a command line has this word as a command (not as part of another word). */
+static BOOL mentionsWord(NSString *line, NSString *word)
+{
+    NSCharacterSet *breaks = [NSCharacterSet characterSetWithCharactersInString:@" \t\n;&|()`"];
+    NSRange at = NSMakeRange(0, 0);
+    while (YES) {
+        NSRange found = [line rangeOfString:word options:0 range:NSMakeRange(NSMaxRange(at), [line length] - NSMaxRange(at))];
+        BOOL before, after;
+        if (found.location == NSNotFound)
+            return NO;
+        before = found.location == 0 || [breaks characterIsMember:[line characterAtIndex:found.location - 1]];
+        after = NSMaxRange(found) == [line length] || [breaks characterIsMember:[line characterAtIndex:NSMaxRange(found)]];
+        if (before && after)
+            return YES;
+        at = found;
+    }
 }
 
 static BOOL truthyValue(id v)
@@ -612,8 +632,7 @@ static BOOL truthyValue(id v)
     }
     if (!detail)
         detail = TBJSONString(args);
-    if ([TBString(args, @"command") rangeOfString:@"sudo"].location != NSNotFound && [[TBString(args, @"command") componentsSeparatedByCharactersInSet:
-            [NSCharacterSet characterSetWithCharactersInString:@" \t;&|()`"]] containsObject:@"sudo"])
+    if (mentionsWord(TBString(args, @"command"), @"sudo"))
         detail = [@"As administrator (sudo): " stringByAppendingString:detail];
     if ([detail length] > 4000)
         detail = [detail substringToIndex:4000];
@@ -813,6 +832,17 @@ static NSString *commanderPython(void)
 
 @implementation TBSession (Commander)
 
++ (NSString *)cachedCommanderProblem
+{
+    NSString *problem = @"";
+    if (!toolCache)
+        return @"";
+    @synchronized(toolCache) {
+        problem = [[[[toolCache objectForKey:@"entry"] objectForKey:@"offline"] copy] autorelease];
+    }
+    return problem ? problem : @"";
+}
+
 + (void)forgetCommanderTools
 {
     @synchronized(toolCache ? (id)toolCache : (id)self) {
@@ -823,23 +853,23 @@ static NSString *commanderPython(void)
 - (TBMCPClient *)startCommanderWithRoot:(NSString *)root
 {
     NSMutableArray *args = [NSMutableArray arrayWithObjects:@"LANG=C", @"LC_ALL=C", nil];
-    TBMCPClient *client;
+    TBMCPClient *started;
     if (![[NSFileManager defaultManager] fileExistsAtPath:commanderPath()])
         TBFail(@"Commander is not installed on this Mac. Quit and reopen Tiger Build to install it.");
     if ([root length])
         [args addObject:[@"TB_WORKSPACE_ROOT=" stringByAppendingString:root]];
     [args addObjectsFromArray:[NSArray arrayWithObjects:commanderPython(), @"-u", commanderPath(), nil]];
-    client = [TBMCPClient clientWithPath:@"/usr/bin/env" arguments:args environment:nil label:@"Commander"];
-    [run attach:client];
+    started = [TBMCPClient clientWithPath:@"/usr/bin/env" arguments:args environment:nil label:@"Commander"];
+    [run attach:started];
     @try {
-        [client start];
+        [started start];
     } @catch (NSException *exception) {
-        [run detach:client];
-        [client close];
+        [run detach:started];
+        [started close];
         [run check];
-        TBFail(@"Commander could not run: %@ %@", [exception reason], [client stderrText]);
+        TBFail(@"Commander could not run: %@ %@", [exception reason], [started stderrText]);
     }
-    return client;
+    return started;
 }
 
 - (NSArray *)commanderDefinitions

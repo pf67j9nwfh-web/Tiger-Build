@@ -1,6 +1,8 @@
 #import "ChatController_Private.h"
 #import "TranscriptView.h"
 #import "TBProviderIcons.h"
+#import "TBService.h"
+#import "TBPricing.h"
 #import <CoreServices/CoreServices.h>
 
 static BOOL nextWindowIsExtra = NO;
@@ -1851,6 +1853,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [window display];
     [self ensureCommanderInstalled];
     [self startSudoBroker];
+    [TBPricing start];
     [self refreshCommanderStatus];
     [self refreshCatalog];
     [self refreshToolCatalog];
@@ -3112,6 +3115,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self finishWithoutStream:chat];
         return;
     }
+    if ([TBService active]) {
+        localTurn = [[TBLocalTurn startWithBody:payload delegate:self] retain];
+        bodyStream = (void *)localTurn;
+        return;
+    }
     message = [RelayRequest copyMessage:@"POST" path:@"/v1/chat" body:payload];
     if (!message) {
         [self addStatus:@"Set the relay address and token in Preferences first." toChat:chat];
@@ -3139,11 +3147,47 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
 }
 
+/* The engine's frames arrive on the main thread, in the same wire format a relay used. */
+- (void)localTurn:(TBLocalTurn *)turn bytes:(NSData *)bytes
+{
+    if (turn != localTurn)
+        return;
+    [frameBuffer appendData:bytes];
+    if (streamDepth == 0) {
+        streamDepth = 1;
+        [self drainFrames];
+        streamDepth = 0;
+        if (streamEndDeferred) {
+            streamEndDeferred = 0;
+            [self finishStream];
+        }
+    }
+}
+
+- (void)localTurnEnded:(TBLocalTurn *)turn
+{
+    if (turn != localTurn)
+        return;
+    if (streamDepth) {
+        streamEndDeferred = 1;
+        return;
+    }
+    [self drainFrames];
+    [self finishStream];
+}
+
 - (void)closeStream
 {
     CFReadStreamRef stream = (CFReadStreamRef)bodyStream;
     if (!stream)
         return;
+    if (localTurn) {
+        [localTurn cancel];
+        [localTurn release];
+        localTurn = nil;
+        bodyStream = NULL;
+        return;
+    }
     CFReadStreamSetClient(stream, 0, NULL, NULL);
     CFReadStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), kCFRunLoopCommonModes);
     CFReadStreamClose(stream);

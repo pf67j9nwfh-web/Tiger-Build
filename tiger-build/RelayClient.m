@@ -1,4 +1,5 @@
 #import "RelayClient.h"
+#import "TBService.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <ifaddrs.h>
@@ -78,6 +79,10 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     return YES;
 }
 
+@interface RelayRequest (Local)
+- (void)runLocal:(NSString *)method body:(NSData *)bytes file:(NSData *)file name:(NSString *)name;
+@end
+
 @implementation RelayRequest
 
 + (NSString *)supportDir
@@ -154,6 +159,10 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     request->action = anAction;
     request->context = [aContext retain];
     request->path = [relative copy];
+    if ([TBService active]) {
+        [request runLocal:method body:body ? [body dataUsingEncoding:NSUTF8StringEncoding] : nil file:nil name:nil];
+        return request;
+    }
     if (![request startMethod:method body:body timeout:seconds]) {
         /* Report the failure from the run loop, never from inside the caller. */
         [request retain];
@@ -177,6 +186,10 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     request->path = [relative copy];
     request->fileData = [data retain];
     request->fileName = [name copy];
+    if ([TBService active]) {
+        [request runLocal:@"POST" body:nil file:data name:name];
+        return request;
+    }
     if (![request startMethod:@"POST" body:nil timeout:seconds]) {
         [request retain];
         [request performSelector:@selector(complete) withObject:nil afterDelay:0.0];
@@ -242,6 +255,34 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
                                            userInfo:nil
                                             repeats:NO];
     return YES;
+}
+
+/* The engine answers: the request runs on a worker thread and is reported from the main one, once. */
+- (void)runLocal:(NSString *)method body:(NSData *)bytes file:(NSData *)file name:(NSString *)name
+{
+    NSDictionary *job = [NSDictionary dictionaryWithObjectsAndKeys:method, @"method", path, @"path", bytes ? bytes : [NSData data], @"body",
+        file ? file : [NSData data], @"file", name ? name : @"", @"name", nil];
+    /* One retain for the worker, one that complete balances, as for a network request. */
+    [self retain];
+    [self retain];
+    [NSThread detachNewThreadSelector:@selector(localWork:) toTarget:self withObject:job];
+}
+
+- (void)localWork:(NSDictionary *)job
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSDictionary *result = [TBService handle:[job objectForKey:@"method"] path:[job objectForKey:@"path"] body:[job objectForKey:@"body"]
+                                        file:[[job objectForKey:@"file"] length] ? [job objectForKey:@"file"] : nil name:[job objectForKey:@"name"]];
+    [self performSelectorOnMainThread:@selector(localDone:) withObject:result waitUntilDone:NO];
+    [pool release];
+}
+
+- (void)localDone:(NSDictionary *)result
+{
+    statusCode = [[result objectForKey:@"status"] intValue];
+    [payload setData:[result objectForKey:@"body"]];
+    [self complete];
+    [self release];
 }
 
 - (void)timeout:(NSTimer *)aTimer

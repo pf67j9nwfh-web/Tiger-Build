@@ -29,14 +29,22 @@
 + (BOOL)supportsImages:(NSString *)provider model:(NSString *)model;
 + (NSString *)cleanText:(NSString *)text;
 + (NSString *)propertyListText:(NSDictionary *)dictionary;
-/* After Commander is installed or changed: look at its tools again. */
-+ (void)forgetCommanderTools;
 + (NSDictionary *)changeStatsForTool:(NSString *)name output:(NSString *)output;   /* files, added, removed, or nil */
 - (id)initWithRun:(TBRun *)run options:(NSDictionary *)options frames:(id)sink;
 - (void)setClientInfo:(id)info;
 /* Runs the whole turn, blocking, sending frames. Raises TBError for a failure the person should be told. */
 - (void)runTurn:(NSArray *)messages useTools:(BOOL)useTools provider:(NSString *)provider model:(NSString *)model;
+- (void)closeTools;
+@end
+
+@interface TBSession (Commander)
+/* After Commander is installed or changed: look at its tools again. */
++ (void)forgetCommanderTools;
+/* What the last look at Commander found wrong, or "". */
++ (NSString *)cachedCommanderProblem;
+@end
+
+@interface TBSession (Loop)
 /* A plain reply with no tools: titles, summaries, a consulted model. */
 - (NSString *)completeProvider:(NSString *)provider model:(NSString *)model system:(NSString *)system messages:(NSArray *)messages;
-- (void)closeTools;
 @end

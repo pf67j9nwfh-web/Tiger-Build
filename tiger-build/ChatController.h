@@ -77,6 +77,7 @@
     BOOL suppressSelection;
     BOOL busy;
     void *bodyStream;
+    id localTurn;                 /* the built-in engine's turn, when there is one (bodyStream then marks it) */
     double lastPaint;
     NSMutableData *frameBuffer;
     NSMutableData *errorBody;

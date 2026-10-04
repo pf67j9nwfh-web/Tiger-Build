@@ -37,9 +37,15 @@
 + (NSString *)apiErrorText:(NSString *)detail code:(int)code;
 + (NSString *)localBase;                                  /* the local server's /v1 address, or "" */
 
+@end
+
+@interface TBProviders (Streaming)
 + (void)streamRound:(NSString *)provider system:(NSString *)system log:(NSArray *)log tools:(NSArray *)tools
               round:(TBRound *)round model:(NSString *)model;
+@end
+
 /* A conversation in the shapes each service wants. */
+@interface TBProviders (Messages)
 + (NSArray *)openAIMessagesWithSystem:(NSString *)system log:(NSArray *)log;
 + (NSArray *)openAIResponsesInput:(NSArray *)log;
 + (NSArray *)ensureUserFirst:(NSArray *)log;

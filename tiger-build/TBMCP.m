@@ -304,10 +304,10 @@ NSString *TBMCPToolSummary(NSString *name, NSDictionary *arguments)
         id value = TBValue(arguments, [NSString stringWithUTF8String:keys[i]]);
         if (value && !([value isKindOfClass:[NSString class]] && [value length] == 0)) {
             NSMutableString *text = [NSMutableString stringWithString:[value description]];
+            NSString *shown;
             [text replaceOccurrencesOfString:@"\n" withString:@" " options:0 range:NSMakeRange(0, [text length])];
-            if ([text length] > 80)
-                text = [[text substringToIndex:80] stringByAppendingString:@"..."];
-            return [NSString stringWithFormat:@"%@ %@", name, text];
+            shown = [text length] > 80 ? [[text substringToIndex:80] stringByAppendingString:@"..."] : text;
+            return [NSString stringWithFormat:@"%@ %@", name, shown];
         }
     }
     return name;
