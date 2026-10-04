@@ -29,8 +29,8 @@ LIBS32 := -framework Cocoa -framework CoreServices -framework CoreAudio -framewo
 LIBS64 := -framework Cocoa -framework CoreServices -framework CoreAudio
 comma := ,
 LIBSX86 := -framework Cocoa -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TBTheme.m TBProviderIcons.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TBTheme.h TBProviderIcons.h TranscriptView.h
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBTheme.m TBProviderIcons.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TBEmoji.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
@@ -42,7 +42,7 @@ all: $(BIN)
 # be reached. install-tiger.sh writes it from relay/providers.py.
 # ppc-commander/ (copied in by the install script) is the Commander the app
 # installs into ~/ppc-commander when that is missing or older.
-$(BIN): $(SOURCES) $(HEADERS) Info.plist TigerBuild.icns models.txt
+$(BIN): $(SOURCES) $(HEADERS) Info.plist TigerBuild.icns models.txt Emoji.pack
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	rm -rf build && mkdir build
 	$(CC32) $(CFLAGS32) -Wl,-w -o build/TigerBuild32 $(SOURCES) $(LIBS32)
@@ -56,12 +56,12 @@ endif
 	rm -rf build
 	cp Info.plist $(APP)/Contents/Info.plist
 	cp TigerBuild.icns $(APP)/Contents/Resources/TigerBuild.icns
-	cp models.txt $(APP)/Contents/Resources/models.txt
+	cp models.txt Emoji.pack Emoji-LICENSE.txt $(APP)/Contents/Resources/
 	if [ -d ppc-commander ]; then mkdir -p $(APP)/Contents/Resources/ppc-commander && cp ppc-commander/ppc_commander.py ppc-commander/service.py $(APP)/Contents/Resources/ppc-commander/; fi
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
-tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBSupport.h TBMarkup.h TBCompat.h
-	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m TBMarkup.m -framework Foundation
+tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBSupport.h TBMarkup.h TBEmoji.h TBCompat.h
+	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m -framework Foundation
 
 test: tbtests
 	./tbtests

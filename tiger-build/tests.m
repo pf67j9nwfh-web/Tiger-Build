@@ -2,9 +2,29 @@
 #import <Foundation/Foundation.h>
 #import "TBSupport.h"
 #import "TBMarkup.h"
+#import "TBEmoji.h"
+#import <stdarg.h>
 #import <unistd.h>
 
 static int failures = 0;
+
+/* A string from code points (0 ends the list), written out as UTF-16 because \U escapes do not work on Tiger. */
+static NSString *tbcodes(int first, ...)
+{
+    NSMutableString *out = [NSMutableString string];
+    int c = first;
+    va_list args;
+    va_start(args, first);
+    while (c) {
+        if (c >= 0x10000)
+            [out appendFormat:@"%C%C", (unichar)(0xD800 + ((c - 0x10000) >> 10)), (unichar)(0xDC00 + ((c - 0x10000) & 0x3FF))];
+        else
+            [out appendFormat:@"%C", (unichar)c];
+        c = va_arg(args, int);
+    }
+    va_end(args);
+    return out;
+}
 
 static void tbcheck(BOOL ok, NSString *name)
 {
@@ -273,6 +293,27 @@ int main(void)
         tbcheck([shown isEqualToString:@"Done (rocket)! (check)"] || TBSystemMinor() >= 7, @"emoji become words");
         tbcheck([TBDisplayText(@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713") isEqualToString:@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713"], @"other characters are untouched");
         tbcheck(![TBDisplayText([NSString stringWithFormat:@"a%C%C%Cb", (unichar)0xD83E, (unichar)0xDD2F, (unichar)0xFE0F]) hasPrefix:@"a\xed"], @"unknown pictographs dropped");
+    }
+    TBEmojiUsePack(@"Emoji.pack");
+    if (TBEmojiPicturesAvailable()) {
+        NSString *grin = tbcodes(0x61, 0x1F600, 0x62, 0);
+        NSString *shown = TBEmojiSubstitute(grin);
+        tbcheck([shown length] == 3 && TBEmojiIsStandIn([shown characterAtIndex:1]) && [TBEmojiRestore(shown) isEqualToString:grin], @"an emoji becomes one stand-in and comes back");
+        tbcheck([TBEmojiSubstitute(tbcodes(0x1F1FA, 0x1F1F8, 0)) length] == 1, @"a flag is one emoji");
+        tbcheck([TBEmojiSubstitute(tbcodes(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0)) length] == 1, @"a family is one emoji");
+        tbcheck([TBEmojiSubstitute(tbcodes(0x1F44D, 0x1F3FD, 0)) length] == 1, @"a skin tone stays with its emoji");
+        tbcheck([TBEmojiSubstitute(tbcodes(0x31, 0xFE0F, 0x20E3, 0)) length] == 1 && [TBEmojiSubstitute(@"1 2") isEqualToString:@"1 2"], @"a keycap, but not a plain digit");
+        {
+            NSString *plain = TBEmojiSubstitute(tbcodes(0xA9, 0));
+            NSString *asked = TBEmojiSubstitute(tbcodes(0xA9, 0xFE0F, 0));
+            tbcheck([plain length] == 1 && !TBEmojiIsStandIn([plain characterAtIndex:0]) && [asked length] == 1 && TBEmojiIsStandIn([asked characterAtIndex:0]),
+                @"a copyright sign is text unless asked for as an emoji");
+        }
+        tbcheck([TBEmojiSubstitute(tbcodes(0x2764, 0xFE0F, 0)) length] == 1, @"a heart with its selector is one emoji");
+        {
+            NSData *png = TBEmojiPNGForStandIn([TBEmojiSubstitute(grin) characterAtIndex:1]);
+            tbcheck([png length] > 100 && ((const unsigned char *)[png bytes])[1] == 'P', @"the picture is a PNG");
+        }
     }
     {
         NSString *said = TBSpeechText(@"## Title\nSee [the docs](https://example.com/x) or https://apple.com now. **Bold** and `code`.\n- one\n```python\nprint(1)\n```\n| a | b |\n|---|---|\n| 1 | 2 |\nDone.");

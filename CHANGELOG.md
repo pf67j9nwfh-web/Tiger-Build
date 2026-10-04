@@ -2,6 +2,7 @@
 
 ## 1.5
 - **Appearance** (⌥⌘K): iChat-style bubble colours, text colours, fonts and chat background (solid, gradient or picture), with Reset to Default; iChat's thought cloud shows while a reply is starting.
+- **Emoji** as colour pictures (Twemoji, CC-BY 4.0) on Macs before 10.7, which have no emoji font.
 - **Local models**: Ollama works as well as LM Studio. The relay reads each Ollama model's context length from the server instead of assuming 32k.
 - **Provider icons** beside each service in the provider popup and the Model menu.
 - The chat list shows a chat's full title when you hover over it.

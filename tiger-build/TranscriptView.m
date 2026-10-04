@@ -2,6 +2,7 @@
 #import "TBSupport.h"
 #import "TBMarkup.h"
 #import "TBTheme.h"
+#import "TBEmoji.h"
 #if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
 #endif
@@ -19,6 +20,151 @@
 - (void)updateTypingTimer;
 @end
 
+/* ---- emoji pictures (Macs before 10.7) ---- */
+
+/* An emoji drawn as its Twemoji picture, sized to the text around it. */
+@interface TBEmojiCell : NSTextAttachmentCell {
+    float side;
+    NSString *emoji;
+}
+- (id)initWithPicture:(NSImage *)picture emoji:(NSString *)text side:(float)points;
+- (NSString *)emoji;
+@end
+
+@implementation TBEmojiCell
+
+- (id)initWithPicture:(NSImage *)picture emoji:(NSString *)text side:(float)points
+{
+    self = [super initImageCell:picture];
+    if (self) {
+        side = points;
+        emoji = [text copy];
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [emoji release];
+    [super dealloc];
+}
+
+- (NSString *)emoji
+{
+    return emoji;
+}
+
+- (NSSize)cellSize
+{
+    return NSMakeSize(side, side);
+}
+
+- (NSPoint)cellBaselineOffset
+{
+    return NSMakePoint(0, -side * 0.18f);
+}
+
+- (BOOL)wantsToTrackMouse
+{
+    return NO;
+}
+
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)view
+{
+    NSImage *picture = [self image];
+    [picture setFlipped:[view isFlipped]];
+    [[NSGraphicsContext currentContext] setImageInterpolation:NSImageInterpolationHigh];
+    [picture drawInRect:frame fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+}
+
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)view characterIndex:(NSUInteger)index layoutManager:(NSLayoutManager *)manager
+{
+    (void)index;
+    (void)manager;
+    [self drawWithFrame:frame inView:view];
+}
+
+@end
+
+static BOOL hasStandIn(NSString *text)
+{
+    unsigned i;
+    for (i = 0; i < [text length]; i++) {
+        if (TBEmojiIsStandIn([text characterAtIndex:i]))
+            return YES;
+    }
+    return NO;
+}
+
+/* The text as it is in a text view: a stand-in is one object character there. */
+static NSString *withObjectCharacters(NSString *text)
+{
+    NSMutableString *out = [NSMutableString stringWithCapacity:[text length]];
+    unsigned i;
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [text characterAtIndex:i];
+        [out appendFormat:@"%C", TBEmojiIsStandIn(c) ? (unichar)NSAttachmentCharacter : c];
+    }
+    return out;
+}
+
+/* Replaces each stand-in with its picture, one character for one, so positions in the text stay where they were. */
+static NSAttributedString *withEmojiPictures(NSAttributedString *source)
+{
+    static NSMutableDictionary *pictures = nil;
+    NSMutableAttributedString *text;
+    unsigned i;
+    if (!hasStandIn([source string]))
+        return source;
+    if (!pictures)
+        pictures = [[NSMutableDictionary alloc] init];
+    text = [[source mutableCopy] autorelease];
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [[text string] characterAtIndex:i];
+        NSNumber *key = [NSNumber numberWithUnsignedShort:c];
+        NSImage *picture;
+        NSFont *font;
+        NSTextAttachment *attachment;
+        NSRange spot = NSMakeRange(i, 1);
+        if (!TBEmojiIsStandIn(c))
+            continue;
+        picture = [pictures objectForKey:key];
+        if (!picture) {
+            NSData *png = TBEmojiPNGForStandIn(c);
+            picture = png ? [[[NSImage alloc] initWithData:png] autorelease] : nil;
+            if (picture)
+                [pictures setObject:picture forKey:key];
+        }
+        if (!picture) {
+            [text replaceCharactersInRange:spot withString:TBDisplayText(TBEmojiForStandIn(c))];
+            continue;
+        }
+        font = [text attribute:NSFontAttributeName atIndex:i effectiveRange:NULL];
+        attachment = [[[NSTextAttachment alloc] init] autorelease];
+        [attachment setAttachmentCell:[[[TBEmojiCell alloc] initWithPicture:picture emoji:TBEmojiForStandIn(c)
+            side:(font ? [font pointSize] : 14) * 1.2f] autorelease]];
+        [text replaceCharactersInRange:spot withString:[NSString stringWithFormat:@"%C", (unichar)NSAttachmentCharacter]];
+        [text addAttribute:NSAttachmentAttributeName value:attachment range:spot];
+    }
+    return text;
+}
+
+/* Text with its emoji turned back from pictures, for copying. */
+static NSString *plainWithEmoji(NSAttributedString *text)
+{
+    NSMutableString *out = [NSMutableString string];
+    unsigned i;
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [[text string] characterAtIndex:i];
+        NSTextAttachment *attachment = c == NSAttachmentCharacter ? [text attribute:NSAttachmentAttributeName atIndex:i effectiveRange:NULL] : nil;
+        if ([[attachment attachmentCell] isKindOfClass:[TBEmojiCell class]])
+            [out appendString:[(TBEmojiCell *)[attachment attachmentCell] emoji]];
+        else
+            [out appendFormat:@"%C", c];
+    }
+    return out;
+}
+
 /* One of these sits on each message so the words can be highlighted and copied.
    A click on an activity card's triangle still expands it. */
 @interface TBSelectText : NSTextView
@@ -33,6 +179,16 @@
 @end
 
 @implementation TBSelectText
+
+/* Copied text carries the emoji themselves, not the object characters their pictures are. */
+- (BOOL)writeSelectionToPasteboard:(NSPasteboard *)board types:(NSArray *)types
+{
+    BOOL ok = [super writeSelectionToPasteboard:board types:types];
+    NSRange range = [self selectedRange];
+    if (ok && range.length > 0 && [types containsObject:NSStringPboardType])
+        [board setString:plainWithEmoji([[self textStorage] attributedSubstringFromRange:range]) forType:NSStringPboardType];
+    return ok;
+}
 
 - (void)setActivity:(BOOL)flag
 {
@@ -717,7 +873,11 @@ static float transcriptScale = 0;
        has the same length, and must not keep the old, narrower size. */
     if (hit && [[hit objectAtIndex:0] isEqualToString:signature] && [[hit objectAtIndex:2] isEqualToString:text])
         return [[hit objectAtIndex:1] rectValue];
-    used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
+    if (hasStandIn(text))
+        used = [withEmojiPictures([[[NSAttributedString alloc] initWithString:text attributes:attrs] autorelease])
+            boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin];
+    else
+        used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
     if ([sizeCache count] > 4000)
         [sizeCache removeAllObjects];
     [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], [[text copy] autorelease], nil] forKey:key];
@@ -1044,7 +1204,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         [richCache setObject:entry forKey:key];
         if (!built)
             return nil;
-        [entry setObject:[built objectForKey:@"attr"] forKey:@"attr"];
+        [entry setObject:withEmojiPictures([built objectForKey:@"attr"]) forKey:@"attr"];
         [entry setObject:[built objectForKey:@"codes"] forKey:@"codes"];
     }
     storage = [[NSTextStorage alloc] initWithAttributedString:[entry objectForKey:@"attr"]];
@@ -1170,7 +1330,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         BOOL typing = NO;
         if (!text)
             text = @"";
-        text = TBDisplayText(text);
+        text = TBEmojiSubstitute(text);
         if (open && [text length] == 0
             && (!imagePath || [imagePath length] == 0)
             && (!videoPath || [videoPath length] == 0))
@@ -1441,7 +1601,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             continue;
         }
         [(TBSelectText *)view setCopies:nil];
-        if (forceTextReset || ![[view string] isEqualToString:text]) {
+        if (hasStandIn(text)) {
+            if (forceTextReset || ![[view string] isEqualToString:withObjectCharacters(text)])
+                [[view textStorage] setAttributedString:withEmojiPictures([[[NSAttributedString alloc] initWithString:text attributes:attrs] autorelease])];
+        } else if (forceTextReset || ![[view string] isEqualToString:text]) {
             [view setString:text];
             storage = [view textStorage];
             if ([text length] > 0)

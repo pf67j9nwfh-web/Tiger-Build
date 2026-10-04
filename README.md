@@ -9,7 +9,7 @@ LLM revolution occured around 2009 instead of the 2020s.
 > [!WARNING]
 > USE THIS AT YOUR OWN RISK. MAC OS X TIGER, LEOPARD, AND SNOW LEOPARD ARE A 15+ YEAR OLD OPERATING SYSTEMS AND ARE VERY INSECURE. I AM NOT LIABLE FOR ANY SECURITY VULNERABILITIES ABLE TO BE EXPLOITED FROM USING THIS APPLICATION ON THESE MACHINES. YOU HAVE BEEN WARNED. SAFEGUARDS HAVE BEEN INCLUDED THOUGH AS MUCH AS IS FEASIBLE WITHIN THE CONFINES OF THE LIMITATIONS OF ITS OPERATING ENVIRONMENT.
 
-Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE).
+Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE). The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), copyright Twitter, Inc. and other contributors, under [CC-BY 4.0](tiger-build/Emoji-LICENSE.txt).
 
 ## Screenshots
 
@@ -194,6 +194,7 @@ Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`, pp
   - The first attach for each service explains the files go to that service. A file too big for the model's context is offered shortened. Stop cancels a read in progress.
   - Copies are kept in Application Support and the model is told where, so Commander can use them. Only the last six pictures are re-sent.
 - **Files from the model.** The model can hand over a file with a **Save As...** button. A name ending `.docx`, `.xlsx` or `.pdf` makes a real Word, Excel or PDF file. Pictures a tool looks at are shown in the chat.
+- **Emoji.** Macs before Lion have no emoji font, so Tiger Build draws each emoji as a colour picture from the Twemoji set (flags, skin tones and joined emoji too). Copying selected text copies the emoji themselves. Lion and later use the system's own.
 - **Code blocks.** Dark panels name the language and colour about 40 languages, with **Save** and **Copy**. Replies also show bold, italics, `inline code`, headings, bullets, links and tables. Chat → Copy Last Code Block (⇧⌘C) copies without clicking.
 - **Thinking.** Returned reasoning shows in its own card and stays visible above the message box while the model runs (Claude, ChatGPT reasoning models, Grok, Gemini, Mistral Magistral, local reasoning models). Turn it off in Tools settings.
 - **Cost and context.** The line above the chat shows context use and an **estimated cost** (hover for the breakdown), from a public price list the relay fetches; local models show N/A. A full context is summarized (also Chat → Compact Chat Now), and a reply that hits the output limit ends with a note.

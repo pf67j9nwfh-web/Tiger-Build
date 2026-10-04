@@ -2408,7 +2408,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (!version || [version length] == 0)
         version = @"1.5";
     NSRunAlertPanel(@"About Tiger Build",
-        @"Version %@\nLicensed under the MIT License.",
+        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.",
         @"OK", nil, nil, version);
 }
 
