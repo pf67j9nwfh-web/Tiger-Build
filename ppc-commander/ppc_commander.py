@@ -1391,20 +1391,6 @@ def tool_edit_block(args):
 
 # --- search ---
 
-def hidden_path(path, root):
-    if path == root:
-        return False
-    if path.startswith(root + os.sep):
-        rel = path[len(root) + 1:]
-    else:
-        rel = path
-    parts = rel.split(os.sep)
-    for part in parts:
-        if part.startswith('.') and part not in ('.', '..'):
-            return True
-    return False
-
-
 class SearchSession:
     def __init__(self, sid, path, pattern, search_type, file_pattern, ignore_case,
                  max_results, include_hidden, context_lines, timeout_ms, early, literal):
@@ -2556,22 +2542,6 @@ def tool_svn(args, writing):
     return vcs_finish('svn', items, code, output, note)
 
 
-def tool_git_read(args):
-    return tool_git(args, 0)
-
-
-def tool_git_write(args):
-    return tool_git(args, 1)
-
-
-def tool_svn_read(args):
-    return tool_svn(args, 0)
-
-
-def tool_svn_write(args):
-    return tool_svn(args, 1)
-
-
 def tool_repo_info(args):
     """Which repository (git or Subversion) a folder belongs to, and which programs this Mac has."""
     start = vcs_directory(args)
@@ -3212,10 +3182,10 @@ HANDLERS = {
     'take_screenshot': tool_take_screenshot,
     'view_image': tool_view_image,
     'repo_info': tool_repo_info,
-    'git_read': tool_git_read,
-    'git_write': tool_git_write,
-    'svn_read': tool_svn_read,
-    'svn_write': tool_svn_write,
+    'git_read': lambda args: tool_git(args, 0),
+    'git_write': lambda args: tool_git(args, 1),
+    'svn_read': lambda args: tool_svn(args, 0),
+    'svn_write': lambda args: tool_svn(args, 1),
     'get_usage_stats': tool_get_usage_stats,
     'get_recent_tool_calls': tool_get_recent_tool_calls,
 }
@@ -3435,7 +3405,7 @@ def test_vcs_refusals():
         ('svn_read', ['commit', '-m', 'x'], 'svn_write'),
         ('svn_read', ['export', 'x'], 'not available'),
     ]
-    handlers = {'git_read': tool_git_read, 'git_write': tool_git_write, 'svn_read': tool_svn_read, 'svn_write': tool_svn_write}
+    handlers = HANDLERS
     for tool, items, want in cases:
         try:
             handlers[tool]({'args': items, 'path': '/tmp'})

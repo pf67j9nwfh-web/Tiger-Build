@@ -10,7 +10,6 @@ Three jobs:
 
 import os
 import re
-import shlex
 import subprocess
 import sys
 import threading
@@ -420,7 +419,3 @@ def describe(config=None):
         "key_exists": os.path.isfile(key),
         "host_key_saved": bool(config.get("TIGER_HOST")) and known_host_present(config),
     }
-
-
-def shell_quote(text):
-    return shlex.quote(text)

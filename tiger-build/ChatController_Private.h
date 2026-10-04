@@ -109,6 +109,9 @@
 - (IBAction)normalTextSize:(id)sender;
 @end
 
+/* Ask once and remember (see ChatController+Attachments.m). */
+BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle);
+
 @interface ChatController (Dictation)
 - (IBAction)toggleDictation:(id)sender;
 - (IBAction)toggleDictationSend:(id)sender;
@@ -118,7 +121,6 @@
 - (void)finishDictation:(BOOL)keep;
 - (void)beginDictation;
 - (void)updateDictationClock:(NSTimer *)timer;
-- (void)showRestoredProblem:(NSString *)text;
 @end
 
 @interface ChatController (Voice)

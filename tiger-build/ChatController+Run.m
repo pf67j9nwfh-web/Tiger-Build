@@ -373,11 +373,6 @@ static NSString *newRunId(void)
 
 /* ---- stop ---- */
 
-- (BOOL)runInProgress
-{
-    return busy && bodyStream != NULL;
-}
-
 - (IBAction)stopRun:(id)sender
 {
     NSMutableDictionary *chat;

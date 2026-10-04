@@ -307,10 +307,6 @@ def resolve_model(provider, requested):
     return live_default or DEFAULTS[provider]
 
 
-def model_name(provider, requested=None):
-    return resolve_model(provider, requested)
-
-
 def openai_tools(tools):
     converted = []
     for tool in tools:

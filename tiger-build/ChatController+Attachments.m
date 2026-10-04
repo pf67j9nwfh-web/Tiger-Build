@@ -445,10 +445,6 @@ static unsigned pdfPageCount(NSString *path)
         NSMutableDictionary *one = [self pictureAttachmentFromPath:path name:name pdf:NO problem:problem];
         return one ? [NSArray arrayWithObject:one] : nil;
     }
-    if ([ext isEqualToString:@"pdf"]) {
-        *problem = @"PDFs are read in steps.";
-        return nil;
-    }
     if ([documents containsObject:ext]) {
         NSAttributedString *rich = [[[NSAttributedString alloc] initWithPath:path documentAttributes:NULL] autorelease];
         text = [rich string];
@@ -472,30 +468,36 @@ static unsigned pdfPageCount(NSString *path)
    Files are read one at a time, each with a "Reading..." note in the chat, and the window is
    free between steps, so a big PDF does not freeze it. */
 
-/* Attached files go to the service chosen for the chat when a message is sent. Say so once
-   for each service, and let the person decline. */
+/* Ask once, the first time, and remember the answer (one entry in the TBConsent preference per question). */
+BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle)
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSDictionary *known = [defaults dictionaryForKey:@"TBConsent"];
+    NSMutableDictionary *updated;
+    if ([[known objectForKey:key] boolValue])
+        return YES;
+    if (NSRunAlertPanel(title, @"%@", okTitle, @"Cancel", nil, message) != NSAlertDefaultReturn)
+        return NO;
+    updated = [NSMutableDictionary dictionaryWithDictionary:known];
+    [updated setObject:[NSNumber numberWithBool:YES] forKey:key];
+    [defaults setObject:updated forKey:@"TBConsent"];
+    [defaults synchronize];
+    return YES;
+}
+
+/* Attached files go to the service chosen for the chat when a message is sent. Say so once for each service. */
 - (BOOL)confirmCloudAttach
 {
     NSString *provider = [self providerForChat:current];
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSDictionary *known = [defaults dictionaryForKey:@"TBAttachConsent"];
-    NSMutableDictionary *updated;
     NSString *service;
-    if ([provider isEqualToString:@"local"] || [[known objectForKey:provider] boolValue])
+    if ([provider isEqualToString:@"local"])
         return YES;
     service = [[ModelCatalog shared] titleForProvider:provider];
     if (!service)
         service = provider;
-    if (NSRunAlertPanel([NSString stringWithFormat:@"Send attached files to %@?", service],
-        @"Files you attach are sent to %@ together with your messages, so that service can read them. "
-        @"Attach only files you are happy to share with it. A model on your own local server keeps them on your network.",
-        @"Attach", @"Cancel", nil, service) != NSAlertDefaultReturn)
-        return NO;
-    updated = [NSMutableDictionary dictionaryWithDictionary:known];
-    [updated setObject:[NSNumber numberWithBool:YES] forKey:provider];
-    [defaults setObject:updated forKey:@"TBAttachConsent"];
-    [defaults synchronize];
-    return YES;
+    return TBConfirmOnce([@"attach:" stringByAppendingString:provider], [NSString stringWithFormat:@"Send attached files to %@?", service],
+        [NSString stringWithFormat:@"Files you attach are sent to %@ together with your messages, so that service can read them. "
+        @"Attach only files you are happy to share with it. A model on your own local server keeps them on your network.", service], @"Attach");
 }
 
 - (void)attachPaths:(NSArray *)paths

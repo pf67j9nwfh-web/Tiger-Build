@@ -23,7 +23,6 @@ static NSString *kVoice = @"TBVoiceName";
     if (!voiceSynth) {
         NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:kVoice];
         voiceSynth = [[NSSpeechSynthesizer alloc] initWithVoice:[saved length] ? saved : nil];
-        [voiceSynth setDelegate:self];
     }
     return voiceSynth;
 }
@@ -31,12 +30,6 @@ static NSString *kVoice = @"TBVoiceName";
 - (BOOL)isSpeakingNow
 {
     return voiceSynth && [voiceSynth isSpeaking];
-}
-
-- (void)speechSynthesizer:(NSSpeechSynthesizer *)sender didFinishSpeaking:(BOOL)finished
-{
-    (void)sender;
-    (void)finished;
 }
 
 /* The words of the newest reply of the assistant in the chat that is showing. */

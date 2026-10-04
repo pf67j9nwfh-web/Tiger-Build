@@ -11,7 +11,6 @@
 #define DICTATION_MAX_SECONDS 90
 #define DICTATION_RATE 16000
 
-static NSString *kDictationConsent = @"TBDictationConsent";
 static NSString *kDictationSend = @"TBDictationSend";
 
 /* What the microphone callback writes into. The callback runs on Core Audio's own thread; the main thread reads this
@@ -146,30 +145,7 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
     /* Put back whatever the status line said before (a relay problem, or nothing). */
     NSString *before = dictationSaved ? [dictationSaved autorelease] : @"";
     dictationSaved = nil;
-    if ([before length] > 0 && !relayReachable)
-        [self showRestoredProblem:before];
-    else
-        [self setRelayProblem:nil];
-}
-
-- (void)showRestoredProblem:(NSString *)text
-{
-    [self setRelayProblem:text];
-}
-
-- (BOOL)confirmDictation
-{
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([defaults boolForKey:kDictationConsent])
-        return YES;
-    if (NSRunAlertPanel(@"Send recordings to a speech service?",
-        @"Dictation records from the microphone and sends the clip to the relay, which sends it to a speech service (OpenAI, Mistral or Google, "
-        @"whichever has a key) to turn it into text. The recording is not kept. Say only what you are happy to share with it.",
-        @"Dictate", @"Cancel", nil) != NSAlertDefaultReturn)
-        return NO;
-    [defaults setBool:YES forKey:kDictationConsent];
-    [defaults synchronize];
-    return YES;
+    [self setRelayProblem:[before length] > 0 && !relayReachable ? before : nil];
 }
 
 - (IBAction)toggleDictation:(id)sender
@@ -190,7 +166,9 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
     OSStatus status;
     if (!current)
         return;
-    if (![self confirmDictation])
+    if (!TBConfirmOnce(@"dictation", @"Send recordings to a speech service?",
+        @"Dictation records from the microphone and sends the clip to the relay, which sends it to a speech service (OpenAI, Mistral or Google, "
+        @"whichever has a key) to turn it into text. The recording is not kept. Say only what you are happy to share with it.", @"Dictate"))
         return;
     status = AudioHardwareGetProperty(kAudioHardwarePropertyDefaultInputDevice, &size, &device);
     if (status != 0 || device == kAudioDeviceUnknown) {

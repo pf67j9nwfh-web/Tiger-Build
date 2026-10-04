@@ -6,7 +6,7 @@
 - Code blocks with the language named, syntax colours (about 40 languages, script/style inside HTML) and Save/Copy; tables, links, italics and headings in replies; emoji shown as text on Macs that cannot draw them.
 - Export and import a single chat (with its files); History export carries attachments; five rolling backups of every workspace file.
 - Edit From Here, Branch Chat From Here, Find in Chats, Custom Instructions, text size, Attach PDF Pages, Stop cancels attaching.
-- Relay: prompt caching for Claude (about 90% cheaper on long attached chats), conversion limits, media pruning, version check, tunnel helper (`scripts/relay-tunnel.sh`), Windows picture conversion built in.
+- Relay: prompt caching for Claude (about 90% cheaper on long attached chats), conversion limits, media pruning, version check, tunnel helper (`relay/tunnel.py`), Windows picture conversion built in.
 - Source control: `repo_info`, `git_read`/`git_write`, `svn_read`/`svn_write` in Commander 0.4.0 (read-only tools never prompt; unsafe options refused).
 - Text size covers the chat list and message box; VoiceOver labels; Claude one-hour prompt cache for big prompts.
 - Optional voice mode (off by default): read replies aloud, auto-speak, five spoken commands, choose a voice, and Dictate (record on the Mac, transcribe on the relay with OpenAI, Mistral or Google).

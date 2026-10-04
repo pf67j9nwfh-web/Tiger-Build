@@ -2,7 +2,7 @@
 import unittest,tempfile,os,sys,pathlib,plistlib,json,io
 from unittest.mock import patch
 from mcp_bridge import load_shell_config
-import integrations as I, config_backup as B, app_config as A
+import integrations as I, config_backup as B, app_config as A, outputs as O
 
 class IntegrationsTest(unittest.TestCase):
     def setUp(self):
@@ -90,12 +90,12 @@ class IntegrationsTest(unittest.TestCase):
         old=media.media_dir
         media.media_dir=lambda:self.d
         try:
-            stored=I.save_output_file('../../etc/my report (1).md','# Hi\n')
+            stored=O.save('../../etc/my report (1).md','# Hi\n')
             self.assertRegex(stored,r'^[0-9a-f]{16}-my_report_1_.md$')
             self.assertEqual(open(os.path.join(self.d,stored)).read(),'# Hi\n')
-            self.assertTrue(I.save_output_file('notes','x').endswith('-notes.txt'))
+            self.assertTrue(O.save('notes','x').endswith('-notes.txt'))
             for bad in (('a.txt',''),('a.txt','x'*2000001),(None,'x')):
-                with self.assertRaises(ValueError):I.save_output_file(*bad)
+                with self.assertRaises(ValueError):O.save(*bad)
         finally:media.media_dir=old
 
 if __name__=='__main__':unittest.main()

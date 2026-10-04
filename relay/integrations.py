@@ -431,12 +431,6 @@ def _check_url(url):
     _public_host(parts.hostname)
 
 
-def save_output_file(name, content=None, limit=None, content_base64=None):
-    """Store a file a model made, for the client to fetch (see outputs.py)."""
-    import outputs
-    return outputs.save(name, content, content_base64)
-
-
 def sniff_image(data):
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "png"

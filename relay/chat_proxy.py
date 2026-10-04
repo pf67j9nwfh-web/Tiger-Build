@@ -35,7 +35,8 @@ from security import relay_token
 from security import token_ok
 from security import token_path
 from version import VERSION
-from integrations import fetch_image, save_output_file
+from integrations import fetch_image
+from outputs import save as save_output_file
 from media import create_media
 from media import media_dir
 from media import media_tools
@@ -459,10 +460,6 @@ def cached_status(config):
     return entry["tools"] is not None, entry["code"], entry["detail"] or entry["offline"]
 
 
-def _CONTROL_CLEAN(text):
-    return "".join(c for c in text if c in "\n\t" or ord(c) >= 32)
-
-
 def local_addresses():
     """The addresses of this computer, for telling a tunnelled request from a remote one."""
     found = set(["127.0.0.1", "::1"])
@@ -489,7 +486,7 @@ def clean_options(incoming):
         return options
     instructions = incoming.get("instructions")
     if isinstance(instructions, str):
-        options["instructions"] = _CONTROL_CLEAN(instructions.strip())[:4000]
+        options["instructions"] = clean_text(instructions.strip())[:4000]
     for name in ("servers", "approve"):
         table = incoming.get(name)
         if isinstance(table, dict):
