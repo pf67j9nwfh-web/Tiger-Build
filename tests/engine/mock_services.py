@@ -131,6 +131,25 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
             import time
             time.sleep(8)
+        elif path in ("/loop-claude", "/loop-openai"):
+            # First request asks for a tool; once a tool result is in the conversation, answer.
+            text = json.dumps(request)
+            answered = "tool_result" in text or '"role": "tool"' in text
+            if path == "/loop-claude":
+                events = anthropic_events(not answered, False)
+                if answered:
+                    events = [e for e in events if True]
+                self.send_chunked(200, sse(events))
+            else:
+                self.send_chunked(200, sse(openai_chunks(not answered)))
+        elif path == "/grok":
+            if request.get("previous_response_id"):
+                items = [("response.output_text.delta", {"type": "response.output_text.delta", "delta": "Grok done"}),
+                         ("response.completed", {"type": "response.completed", "response": {"id": "r2", "output": [], "usage": {"input_tokens": 40, "output_tokens": 4}}})]
+            else:
+                items = [("response.output_text.delta", {"type": "response.output_text.delta", "delta": "Checking. "}),
+                         ("response.completed", {"type": "response.completed", "response": {"id": "r1", "output": [{"type": "function_call", "call_id": "fc_9", "name": "start_process", "arguments": "{\"command\":\"ls\"}"}], "usage": {"input_tokens": 30, "output_tokens": 3}}})]
+            self.send_chunked(200, sse(items))
         elif path == "/openai-down":
             self.send_json(429, {"error": {"message": "Rate limit reached"}})
         elif path == "/anthropic":

@@ -46,8 +46,11 @@ NSArray *TBArray(id container, NSString *key)
 long long TBInteger(id container, NSString *key)
 {
     id value = TBValue(container, key);
-    if ([value isKindOfClass:[NSNumber class]] || [value isKindOfClass:[NSString class]])
+    if ([value isKindOfClass:[NSNumber class]])
         return [value longLongValue];
+    /* NSString has no longLongValue before Mac OS X 10.5. */
+    if ([value isKindOfClass:[NSString class]])
+        return strtoll([value UTF8String], NULL, 10);
     return 0;
 }
 

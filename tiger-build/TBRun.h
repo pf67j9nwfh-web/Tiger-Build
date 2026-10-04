@@ -25,8 +25,9 @@ extern NSString *TBStoppedException;
 - (BOOL)isCancelled;
 /* Raises TBStoppedException when stopped. */
 - (void)check;
-- (void)attach:(TBHTTP *)http;
-- (void)detach:(TBHTTP *)http;
+/* Anything with -cancel (a request, a tool process) that Stop should end. */
+- (void)attach:(id)http;
+- (void)detach:(id)http;
 - (BOOL)addGuidance:(NSString *)text;
 - (NSArray *)takeGuidance;
 /* The person's answer to a question: "allow", "deny" or "always". */

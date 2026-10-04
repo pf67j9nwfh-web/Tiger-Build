@@ -96,7 +96,7 @@ static NSMutableDictionary *runs = nil;
         [NSException raise:TBStoppedException format:@"Stopped"];
 }
 
-- (void)attach:(TBHTTP *)http
+- (void)attach:(id)http
 {
     BOOL already;
     pthread_mutex_lock(&lock);
@@ -108,7 +108,7 @@ static NSMutableDictionary *runs = nil;
         [http cancel];
 }
 
-- (void)detach:(TBHTTP *)http
+- (void)detach:(id)http
 {
     pthread_mutex_lock(&lock);
     [active removeObject:http];
