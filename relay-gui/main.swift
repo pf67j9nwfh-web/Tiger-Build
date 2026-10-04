@@ -90,7 +90,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         ("Mistral", "mistral_api_key", true), ("Muse", "muse_api_key", true), ("Google / Gemini", "gemini_api_key", true),
         ("Local LLM server URL", "local_url", false), ("Local API key (optional)", "local_api_key", true)]
     @objc func showAbout(_ sender: Any?) {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5"
         let alert = NSAlert()
         alert.messageText = "About Tiger Build Relay"
         alert.informativeText = "Version \(version)\nLicensed under the MIT License."
@@ -191,7 +191,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             put(n, in: keys, 558, y + 3, 44, 18); notes[key] = n
             let b = button("Delete", 0, 0, 100, "deleteField:"); b.identifier = NSUserInterfaceItemIdentifier(key)
             put(b, in: keys, 606, y - 4, 100, 30)
-            if key == "local_url" { f.placeholderString = "not set — this computer or another, e.g. http://127.0.0.1:1234/v1" }
+            if key == "local_url" { f.placeholderString = "not set — this computer or another, e.g. http://127.0.0.1:1234 (LM Studio) or :11434 (Ollama)" }
             if key == "anthropic_workspace_id" { l.toolTip = "Only needed if your Claude key requires a workspace ID. Most keys do not."; f.toolTip = l.toolTip }
             if key == "local_api_key" { l.toolTip = "Only needed if your local model server requires a key."; f.toolTip = l.toolTip }
             y -= 32
@@ -251,7 +251,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if let error = result["error"] as? String { self.message.stringValue = error; return }
                 self.last = result
                 let pid = result["pid"] as? Int ?? 0
-                let ver = result["version"] as? String ?? "1.4"
+                let ver = result["version"] as? String ?? "1.5"
                 self.window.title = "Tiger Build Relay \(ver)"
                 self.status.stringValue = pid > 0 ? "Version \(ver), running in background (PID \(pid))" : "Version \(ver), stopped"
                 self.status.textColor = pid > 0 ? .systemGreen : .secondaryLabelColor

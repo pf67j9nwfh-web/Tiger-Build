@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SSH="$ROOT/ppc-commander/bin/ppc-ssh"
 DIST="$ROOT/dist"
-VERSION="1.4"
+VERSION="1.5"
 mkdir -p "$DIST"
 
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
@@ -18,7 +18,7 @@ NO_OPEN=1 bash "$ROOT/scripts/install-tiger.sh"
 set -e
 APP="$HOME/TigerBuild-build/native/TigerBuild.app"
 PAYLOAD="$HOME/TigerBuild-pkg-payload"
-PKG="$HOME/TigerBuild-1.4.pkg"
+PKG="$HOME/TigerBuild-1.5.pkg"
 if [ ! -d "$APP" ]; then
   echo "Missing $APP" >&2
   exit 1
@@ -44,13 +44,13 @@ cat > "$PKG/Contents/Info.plist" << PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleGetInfoString</key>
-  <string>Tiger Build 1.4</string>
+  <string>Tiger Build 1.5</string>
   <key>CFBundleIdentifier</key>
   <string>local.tigerbuild.TigerBuild.pkg</string>
   <key>CFBundleName</key>
   <string>Tiger Build</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.4</string>
+  <string>1.5</string>
   <key>IFMajorVersion</key>
   <integer>1</integer>
   <key>IFMinorVersion</key>
@@ -88,7 +88,7 @@ cat > "$PKG/Contents/Resources/English.lproj/Description.plist" << PLIST
   <key>IFPkgDescriptionTitle</key>
   <string>Tiger Build</string>
   <key>IFPkgDescriptionVersion</key>
-  <string>1.4</string>
+  <string>1.5</string>
   <key>IFPkgDescriptionDescription</key>
   <string>Installs Tiger Build and ppc-commander on Mac OS X 10.4. The commander is copied to each user's home at ppc-commander/ppc_commander.py. Remote Login is turned on when the installer can. No API keys are included. In Tiger Build Preferences, enter the relay address, port (8765), and relay token from the Tiger Build Relay Mac.</string>
 </dict>
@@ -100,6 +100,6 @@ echo "PACKAGED"
 REMOTE
 
 rm -rf "$DIST/TigerBuild-$VERSION.pkg"
-"$SSH" 'tar -C "$HOME" -cf - TigerBuild-1.4.pkg' | tar -C "$DIST" -xf -
+"$SSH" 'tar -C "$HOME" -cf - TigerBuild-1.5.pkg' | tar -C "$DIST" -xf -
 echo "Wrote $DIST/TigerBuild-$VERSION.pkg"
 "$SSH" 'open "$HOME/Desktop/Tiger Build.app"'

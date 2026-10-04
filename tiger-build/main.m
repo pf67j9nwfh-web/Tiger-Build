@@ -9,7 +9,7 @@ int main(int argc, char *argv[])
     ChatController *controller;
     int i;
 
-    /* Before 1.6 the bundle identifier was local.jr.tigerbuild. Carry its
+    /* Before 1.2 the bundle identifier was local.jr.tigerbuild. Carry its
        preferences (window, sidebar, current workspace) over once. */
     {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];

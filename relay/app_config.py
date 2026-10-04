@@ -369,12 +369,54 @@ def clean_title(text):
 
 
 def _get_json(url, timeout=8):
-    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.4"})
+    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.5"})
     response = urllib.request.urlopen(request, timeout=timeout)
     try:
         return json.loads(response.read().decode("utf-8", "replace"))
     finally:
         response.close()
+
+
+_ollama_context_cache = {}
+
+
+def _ollama_show_context(origin, name, timeout):
+    request = urllib.request.Request(
+        origin + "/api/show", data=json.dumps({"model": name}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "TigerBuild-relay/1.5"})
+    response = urllib.request.urlopen(request, timeout=timeout)
+    try:
+        info = json.loads(response.read().decode("utf-8", "replace")).get("model_info") or {}
+    finally:
+        response.close()
+    for key, value in info.items():
+        if key.endswith(".context_length"):
+            return int(value)
+    return 0
+
+
+def ollama_contexts(origin, names, timeout=3):
+    """Context length by model name, for a server that answers like Ollama, which has no /api/v0/models.
+    A model that is loaded reports the length it was loaded with; the others, the most they allow."""
+    limits = {}
+    try:
+        for item in _get_json(origin + "/api/ps", timeout).get("models") or []:
+            length = int(item.get("context_length") or 0)
+            if length and (item.get("name") or item.get("model")):
+                limits[item.get("name") or item.get("model")] = length
+    except Exception:
+        pass
+    for name in names:
+        if name in limits:
+            continue
+        if name not in _ollama_context_cache:
+            try:
+                _ollama_context_cache[name] = _ollama_show_context(origin, name, timeout)
+            except Exception:
+                continue
+        if _ollama_context_cache[name]:
+            limits[name] = _ollama_context_cache[name]
+    return limits
 
 
 def usable_local_models(v0_items, v1_items):
@@ -440,6 +482,10 @@ def list_local_models(timeout=8):
     except Exception as exc:
         errors.append(str(exc))
     models = usable_local_models(v0_items, v1_items)
+    if models and not v0_items:
+        limits = ollama_contexts(origin, [model["id"] for model in models])
+        for model in models:
+            model["context"] = limits.get(model["id"]) or model["context"]
     if not models and errors:
         raise RuntimeError("Cannot reach the local model server.")
     return models

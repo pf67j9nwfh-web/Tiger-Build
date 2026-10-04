@@ -1,6 +1,8 @@
 #import "TranscriptView.h"
 #import "TBSupport.h"
 #import "TBMarkup.h"
+#import "TBTheme.h"
+#import "TBEmoji.h"
 #if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
 #endif
@@ -14,7 +16,166 @@
 - (void)saveCode:(NSString *)code title:(NSString *)title;
 - (void)saveFileAtPath:(NSString *)path;
 - (NSMenu *)menuForTextView:(NSTextView *)view base:(NSMenu *)base;
+- (void)textScaleChanged:(NSNotification *)note;
+- (void)updateTypingTimer;
 @end
+
+/* ---- emoji pictures (Macs before 10.7) ---- */
+
+/* An emoji drawn as its Twemoji picture, sized to the text around it. */
+@interface TBEmojiCell : NSTextAttachmentCell {
+    float side;
+    NSString *emoji;
+}
+- (id)initWithPicture:(NSImage *)picture emoji:(NSString *)text side:(float)points;
+- (NSString *)emoji;
+@end
+
+@implementation TBEmojiCell
+
+- (id)initWithPicture:(NSImage *)picture emoji:(NSString *)text side:(float)points
+{
+    self = [super initImageCell:picture];
+    if (self) {
+        side = points;
+        emoji = [text copy];
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [emoji release];
+    [super dealloc];
+}
+
+- (NSString *)emoji
+{
+    return emoji;
+}
+
+- (NSSize)cellSize
+{
+    return NSMakeSize(side, side);
+}
+
+- (NSPoint)cellBaselineOffset
+{
+    return NSMakePoint(0, -side * 0.18f);
+}
+
+- (BOOL)wantsToTrackMouse
+{
+    return NO;
+}
+
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)view
+{
+    NSImage *picture = [self image];
+    [picture setFlipped:[view isFlipped]];
+    [[NSGraphicsContext currentContext] setImageInterpolation:NSImageInterpolationHigh];
+    [picture drawInRect:frame fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+}
+
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)view characterIndex:(NSUInteger)index layoutManager:(NSLayoutManager *)manager
+{
+    (void)index;
+    (void)manager;
+    [self drawWithFrame:frame inView:view];
+}
+
+@end
+
+static BOOL hasStandIn(NSString *text)
+{
+    unsigned i;
+    for (i = 0; i < [text length]; i++) {
+        if (TBEmojiIsStandIn([text characterAtIndex:i]))
+            return YES;
+    }
+    return NO;
+}
+
+/* The text as it is in a text view: a stand-in is one object character there. */
+static NSString *withObjectCharacters(NSString *text)
+{
+    NSMutableString *out = [NSMutableString stringWithCapacity:[text length]];
+    unsigned i;
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [text characterAtIndex:i];
+        [out appendFormat:@"%C", TBEmojiIsStandIn(c) ? (unichar)NSAttachmentCharacter : c];
+    }
+    return out;
+}
+
+/* Replaces each stand-in with its picture, one character for one, so positions in the text stay where they were. */
+static NSAttributedString *withEmojiPictures(NSAttributedString *source)
+{
+    static NSMutableDictionary *pictures = nil;
+    NSMutableAttributedString *text;
+    unsigned i;
+    if (!hasStandIn([source string]))
+        return source;
+    if (!pictures)
+        pictures = [[NSMutableDictionary alloc] init];
+    text = [[source mutableCopy] autorelease];
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [[text string] characterAtIndex:i];
+        NSNumber *key = [NSNumber numberWithUnsignedShort:c];
+        NSImage *picture;
+        NSFont *font;
+        NSTextAttachment *attachment;
+        NSRange spot = NSMakeRange(i, 1);
+        if (!TBEmojiIsStandIn(c))
+            continue;
+        picture = [pictures objectForKey:key];
+        if (!picture) {
+            NSData *png = TBEmojiPNGForStandIn(c);
+            picture = png ? [[[NSImage alloc] initWithData:png] autorelease] : nil;
+            if (picture)
+                [pictures setObject:picture forKey:key];
+        }
+        if (!picture) {
+            [text replaceCharactersInRange:spot withString:TBDisplayText(TBEmojiForStandIn(c))];
+            continue;
+        }
+        font = [text attribute:NSFontAttributeName atIndex:i effectiveRange:NULL];
+        attachment = [[[NSTextAttachment alloc] init] autorelease];
+        [attachment setAttachmentCell:[[[TBEmojiCell alloc] initWithPicture:picture emoji:TBEmojiForStandIn(c)
+            side:(font ? [font pointSize] : 14) * 1.2f] autorelease]];
+        [text replaceCharactersInRange:spot withString:[NSString stringWithFormat:@"%C", (unichar)NSAttachmentCharacter]];
+        [text addAttribute:NSAttachmentAttributeName value:attachment range:spot];
+    }
+    return text;
+}
+
+/* Text with its emoji turned back from pictures, for copying. */
+static NSString *plainWithEmoji(NSAttributedString *text)
+{
+    NSMutableString *out = [NSMutableString string];
+    unsigned i;
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [[text string] characterAtIndex:i];
+        NSTextAttachment *attachment = c == NSAttachmentCharacter ? [text attribute:NSAttachmentAttributeName atIndex:i effectiveRange:NULL] : nil;
+        if ([[attachment attachmentCell] isKindOfClass:[TBEmojiCell class]])
+            [out appendString:[(TBEmojiCell *)[attachment attachmentCell] emoji]];
+        else
+            [out appendFormat:@"%C", c];
+    }
+    return out;
+}
+
+NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font)
+{
+    NSMutableParagraphStyle *style;
+    NSString *standIns = TBEmojiSubstitute(text);
+    if (!hasStandIn(standIns))
+        return nil;
+    style = [[[NSMutableParagraphStyle alloc] init] autorelease];
+    [style setLineBreakMode:NSLineBreakByTruncatingTail];
+    return withEmojiPictures([[[NSAttributedString alloc] initWithString:standIns
+        attributes:[NSDictionary dictionaryWithObjectsAndKeys:font, NSFontAttributeName, style, NSParagraphStyleAttributeName, nil]] autorelease]);
+}
 
 /* One of these sits on each message so the words can be highlighted and copied.
    A click on an activity card's triangle still expands it. */
@@ -30,6 +191,16 @@
 @end
 
 @implementation TBSelectText
+
+/* Copied text carries the emoji themselves, not the object characters their pictures are. */
+- (BOOL)writeSelectionToPasteboard:(NSPasteboard *)board types:(NSArray *)types
+{
+    BOOL ok = [super writeSelectionToPasteboard:board types:types];
+    NSRange range = [self selectedRange];
+    if (ok && range.length > 0 && [types containsObject:NSStringPboardType])
+        [board setString:plainWithEmoji([[self textStorage] attributedSubstringFromRange:range]) forType:NSStringPboardType];
+    return ok;
+}
 
 - (void)setActivity:(BOOL)flag
 {
@@ -257,15 +428,6 @@ static void shadeRelease(void *info)
     (void)info;
 }
 
-static const float sentTop[3] = {203.0 / 255.0, 222.0 / 255.0, 252.0 / 255.0};
-static const float sentBody[3] = {130.0 / 255.0, 180.0 / 255.0, 249.0 / 255.0};
-static const float sentLow[3] = {178.0 / 255.0, 230.0 / 255.0, 255.0 / 255.0};
-static const float sentLine[3] = {58.0 / 255.0, 76.0 / 255.0, 112.0 / 255.0};
-static const float gotTop[3] = {248.0 / 255.0, 247.0 / 255.0, 247.0 / 255.0};
-static const float gotBody[3] = {203.0 / 255.0, 203.0 / 255.0, 203.0 / 255.0};
-static const float gotLow[3] = {219.0 / 255.0, 219.0 / 255.0, 219.0 / 255.0};
-static const float gotLine[3] = {78.0 / 255.0, 82.0 / 255.0, 94.0 / 255.0};
-
 /* The bubble's outline: a rounded rectangle whose lower corner on the speaker's
    side sweeps out into a pointed tail. */
 static void appendBubble(NSBezierPath *path, NSRect r, float radius, BOOL tailRight)
@@ -327,11 +489,10 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     CGShadingRef shading;
     CGPoint start;
     CGPoint end;
-    const float *top = sent ? sentTop : gotTop;
-    const float *body = sent ? sentBody : gotBody;
-    const float *low = sent ? sentLow : gotLow;
+    float top[3], body[3], low[3], line[3];
     float height = NSHeight(rect);
     int i;
+    [TBTheme getBubble:sent top:top body:body low:low line:line];
 
     for (i = 0; i < 3; i++) {
         shade.top[i] = top[i];
@@ -364,6 +525,81 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     CGFunctionRelease(function);
 }
 
+/* One bubble: the shaded body, a faint bright line inside the top, and the outline. */
+static void paintBubble(NSRect rect, BOOL fromUser)
+{
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    NSBezierPath *light = [NSBezierPath bezierPath];
+    float top[3], body[3], low[3], line[3];
+    float radius = 16;
+    [TBTheme getBubble:fromUser top:top body:body low:low line:line];
+    appendBubble(path, rect, radius, fromUser);
+    fillBubble(path, rect, fromUser);
+    /* A faint bright line just inside the outline, over the upper half only.
+       Going all the way round drew a white arc across the tail. */
+    {
+        float left = NSMinX(rect) + 1.5f;
+        float right = NSMaxX(rect) - 1.5f;
+        float topY = NSMaxY(rect) - 1.5f;
+        float midY = NSMidY(rect);
+        float r = radius - 1.5f;
+        if (r > (topY - midY))
+            r = topY - midY;
+        [light moveToPoint:NSMakePoint(left, midY)];
+        [light lineToPoint:NSMakePoint(left, topY - r)];
+        [light appendBezierPathWithArcWithCenter:NSMakePoint(left + r, topY - r) radius:r startAngle:180 endAngle:90 clockwise:YES];
+        [light lineToPoint:NSMakePoint(right - r, topY)];
+        [light appendBezierPathWithArcWithCenter:NSMakePoint(right - r, topY - r) radius:r startAngle:90 endAngle:0 clockwise:YES];
+        [light lineToPoint:NSMakePoint(right, midY)];
+    }
+    [NSGraphicsContext saveGraphicsState];
+    [path addClip];
+    [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.30 : 0.55] set];
+    [light setLineWidth:1];
+    [light stroke];
+    [NSGraphicsContext restoreGraphicsState];
+    [[NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1] set];
+    [path setLineWidth:1.2];
+    [path stroke];
+}
+
+/* iChat's typing indicator: a thought cloud with two small bubbles trailing from it and three dots that
+   light up in turn. Drawn from circles, so it is sharp at any size. rect is 84 by 50. */
+static void paintThoughtCloud(NSRect rect, int phase)
+{
+    static const float puffs[][3] = {
+        {32, 20, 11}, {44, 28, 13}, {58, 27, 12}, {69, 19, 10.5f}, {62, 13, 11}, {46, 13, 11}, {33, 13, 9}};
+    NSBezierPath *cloud = [NSBezierPath bezierPath];
+    NSBezierPath *small = [NSBezierPath bezierPath];
+    float ox = NSMinX(rect) + 2;
+    float oy = NSMinY(rect) + 1;
+    unsigned i;
+    for (i = 0; i < sizeof(puffs) / sizeof(puffs[0]); i++)
+        [cloud appendBezierPathWithOvalInRect:NSMakeRect(ox + puffs[i][0] - puffs[i][2], oy + puffs[i][1] - puffs[i][2], puffs[i][2] * 2, puffs[i][2] * 2)];
+    [small appendBezierPathWithOvalInRect:NSMakeRect(ox + 1, oy + 1, 9, 9)];
+    [small appendBezierPathWithOvalInRect:NSMakeRect(ox + 11, oy + 5, 13, 13)];
+    /* The outline is the outer half of a thick stroke; the fill covers the rest. */
+    [[NSColor colorWithCalibratedWhite:0.62f alpha:1] set];
+    [cloud setLineWidth:2];
+    [cloud stroke];
+    [small setLineWidth:2];
+    [small stroke];
+    [NSGraphicsContext saveGraphicsState];
+    [cloud addClip];
+    [TBTheme fillGradient:NSMakeRect(ox, oy, 84, 44) from:[NSColor colorWithCalibratedWhite:1 alpha:1] to:[NSColor colorWithCalibratedWhite:0.9f alpha:1]];
+    [NSGraphicsContext restoreGraphicsState];
+    [NSGraphicsContext saveGraphicsState];
+    [small addClip];
+    [TBTheme fillGradient:NSMakeRect(ox, oy, 30, 22) from:[NSColor colorWithCalibratedWhite:1 alpha:1] to:[NSColor colorWithCalibratedWhite:0.9f alpha:1]];
+    [NSGraphicsContext restoreGraphicsState];
+    for (i = 0; i < 3; i++) {
+        float shade = ((int)i == phase) ? 0.32f : 0.66f;
+        NSBezierPath *dot = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(ox + 36 + i * 12.5f - 4, oy + 20 - 4, 8, 8)];
+        [[NSColor colorWithCalibratedWhite:shade alpha:1] set];
+        [dot fill];
+    }
+}
+
 @implementation TranscriptView
 
 static float transcriptScale = 0;
@@ -388,26 +624,6 @@ static float transcriptScale = 0;
     [[NSNotificationCenter defaultCenter] postNotificationName:@"TBTextScaleChanged" object:nil];
 }
 
-/* The backdrop of iOS 6 Messages and iChat: a light blue-gray with very fine
-   vertical lines. A tiled picture, so painting it costs one fill. */
-+ (NSColor *)backgroundColor
-{
-    static NSColor *color = nil;
-    NSImage *tile;
-    if (color)
-        return color;
-    tile = [[NSImage alloc] initWithSize:NSMakeSize(4, 4)];
-    [tile lockFocus];
-    [[NSColor colorWithCalibratedRed:215.0 / 255.0 green:219.0 / 255.0 blue:227.0 / 255.0 alpha:1] set];
-    NSRectFill(NSMakeRect(0, 0, 4, 4));
-    [[NSColor colorWithCalibratedRed:205.0 / 255.0 green:210.0 / 255.0 blue:220.0 / 255.0 alpha:1] set];
-    NSRectFill(NSMakeRect(0, 0, 1, 4));
-    [tile unlockFocus];
-    color = [[NSColor colorWithPatternImage:tile] retain];
-    [tile release];
-    return color;
-}
-
 /* The fonts messages are drawn in, at the chosen text size. */
 - (void)rebuildFonts
 {
@@ -419,13 +635,13 @@ static float transcriptScale = 0;
     style = [[NSMutableParagraphStyle alloc] init];
     [style setLineBreakMode:NSLineBreakByWordWrapping];
     bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:14 * scale], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.08 alpha:1], NSForegroundColorAttributeName,
+        [TBTheme font:NO scale:scale], NSFontAttributeName,
+        [TBTheme textColor:NO], NSForegroundColorAttributeName,
         style, NSParagraphStyleAttributeName,
         nil];
     userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:14 * scale], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
+        [TBTheme font:YES scale:scale], NSFontAttributeName,
+        [TBTheme textColor:YES], NSForegroundColorAttributeName,
         style, NSParagraphStyleAttributeName,
         nil];
     statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -434,6 +650,62 @@ static float transcriptScale = 0;
         style, NSParagraphStyleAttributeName,
         nil];
     [style release];
+}
+
+/* A change in Appearance: the fonts and colours of the text need a new layout, the bubbles and backdrop only a redraw. */
+- (void)themeChanged:(NSNotification *)note
+{
+    if ([[[note userInfo] objectForKey:@"layout"] boolValue]) {
+        [self textScaleChanged:nil];
+    } else {
+        [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
+        [self setNeedsDisplay:YES];
+    }
+}
+
+/* The dots in the typing cloud light up in turn while a reply has not started. */
+- (void)typingTick:(NSTimer *)timer
+{
+    unsigned i;
+    (void)timer;
+    typingPhase = (typingPhase + 1) % 3;
+    for (i = 0; i < [boxes count]; i++) {
+        NSDictionary *box = [boxes objectAtIndex:i];
+        if ([[box objectForKey:@"typing"] boolValue])
+            [self setNeedsDisplayInRect:[[box objectForKey:@"rect"] rectValue]];
+    }
+}
+
+- (void)updateTypingTimer
+{
+    BOOL any = NO;
+    unsigned i;
+    for (i = 0; i < [boxes count]; i++) {
+        if ([[[boxes objectAtIndex:i] objectForKey:@"typing"] boolValue])
+            any = YES;
+    }
+    if (any && !typingTimer && [self window])
+        typingTimer = [[NSTimer scheduledTimerWithTimeInterval:0.45 target:self selector:@selector(typingTick:) userInfo:nil repeats:YES] retain];
+    if ((!any || ![self window]) && typingTimer) {
+        [typingTimer invalidate];
+        [typingTimer release];
+        typingTimer = nil;
+    }
+}
+
+/* The timer holds its target, so it is stopped when the chat leaves its window. */
+- (void)viewWillMoveToWindow:(NSWindow *)newWindow
+{
+    if (!newWindow && typingTimer) {
+        [typingTimer invalidate];
+        [typingTimer release];
+        typingTimer = nil;
+    }
+}
+
+- (void)viewDidMoveToWindow
+{
+    [self updateTypingTimer];
 }
 
 - (void)textScaleChanged:(NSNotification *)note
@@ -463,12 +735,15 @@ static float transcriptScale = 0;
     [self registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
     [self rebuildFonts];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(textScaleChanged:) name:@"TBTextScaleChanged" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(themeChanged:) name:TBThemeChangedNotification object:nil];
     return self;
 }
 
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [typingTimer invalidate];
+    [typingTimer release];
     [messages release];
     [boxes release];
     [movieViews release];
@@ -610,7 +885,11 @@ static float transcriptScale = 0;
        has the same length, and must not keep the old, narrower size. */
     if (hit && [[hit objectAtIndex:0] isEqualToString:signature] && [[hit objectAtIndex:2] isEqualToString:text])
         return [[hit objectAtIndex:1] rectValue];
-    used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
+    if (hasStandIn(text))
+        used = [withEmojiPictures([[[NSAttributedString alloc] initWithString:text attributes:attrs] autorelease])
+            boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin];
+    else
+        used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
     if ([sizeCache count] > 4000)
         [sizeCache removeAllObjects];
     [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], [[text copy] autorelease], nil] forKey:key];
@@ -937,7 +1216,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         [richCache setObject:entry forKey:key];
         if (!built)
             return nil;
-        [entry setObject:[built objectForKey:@"attr"] forKey:@"attr"];
+        [entry setObject:withEmojiPictures([built objectForKey:@"attr"]) forKey:@"attr"];
         [entry setObject:[built objectForKey:@"codes"] forKey:@"codes"];
     }
     storage = [[NSTextStorage alloc] initWithAttributedString:[entry objectForKey:@"attr"]];
@@ -1060,13 +1339,17 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         float videoW = 0;
         NSString *filePath = [message objectForKey:@"file"];
         float fileH = 0;
+        BOOL typing = NO;
         if (!text)
             text = @"";
-        text = TBDisplayText(text);
+        text = TBEmojiSubstitute(text);
         if (open && [text length] == 0
             && (!imagePath || [imagePath length] == 0)
             && (!videoPath || [videoPath length] == 0))
+        {
             text = @"...";
+            typing = YES;
+        }
         if (status)
             attrs = statusAttrs;
         else
@@ -1123,6 +1406,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         if (rich)
             [box setObject:rich forKey:@"rich"];
         [box setObject:message forKey:@"message"];
+        [box setObject:[NSNumber numberWithBool:typing] forKey:@"typing"];
         [box setObject:attrs forKey:@"attrs"];
         [box setObject:[NSNumber numberWithBool:activity] forKey:@"activity"];
         [box setObject:[NSNumber numberWithBool:status] forKey:@"status"];
@@ -1158,6 +1442,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             }
             if (bubble.size.height < 36)
                 bubble.size.height = 36;
+            if (typing) {
+                bubble.size.width = 84;
+                bubble.size.height = 50;
+            }
             [box setObject:[NSValue valueWithSize:used.size] forKey:@"textSize"];
             [box setObject:[NSValue valueWithRect:NSMakeRect(0, yFromTop, bubble.size.width, bubble.size.height)] forKey:@"topRect"];
             yFromTop += bubble.size.height + 10;
@@ -1247,6 +1535,9 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         }
     }
     [self setFrameSize:NSMakeSize(layoutWidth, contentH)];
+    /* A picture or gradient behind the chat is drawn against the visible part, so a scroll must redraw it. */
+    [[[self enclosingScrollView] contentView] setCopiesOnScroll:![TBTheme hasCustomBackground]];
+    [self updateTypingTimer];
     [self placeMovies];
     [self syncTextViews];
     [self setNeedsDisplay:YES];
@@ -1296,6 +1587,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         NSTextStorage *storage;
         if (!text)
             text = @"";
+        [view setHidden:[[box objectForKey:@"typing"] boolValue]];
         [(TBSelectText *)view setActivity:[[box objectForKey:@"activity"] boolValue]];
         {
             NSString *who = [[box objectForKey:@"status"] boolValue] ? ([[box objectForKey:@"activity"] boolValue] ? @"Tool activity" : @"Status")
@@ -1321,7 +1613,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             continue;
         }
         [(TBSelectText *)view setCopies:nil];
-        if (forceTextReset || ![[view string] isEqualToString:text]) {
+        if (hasStandIn(text)) {
+            if (forceTextReset || ![[view string] isEqualToString:withObjectCharacters(text)])
+                [[view textStorage] setAttributedString:withEmojiPictures([[[NSAttributedString alloc] initWithString:text attributes:attrs] autorelease])];
+        } else if (forceTextReset || ![[view string] isEqualToString:text]) {
             [view setString:text];
             storage = [view textStorage];
             if ([text length] > 0)
@@ -1402,8 +1697,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 {
     unsigned i;
 
-    [[TranscriptView backgroundColor] set];
-    NSRectFill(dirty);
+    [TBTheme drawBackground:dirty visible:[self visibleRect]];
     for (i = 0; i < [boxes count]; i++) {
         NSDictionary *box = [boxes objectAtIndex:i];
         NSRect rect = [[box objectForKey:@"rect"] rectValue];
@@ -1418,38 +1712,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             continue;
         }
         {
-            NSBezierPath *path = [NSBezierPath bezierPath];
-            NSBezierPath *light = [NSBezierPath bezierPath];
-            const float *line = fromUser ? sentLine : gotLine;
-            float radius = 16;
-            appendBubble(path, rect, radius, fromUser);
-            fillBubble(path, rect, fromUser);
-            /* A faint bright line just inside the outline, over the upper half only.
-               Going all the way round drew a white arc across the tail. */
-            {
-                float left = NSMinX(rect) + 1.5f;
-                float right = NSMaxX(rect) - 1.5f;
-                float topY = NSMaxY(rect) - 1.5f;
-                float midY = NSMidY(rect);
-                float r = radius - 1.5f;
-                if (r > (topY - midY))
-                    r = topY - midY;
-                [light moveToPoint:NSMakePoint(left, midY)];
-                [light lineToPoint:NSMakePoint(left, topY - r)];
-                [light appendBezierPathWithArcWithCenter:NSMakePoint(left + r, topY - r) radius:r startAngle:180 endAngle:90 clockwise:YES];
-                [light lineToPoint:NSMakePoint(right - r, topY)];
-                [light appendBezierPathWithArcWithCenter:NSMakePoint(right - r, topY - r) radius:r startAngle:90 endAngle:0 clockwise:YES];
-                [light lineToPoint:NSMakePoint(right, midY)];
+            if ([[box objectForKey:@"typing"] boolValue]) {
+                paintThoughtCloud(rect, typingPhase);
+                continue;
             }
-            [NSGraphicsContext saveGraphicsState];
-            [path addClip];
-            [[NSColor colorWithCalibratedWhite:1 alpha:fromUser ? 0.30 : 0.55] set];
-            [light setLineWidth:1];
-            [light stroke];
-            [NSGraphicsContext restoreGraphicsState];
-            [[NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1] set];
-            [path setLineWidth:1.2];
-            [path stroke];
+            paintBubble(rect, fromUser);
             if ([box objectForKey:@"drawnPanels"])
                 [self drawCodePanels:[box objectForKey:@"drawnPanels"]];
             if ([box objectForKey:@"fileRect"]) {
@@ -1710,6 +1977,62 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     data = [NSData dataWithContentsOfFile:path];
     if (!data || ![data writeToFile:dest atomically:YES])
         NSBeep();
+}
+
+@end
+
+
+/* ---- the sample in the Appearance panel ---- */
+
+@implementation TBThemePreview
+
+- (id)initWithFrame:(NSRect)frame
+{
+    self = [super initWithFrame:frame];
+    if (self)
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refresh:) name:TBThemeChangedNotification object:nil];
+    return self;
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
+}
+
+- (void)refresh:(NSNotification *)note
+{
+    (void)note;
+    [self setNeedsDisplay:YES];
+}
+
+/* One sample bubble, with its words, at the edge it would sit against. */
+- (void)drawSample:(NSString *)words sent:(BOOL)sent y:(float)y
+{
+    NSMutableParagraphStyle *style = [[[NSMutableParagraphStyle alloc] init] autorelease];
+    NSDictionary *attrs;
+    NSSize size;
+    NSRect rect;
+    [style setLineBreakMode:NSLineBreakByClipping];
+    attrs = [NSDictionary dictionaryWithObjectsAndKeys:[TBTheme font:sent scale:1.0f], NSFontAttributeName,
+        [TBTheme textColor:sent], NSForegroundColorAttributeName, style, NSParagraphStyleAttributeName, nil];
+    size = [words sizeWithAttributes:attrs];
+    if (size.width > NSWidth([self bounds]) - 120)
+        size.width = NSWidth([self bounds]) - 120;
+    rect = NSMakeRect(sent ? NSWidth([self bounds]) - 18 - size.width - 34 : 16, y, size.width + 34, size.height + 18);
+    paintBubble(rect, sent);
+    [words drawInRect:NSMakeRect(NSMinX(rect) + 17, NSMinY(rect) + 9, size.width, size.height) withAttributes:attrs];
+}
+
+- (void)drawRect:(NSRect)dirty
+{
+    [TBTheme drawBackground:dirty visible:[self bounds]];
+    [self drawSample:@"Can you help me with this?" sent:YES y:NSHeight([self bounds]) - 46];
+    [self drawSample:@"Yes. What would you like to know?" sent:NO y:NSHeight([self bounds]) - 86];
+    paintThoughtCloud(NSMakeRect(16, 3, 84, 50), 1);
+    /* The thin frame around the sample, as in iChat's preferences. */
+    [[NSColor colorWithCalibratedWhite:0.45f alpha:1] set];
+    NSFrameRect(NSInsetRect([self bounds], 0, 0));
 }
 
 @end

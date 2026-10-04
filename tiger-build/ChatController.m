@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TranscriptView.h"
+#import "TBProviderIcons.h"
 #import <CoreServices/CoreServices.h>
 
 static BOOL nextWindowIsExtra = NO;
@@ -907,9 +908,17 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     {
         NSRect actions = chatLayout.actions;
         float third = floorf((NSWidth(actions) - 8) / 3.0f);
+        NSRect old = NSUnionRect(NSUnionRect([editButton frame], [retryButton frame]), [attachButton frame]);
+        NSRect now;
         [editButton setFrame:NSMakeRect(NSMinX(actions), NSMinY(actions) - 1, third, 20)];
         [retryButton setFrame:NSMakeRect(NSMinX(actions) + third + 4, NSMinY(actions) - 1, third, 20)];
         [attachButton setFrame:NSMakeRect(NSMinX(actions) + 2 * (third + 4), NSMinY(actions) - 1, third, 20)];
+        now = NSUnionRect(NSUnionRect([editButton frame], [retryButton frame]), [attachButton frame]);
+        if (!NSEqualRects(old, now)) {
+            /* The bezels they leave behind are not repainted by -setFrame: on Tiger (three black lines). */
+            [chatPane setNeedsDisplayInRect:NSInsetRect(NSUnionRect(old, now), -4, -4)];
+            moved = YES;
+        }
     }
     if (!NSEqualRects(oldSendFrame, chatLayout.send)) {
         [sendButton setFrame:chatLayout.send];
@@ -1005,7 +1014,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
                 || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
                 || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
-                || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
+                || [item action] == @selector(showAppearance:) || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
                 mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
             [item setKeyEquivalentModifierMask:mask];
@@ -1203,6 +1212,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
                 [item setTarget:self]; [menu addItem:item];
             }
+            [menu addItem:[NSMenuItem separatorItem]];
+            item = [[[NSMenuItem alloc] initWithTitle:@"Appearance..." action:@selector(showAppearance:) keyEquivalent:@""] autorelease];
+            [item setTarget:self]; [menu addItem:item];
             slot = [[[NSMenuItem alloc] initWithTitle:@"View" action:NULL keyEquivalent:@""] autorelease];
             [slot setSubmenu:menu]; [chat addItem:slot];
         }
@@ -1277,7 +1289,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
@@ -1347,6 +1359,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     for (i = 0; i < [providers count]; i++) {
         NSDictionary *item = [providers objectAtIndex:i];
         [self addModelItem:[self providerMenuTitle:item] identifier:[item objectForKey:@"id"] toMenu:menu];
+        [[menu itemAtIndex:[menu numberOfItems]-1] setImage:TBProviderIcon([item objectForKey:@"id"])];
         [[menu itemAtIndex:[menu numberOfItems]-1] setKeyEquivalent:[NSString stringWithFormat:@"%d",(int)i+1]];
     }
 }
@@ -1364,6 +1377,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         NSString *pid = [item objectForKey:@"id"];
         [modelPopup addItemWithTitle:[self providerMenuTitle:item]];
         [[modelPopup lastItem] setRepresentedObject:pid];
+        [[modelPopup lastItem] setImage:TBProviderIcon(pid)];
         /* Local stays enabled so choosing it asks the server for models again. */
         [[modelPopup lastItem] setEnabled:([pid isEqualToString:@"local"] || [self providerNote:pid] == nil)];
     }
@@ -1836,6 +1850,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [window makeFirstResponder:input];
     [window display];
     [self ensureCommanderInstalled];
+    [self startSudoBroker];
     [self refreshCommanderStatus];
     [self refreshCatalog];
     [self refreshToolCatalog];
@@ -1862,19 +1877,37 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     return (NSInteger)[chats count];
 }
 
+/* Hovering a chat in the list shows its whole title, for the ones the column cuts off. */
+- (NSString *)tableView:(NSTableView *)aTable toolTipForCell:(NSCell *)cell rect:(NSRectPointer)rect tableColumn:(NSTableColumn *)column
+                    row:(NSInteger)row mouseLocation:(NSPoint)mouseLocation
+{
+    (void)aTable;
+    (void)cell;
+    (void)rect;
+    (void)column;
+    (void)mouseLocation;
+    if (row < 0 || row >= (NSInteger)[chats count])
+        return nil;
+    return TBDisplayText([[chats objectAtIndex:row] objectForKey:@"title"]);
+}
+
 - (id)tableView:(NSTableView *)aTable objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     NSString *title;
     NSString *chatId;
+    NSAttributedString *pictured;
     (void)aTable;
     (void)column;
     if (row < 0 || row >= (int)[chats count])
         return @"";
     title = [[chats objectAtIndex:row] objectForKey:@"title"];
     chatId = [[chats objectAtIndex:row] objectForKey:@"id"];
+    if (!title)
+        title = @"";
     if ((busy || naming) && streamingId && [streamingId isEqualToString:chatId])
-        return [NSString stringWithFormat:@"%C  %@", (unichar)0x2022, title ? title : @""];
-    return title ? title : @"";
+        title = [NSString stringWithFormat:@"%C  %@", (unichar)0x2022, title];
+    pictured = TBEmojiTitle(title, [[column dataCell] font]);
+    return pictured ? (id)pictured : (id)TBDisplayText(title);
 }
 
 - (void)tableView:(NSTableView *)aTable setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row
@@ -2386,9 +2419,9 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.4";
+        version = @"1.5";
     NSRunAlertPanel(@"About Tiger Build",
-        @"Version %@\nLicensed under the MIT License.",
+        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.",
         @"OK", nil, nil, version);
 }
 

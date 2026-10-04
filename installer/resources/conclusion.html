@@ -6,14 +6,9 @@
 </head>
 <body>
   <h1>Almost done</h1>
-  <p>Tiger Build Relay 1.4 is installed at <code>/usr/local/tiger-build-relay</code>. No API keys were included. Setup was run for the account that was logged in; see SETUP-RESULT.txt in that folder.</p>
+  <p>Tiger Build Relay 1.5 is installed at <code>/usr/local/tiger-build-relay</code>. API keys or a local LLM server are required for the operation of this application.</p>
   <ol>
-    <li>Make an <code>ssh-rsa</code> key and install it on your Tiger Mac, as described in <code>/usr/local/tiger-build-relay/RELEASE.txt</code>.</li>
-    <li>As your own user, run <code>/usr/local/tiger-build-relay/scripts/setup.sh</code>. The first run writes <code>~/Library/Application Support/Tiger Build Relay/config.sh</code>. Set <code>TIGER_HOST</code> (the Tiger Mac's address) and <code>TIGER_USER</code> (the account on it).</li>
-    <li>Run <code>setup.sh</code> again. It starts the relay and prints the relay's <strong>address</strong>, <strong>port</strong> and <strong>token</strong>. Open <strong>Tiger Build Relay</strong> from the Applications folder.</li>
-    <li>On the Tiger Mac, open Tiger Build, then Preferences. Enter the address, port and token, and click <strong>Test Connection</strong>.</li>
-    <li>Add API keys in the same window or in the Tiger Build Relay app, as many or as few as you use. <em>Workspace ID</em> and <em>Local API key</em> are optional.</li>
+    <li>Please see documentation on how to setup the relay and its connections.</li>
   </ol>
-  <p>Keys can also go in <code>/usr/local/tiger-build-relay/.env</code>; see <code>.env.example</code>. These steps are repeated in <code>/usr/local/tiger-build-relay/ENV-SETUP.txt</code>.</p>
 </body>
 </html>

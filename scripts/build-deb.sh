@@ -3,7 +3,7 @@
 # Uses dpkg-deb on Linux, or scripts/pack_deb.py when that is not installed.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="1.4"
+VERSION="1.5"
 STAGE="$(mktemp -d)"
 DIST="$ROOT/dist"
 mkdir -p "$DIST"
@@ -17,8 +17,8 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.8), python3-tk, openssh-client (>= 1:9.1)
-Recommends: python3-pil, libheif-examples | imagemagick
+Depends: python3 (>= 3.8), python3-tk, openssh-client (>= 1:9.1), systemd, ca-certificates
+Recommends: python3-pil, libheif-examples | imagemagick, libheif-plugin-libde265 | libheif1, xdg-utils
 Maintainer: Tiger Build <tigerbuild@localhost>
 Description: Tiger Build Relay
  Connects Mac OS X Tiger to current AI services. No API keys are included.
@@ -26,7 +26,7 @@ Description: Tiger Build Relay
 EOF
 cat > "$STAGE/DEBIAN/postinst" << 'EOF'
 #!/bin/sh
-echo "Tiger Build Relay 1.4 is in /opt/tiger-build-relay."
+echo "Tiger Build Relay 1.5 is in /opt/tiger-build-relay."
 echo "As your user, run: python3 /opt/tiger-build-relay/scripts/setup.py"
 echo "Then open Tiger Build Relay from the application menu."
 chmod 755 /opt/tiger-build-relay/scripts/setup.py /opt/tiger-build-relay/scripts/setup.sh /opt/tiger-build-relay/relay/chat_proxy.py 2>/dev/null || true
@@ -37,7 +37,7 @@ mkdir -p "$STAGE/usr/share/applications" "$STAGE/usr/share/icons/hicolor/128x128
 cp "$ROOT/assets/icon-128.png" "$STAGE/usr/share/icons/hicolor/128x128/apps/tiger-build-relay.png"
 cat > "$STAGE/usr/share/applications/tiger-build-relay.desktop" << 'EOF'
 [Desktop Entry]
-Version=1.4
+Version=1.5
 Type=Application
 Name=Tiger Build Relay
 GenericName=Relay settings
