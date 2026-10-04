@@ -3,6 +3,7 @@
 #import "TBSupport.h"
 #import "TBMarkup.h"
 #import "TBEmoji.h"
+#import "TBJSON.h"
 #import <stdarg.h>
 #import <unistd.h>
 
@@ -293,6 +294,33 @@ int main(void)
         tbcheck([shown isEqualToString:@"Done (rocket)! (check)"] || TBSystemMinor() >= 7, @"emoji become words");
         tbcheck([TBDisplayText(@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713") isEqualToString:@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713"], @"other characters are untouched");
         tbcheck(![TBDisplayText([NSString stringWithFormat:@"a%C%C%Cb", (unichar)0xD83E, (unichar)0xDD2F, (unichar)0xFE0F]) hasPrefix:@"a\xed"], @"unknown pictographs dropped");
+    }
+    {
+        NSString *err = nil;
+        NSDictionary *d = TBJSONParseString(@"{\"a\":[1,-2,3.5,1e3,true,false,null],\"s\":\"caf\\u00e9 \\ud83d\\ude00 line\\nbreak \\\"q\\\"\",\"o\":{}}", &err);
+        NSArray *a = [d objectForKey:@"a"];
+        tbcheck(d && [a count] == 7 && [[a objectAtIndex:1] intValue] == -2 && [[a objectAtIndex:2] doubleValue] == 3.5 && [[a objectAtIndex:3] doubleValue] == 1000, @"json numbers");
+        tbcheck([a objectAtIndex:4] == (id)kCFBooleanTrue && [a objectAtIndex:5] == (id)kCFBooleanFalse && [a objectAtIndex:6] == [NSNull null], @"json true, false, null");
+        tbcheck([[d objectForKey:@"s"] isEqualToString:[NSString stringWithFormat:@"caf%C %C%C line\nbreak \"q\"", (unichar)0xE9, (unichar)0xD83D, (unichar)0xDE00]], @"json string escapes and surrogate pairs");
+        tbcheck([[d objectForKey:@"o"] count] == 0, @"json empty object");
+        tbcheck(TBJSONParseString(@"{\"a\":1,}", &err) == nil && err != nil, @"json trailing comma refused");
+        tbcheck(TBJSONParseString(@"[1,2", &err) == nil && TBJSONParseString(@"{\"a\":\"\\x\"}", &err) == nil && TBJSONParseString(@"1 2", &err) == nil, @"json broken text refused");
+        {
+            NSDictionary *out = [NSDictionary dictionaryWithObjectsAndKeys:[NSString stringWithFormat:@"a\"b\\c\n%C\t%C%C", (unichar)1, (unichar)0xD83D, (unichar)0xDE00], @"text",
+                [NSNumber numberWithBool:YES], @"flag", [NSNumber numberWithLongLong:9007199254740993LL], @"big", [NSNumber numberWithDouble:0.25], @"half",
+                [NSArray arrayWithObjects:[NSNull null], [TBJSONRaw rawWithData:[@"\"RAW\"" dataUsingEncoding:NSUTF8StringEncoding]], nil], @"list", nil];
+            NSDictionary *back = TBJSONParse(TBJSONData(out), &err);
+            tbcheck(back && [[back objectForKey:@"text"] isEqualToString:[out objectForKey:@"text"]] && [back objectForKey:@"flag"] == (id)kCFBooleanTrue
+                && [[back objectForKey:@"big"] longLongValue] == 9007199254740993LL && [[back objectForKey:@"half"] doubleValue] == 0.25
+                && [[[back objectForKey:@"list"] objectAtIndex:1] isEqualToString:@"RAW"], @"json round trip");
+        }
+        {
+            NSMutableArray *big = [NSMutableArray array];
+            unsigned i;
+            for (i = 0; i < 20000; i++)
+                [big addObject:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:i], @"n", @"some text here", @"t", nil]];
+            tbcheck([TBJSONParse(TBJSONData(big), &err) count] == 20000, @"json handles a long list");
+        }
     }
     TBEmojiUsePack(@"Emoji.pack");
     if (TBEmojiPicturesAvailable()) {

@@ -12,4 +12,5 @@ tar -xjf src/mbedtls.tar.bz2 -C src
 rm src/mbedtls.tar.bz2
 mv "src/mbedtls-$VERSION" src/mbedtls
 (cd src/mbedtls && patch -p1 < ../../old-macs.patch)
-echo "mbedTLS $VERSION is in third_party/mbedtls/src/mbedtls"
+rm -rf include && mkdir include && cp -R src/mbedtls/include/mbedtls src/mbedtls/include/psa include/
+echo "mbedTLS $VERSION is in third_party/mbedtls/src/mbedtls; its headers are in third_party/mbedtls/include"
