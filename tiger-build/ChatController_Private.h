@@ -112,6 +112,10 @@
 /* Ask once and remember (see ChatController+Attachments.m). */
 BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle);
 
+@interface ChatController (Appearance)
+- (IBAction)showAppearance:(id)sender;
+@end
+
 @interface ChatController (Dictation)
 - (IBAction)toggleDictation:(id)sender;
 - (IBAction)toggleDictationSend:(id)sender;

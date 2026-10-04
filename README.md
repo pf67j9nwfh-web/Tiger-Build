@@ -182,6 +182,7 @@ Every menu command has a keyboard shortcut, shown in the menu.
 - **Models.** The popups under the chat list pick service and model. A new chat starts with the last chat's model, tools and approvals, or a fixed model chosen in Preferences. Services with no key or no working model are dimmed with the reason.
 - **Stop and guidance.** Stop (⌘.) ends a reply at once, even mid-command. While a model uses tools, Send becomes **Guide**: a note typed then reaches the model between steps (Grok, ChatGPT, Claude, Gemini, Mistral).
 - **Edit and retry.** Retry resends your last message. Edit Last takes it back into the message box (Cancel Edit restores). Right-click any message for **Edit From Here** or **Branch Chat From Here**.
+- **Appearance** (View → Appearance, ⌥⌘K). As in iChat, set the bubble colour, text colour and font for your messages and for replies, and put a solid colour, a gradient or a picture behind the chat. Changes show at once; Reset to Default restores the original look. While a reply has not started, a thought cloud with three moving dots shows, like iChat's typing indicator.
 - **Find in Chats** (⌘F), **Custom Instructions** (⌥⌘T, per chat or per workspace), and **View → Bigger/Smaller Text** (⌥⌘= and ⌥⌘-).
 - **Export and import.** Chat → Export This Chat (⌥⌘E) saves one chat with its files, or as Markdown or text; Import Chat (⌥⌘I) adds it to any workspace. History → Export All History covers every workspace; the relay copy and import backups hold references only. Each workspace file keeps five rolling backups.
 

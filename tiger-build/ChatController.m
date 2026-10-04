@@ -1005,7 +1005,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
                 || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
                 || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
-                || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
+                || [item action] == @selector(showAppearance:) || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
                 mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
             [item setKeyEquivalentModifierMask:mask];
@@ -1203,6 +1203,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
                 [item setTarget:self]; [menu addItem:item];
             }
+            [menu addItem:[NSMenuItem separatorItem]];
+            item = [[[NSMenuItem alloc] initWithTitle:@"Appearance..." action:@selector(showAppearance:) keyEquivalent:@""] autorelease];
+            [item setTarget:self]; [menu addItem:item];
             slot = [[[NSMenuItem alloc] initWithTitle:@"View" action:NULL keyEquivalent:@""] autorelease];
             [slot setSubmenu:menu]; [chat addItem:slot];
         }
@@ -1277,7 +1280,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)

@@ -18,9 +18,10 @@
     NSString *copiedKey;
     BOOL forceTextReset;
     id dropTarget;
+    int typingPhase;
+    NSTimer *typingTimer;
 }
 
-+ (NSColor *)backgroundColor;
 /* How large the text in chats is drawn: 1.0 is the normal size. Kept in the preferences and shared by every window. */
 + (float)textScale;
 + (void)setTextScale:(float)scale;
@@ -32,4 +33,8 @@
 - (void)setDropTarget:(id)target;
 - (void)scrollToMessage:(id)message;
 
+@end
+
+/* The sample in the Appearance panel: the backdrop with a bubble from you, one from the model and the typing cloud. */
+@interface TBThemePreview : NSView
 @end
