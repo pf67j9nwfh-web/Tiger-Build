@@ -1,0 +1,140 @@
+--- a/library/platform_util.c
++++ b/library/platform_util.c
+@@ -33,6 +33,12 @@
+ #endif
+ #include <string.h>
+ 
++#if defined(__APPLE__)
++#include <time.h>
++/* The 10.4 SDK hides gmtime_r from strict C modes. */
++struct tm *gmtime_r(const time_t *, struct tm *);
++#endif
++
+ #if defined(_WIN32)
+ #include <windows.h>
+ #endif
+@@ -147,6 +153,9 @@
+ 
+ #if defined(MBEDTLS_HAVE_TIME_DATE) && !defined(MBEDTLS_PLATFORM_GMTIME_R_ALT)
+ #include <time.h>
++#if defined(__APPLE__)
++#include <AvailabilityMacros.h>
++#endif
+ #if defined(MBEDTLS_PLATFORM_IS_UNIXLIKE)
+ #include <unistd.h>
+ #endif
+@@ -219,9 +228,20 @@
+ #include <unistd.h>
+ #endif
+ 
+-#if (defined(_POSIX_VERSION) && _POSIX_VERSION >= 199309L) || defined(__HAIKU__)
++#if defined(__APPLE__) && defined(MAC_OS_X_VERSION_MIN_REQUIRED) && MAC_OS_X_VERSION_MIN_REQUIRED < 101200
++/* clock_gettime() arrived in Mac OS X 10.12; Tiger, Leopard and Snow Leopard have mach_absolute_time(). */
++#include <mach/mach_time.h>
+ mbedtls_ms_time_t mbedtls_ms_time(void)
+ {
++    static mach_timebase_info_data_t base;
++    if (base.denom == 0) {
++        mach_timebase_info(&base);
++    }
++    return (mbedtls_ms_time_t) (mach_absolute_time() / 1000000 * base.numer / base.denom);
++}
++#elif (defined(_POSIX_VERSION) && _POSIX_VERSION >= 199309L) || defined(__HAIKU__)
++mbedtls_ms_time_t mbedtls_ms_time(void)
++{
+     int ret;
+     struct timespec tv;
+     mbedtls_ms_time_t current_ms;
+--- a/library/constant_time_impl.h
++++ b/library/constant_time_impl.h
+@@ -46,8 +46,7 @@
+ #define MBEDTLS_CT_AARCH64_ASM
+ #elif defined(__amd64__) || defined(__x86_64__)
+ #define MBEDTLS_CT_X86_64_ASM
+-#elif defined(__i386__)
+-#define MBEDTLS_CT_X86_ASM
++/* 32-bit x86: gcc 4.0/4.2 cannot allocate registers for this assembly in position-independent code, so use the C versions. */
+ #endif
+ #endif
+ 
+@@ -136,7 +135,7 @@
+                   [s] "=&r" (s),
+                   [x] "+&r" (x)
+                   :
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_condition_t) x;
+ #elif defined(MBEDTLS_CT_ARM_ASM) && defined(MBEDTLS_CT_SIZE_32)
+@@ -164,7 +163,7 @@
+                   [s] "=&a" (s)
+                   :
+                   [x] "D" (x)
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_condition_t) s;
+ #elif defined(MBEDTLS_CT_X86_ASM) && defined(MBEDTLS_CT_SIZE_32)
+@@ -177,7 +176,7 @@
+                   [s] "=&c" (s),
+                   [x] "+&a" (x)
+                   :
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_condition_t) x;
+ #else
+@@ -216,7 +215,7 @@
+                   [if1] "+&r" (if1)
+                   :
+                   [if0] "r" (if0)
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_uint_t) condition;
+ #elif defined(MBEDTLS_CT_ARM_ASM) && defined(MBEDTLS_CT_SIZE_32)
+@@ -245,7 +244,7 @@
+                   [if1] "+&S" (if1),
+                   [if0] "+&a" (if0)
+                   :
+-                  :
++                  : "cc"
+                   );
+     return if0;
+ #elif defined(MBEDTLS_CT_X86_ASM) && defined(MBEDTLS_CT_SIZE_32)
+@@ -258,7 +257,7 @@
+                   [if1] "+&a" (if1)
+                   :
+                   [if0] "b" (if0)
+-                  :
++                  : "cc"
+                   );
+     return if1;
+ #else
+@@ -283,7 +282,7 @@
+                   [x] "+&r" (x)
+                   :
+                   [y] "r" (y)
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_condition_t) x;
+ #elif defined(MBEDTLS_CT_ARM_ASM) && defined(MBEDTLS_CT_SIZE_32)
+@@ -326,7 +325,7 @@
+                   [x] "+&D" (x),
+                   [y] "+&S" (y)
+                   :
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_condition_t) x;
+ #elif defined(MBEDTLS_CT_X86_ASM) && defined(MBEDTLS_CT_SIZE_32)
+@@ -344,7 +343,7 @@
+                   [x] "+&a" (x),
+                   [y] "+&c" (y)
+                   :
+-                  :
++                  : "cc"
+                   );
+     return (mbedtls_ct_condition_t) x;
+ #else
