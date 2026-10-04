@@ -1,6 +1,7 @@
 /* make test: checks the pieces of Tiger Build that do not need a window. */
 #import <Foundation/Foundation.h>
 #import "TBSupport.h"
+#import "TBMarkup.h"
 #import <unistd.h>
 
 static int failures = 0;
@@ -172,6 +173,114 @@ int main(void)
         tbcheck([TBStore storeAtPath:[file stringByAppendingString:@".other"]] != a, @"different workspaces get different stores");
         [TBStore forgetAll];
         [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+    }
+
+    {
+        NSArray *blocks = TBSplitBlocks(@"Here:\n```python\nprint(1)\n```\nDone.");
+        tbcheck([blocks count] == 3 && [[[blocks objectAtIndex:1] objectForKey:@"code"] boolValue], @"fence splits prose and code");
+        tbcheck([[[blocks objectAtIndex:1] objectForKey:@"lang"] isEqualToString:@"python"]
+            && [[[blocks objectAtIndex:1] objectForKey:@"text"] isEqualToString:@"print(1)"]
+            && [[[blocks objectAtIndex:1] objectForKey:@"closed"] boolValue], @"fence tag and body read");
+        tbcheck([[[blocks objectAtIndex:2] objectForKey:@"text"] isEqualToString:@"Done."], @"prose after the fence kept");
+        blocks = TBSplitBlocks(@"Start\n```js\nlet a = 1;");
+        tbcheck([blocks count] == 2 && ![[[blocks objectAtIndex:1] objectForKey:@"closed"] boolValue], @"open fence while streaming");
+        blocks = TBSplitBlocks(@"no code here");
+        tbcheck([blocks count] == 1 && ![[[blocks objectAtIndex:0] objectForKey:@"code"] boolValue], @"plain text is one block");
+        blocks = TBSplitBlocks(@"````\n```\ninner\n```\n````");
+        tbcheck([blocks count] == 1 && [[[blocks objectAtIndex:0] objectForKey:@"text"] hasPrefix:@"```"], @"longer fence holds a shorter one");
+        tbcheck([TBLanguageTitle(@"py", @"") isEqualToString:@"Python"] && [TBLanguageTitle(@"sh", @"") isEqualToString:@"Shell"]
+            && [TBLanguageTitle(@"c++", @"") isEqualToString:@"C++"], @"language names");
+        tbcheck([TBLanguageTitle(@"haskell", @"") isEqualToString:@"Haskell"], @"unknown tag shown as written");
+        tbcheck([TBLanguageTitle(@"", @"#!/usr/bin/env python3\nprint(1)") isEqualToString:@"Python"]
+            && [TBLanguageTitle(@"", @"hello there") isEqualToString:@"Code"], @"untagged code is guessed or called Code");
+    }
+    {
+        NSString *code = @"def f(x):  # note\n    return \"a\" + 12";
+        const unsigned char *k = (const unsigned char *)[TBHighlight(code, @"python") bytes];
+        tbcheck(k[0] == TBTokKeyword && k[4] == TBTokFunction, @"python keyword and function name");
+        tbcheck(k[11] == TBTokComment && k[16] == TBTokComment, @"python comment");
+        tbcheck(k[[code rangeOfString:@"\"a\""].location] == TBTokString, @"python string");
+        tbcheck(k[[code rangeOfString:@"12"].location] == TBTokNumber, @"python number");
+        k = (const unsigned char *)[TBHighlight(@"{\"name\": \"x\", \"n\": 3}", @"json") bytes];
+        tbcheck(k[1] == TBTokProperty && k[9] == TBTokString && k[16] == TBTokProperty, @"json keys and values");
+        k = (const unsigned char *)[TBHighlight(@"#include <stdio.h>\nint main() { return 0; /* x */ }", @"c") bytes];
+        tbcheck(k[0] == TBTokKeyword && k[9] == TBTokString && k[19] == TBTokType, @"c preprocessor, header and type");
+        k = (const unsigned char *)[TBHighlight(@"+added\n-gone\n same", @"diff") bytes];
+        tbcheck(k[0] == TBTokInsert && k[7] == TBTokDelete && k[13] == TBTokPlain, @"diff lines");
+        k = (const unsigned char *)[TBHighlight(@"echo $HOME # hi", @"bash") bytes];
+        tbcheck(k[5] == TBTokProperty && k[11] == TBTokComment, @"shell variable and comment");
+        {
+            NSString *page = @"<script>var n = 12; // x\n</script>";
+            const unsigned char *h = (const unsigned char *)[TBHighlight(page, @"html") bytes];
+            tbcheck(h[8] == TBTokKeyword && h[16] == TBTokNumber && h[20] == TBTokComment, @"script inside html is coloured as javascript");
+            h = (const unsigned char *)[TBHighlight(@"data Maybe a = Nothing -- none", @"haskell") bytes];
+            tbcheck(h[0] == TBTokKeyword && h[23] == TBTokComment, @"haskell keyword and comment");
+        }
+        tbcheck([TBHighlight(@"", @"python") length] == 0 && [TBHighlight(@"x = 'unterminated", @"python") length] == 17, @"empty and unterminated input");
+    }
+    {
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tb-attach-test.txt"];
+        NSDictionary *attach = [NSDictionary dictionaryWithObjectsAndKeys:@"notes.txt", @"name", file, @"path", @"text", @"kind",
+            [NSNumber numberWithInt:100], @"tokens", nil];
+        NSDictionary *message = [NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role", @"Attached: notes.txt", @"text", attach, @"attachment", nil];
+        BOOL cut = YES;
+        NSString *back;
+        NSData *three = [NSData dataWithBytes:"abc" length:3];
+        [@"first line\nsecond \xc3\xa9" writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        back = TBReadTextFile(file, 1000, &cut);
+        tbcheck(back && !cut && [back hasPrefix:@"first line"], @"text file read");
+        back = TBReadTextFile(file, 5, &cut);
+        tbcheck(back && cut && [back isEqualToString:@"first"], @"long text file cut at the limit");
+        tbcheck([TBMessageContent(message) rangeOfString:@"second"].location != NSNotFound
+            && [TBMessageContent(message) rangeOfString:@"notes.txt"].location != NSNotFound, @"attachment goes to the model as its text");
+        tbcheck([TBMessageContent([NSDictionary dictionaryWithObject:@"hi" forKey:@"text"]) isEqualToString:@"hi"], @"plain message unchanged");
+        tbcheck(TBEstimateTokens([NSArray arrayWithObject:message], NO) == 400 + 100 + 12, @"attachment counted by its saved size");
+        {
+            NSString *hinted = TBMessageContent(message);
+            tbcheck([hinted rangeOfString:@"is on their Mac at"].location != NSNotFound, @"the model is told where the copy is");
+            TBSetPathHintRoot(@"/Some/Other/Project");
+            tbcheck([TBMessageContent(message) rangeOfString:@"is on their Mac at"].location == NSNotFound, @"no path is given outside a restricted workspace");
+            TBSetPathHintRoot(NSTemporaryDirectory());
+            tbcheck([TBMessageContent(message) rangeOfString:@"is on their Mac at"].location != NSNotFound, @"a path inside the restricted workspace is given");
+            TBSetPathHintRoot(nil);
+        }
+        [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+        tbcheck([TBMessageContent(message) rangeOfString:@"no longer available"].location != NSNotFound, @"missing attachment explained");
+        [[NSData dataWithBytes:"ab\0cd" length:5] writeToFile:file atomically:YES];
+        tbcheck(TBReadTextFile(file, 1000, NULL) == nil, @"binary file is not text");
+        [[NSFileManager defaultManager] removeFileAtPath:file handler:nil];
+        tbcheck([TBBase64(three) isEqualToString:@"YWJj"] && [TBBase64([NSData dataWithBytes:"ab" length:2]) isEqualToString:@"YWI="]
+            && [TBBase64([NSData dataWithBytes:"a" length:1]) isEqualToString:@"YQ=="] && [TBBase64([NSData data]) isEqualToString:@""], @"base64");
+        tbcheck([TBDisplayFileName(@"0123456789abcdef-report.md") isEqualToString:@"report.md"]
+            && [TBDisplayFileName(@"/x/0123456789abcdeg-report.md") isEqualToString:@"0123456789abcdeg-report.md"]
+            && [TBDisplayFileName(@"cat.jpg") isEqualToString:@"cat.jpg"], @"stored file name shown without its id");
+        tbcheck([TBLanguageExtension(@"Python") isEqualToString:@"py"] && [TBLanguageExtension(@"Haskell") isEqualToString:@"txt"]
+            && [TBLanguageExtension(@"C++") isEqualToString:@"cpp"], @"file extension for a language");
+        tbcheck([TBHumanSize(500) isEqualToString:@"500 bytes"] && [TBHumanSize(2048) isEqualToString:@"2 KB"], @"file sizes");
+    }
+    {
+        NSArray *blocks = TBSplitBlocks(@"Before\n| Name | Qty |\n|---|--:|\n| Bolt | 4 |\n| Long nut | 12 |\nAfter");
+        NSDictionary *table = [blocks count] == 3 ? [blocks objectAtIndex:1] : nil;
+        tbcheck(table && [[table objectForKey:@"lang"] isEqualToString:@"table"], @"a pipe table becomes a table block");
+        tbcheck([[table objectForKey:@"text"] isEqualToString:@"Name     | Qty\n---------+----\nBolt     | 4\nLong nut | 12"], @"table columns are aligned");
+        tbcheck([[table objectForKey:@"copy"] isEqualToString:@"Name\tQty\nBolt\t4\nLong nut\t12"], @"table copies as tab separated rows");
+        tbcheck([[[blocks objectAtIndex:0] objectForKey:@"text"] isEqualToString:@"Before"] && [[[blocks objectAtIndex:2] objectForKey:@"text"] isEqualToString:@"After"], @"text around a table kept");
+        tbcheck([TBSplitBlocks(@"a | b without a separator row\nnext") count] == 1, @"pipes alone are not a table");
+        tbcheck([TBLanguageTitle(@"table", @"") isEqualToString:@"Table"] && [TBLanguageExtension(@"Table") isEqualToString:@"tsv"], @"table title and extension");
+    }
+    {
+        NSString *shown = TBDisplayText([NSString stringWithFormat:@"Done %C%C!%C", (unichar)0xD83D, (unichar)0xDE80, (unichar)0x2705]);
+        tbcheck([shown isEqualToString:@"Done (rocket)! (check)"] || TBSystemMinor() >= 7, @"emoji become words");
+        tbcheck([TBDisplayText(@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713") isEqualToString:@"caf\u00e9 \u65e5\u672c\u8a9e \u2192 \u2713"], @"other characters are untouched");
+        tbcheck(![TBDisplayText([NSString stringWithFormat:@"a%C%C%Cb", (unichar)0xD83E, (unichar)0xDD2F, (unichar)0xFE0F]) hasPrefix:@"a\xed"], @"unknown pictographs dropped");
+    }
+    {
+        NSString *said = TBSpeechText(@"## Title\nSee [the docs](https://example.com/x) or https://apple.com now. **Bold** and `code`.\n- one\n```python\nprint(1)\n```\n| a | b |\n|---|---|\n| 1 | 2 |\nDone.");
+        tbcheck([said rangeOfString:@"the docs"].location != NSNotFound && [said rangeOfString:@"example.com"].location == NSNotFound
+            && [said rangeOfString:@"a link"].location != NSNotFound, @"links are spoken as their words");
+        tbcheck([said rangeOfString:@"print"].location == NSNotFound && [said rangeOfString:@"block of code"].location != NSNotFound
+            && [said rangeOfString:@"table"].location != NSNotFound && [said rangeOfString:@"|"].location == NSNotFound, @"code and tables are not read out");
+        tbcheck([said rangeOfString:@"**"].location == NSNotFound && [said rangeOfString:@"#"].location == NSNotFound && [said hasPrefix:@"Title"], @"markdown marks are dropped");
     }
     tbcheck(TBSystemMinor() >= 4, @"system minor version read");
 

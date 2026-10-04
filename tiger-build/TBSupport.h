@@ -28,7 +28,7 @@ typedef struct {
 #define TB_FIELD_MAX 112.0f
 #define TB_STATUS_MAX 64.0f
 #define TB_THINKING_MAX 54.0f
-#define TB_ACTIONS_WIDTH 188.0f
+#define TB_ACTIONS_WIDTH 270.0f
 
 TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wantedFieldHeight, float statusHeight, float thinkingHeight);
 
@@ -83,6 +83,29 @@ extern NSString *TBStoreChangedNotification;
 /* Rough token count for a chat, used for the context readout and to decide
    when to compact. messages holds dictionaries with text/role/status/image. */
 int TBEstimateTokens(NSArray *messages, BOOL toolsOn);
+
+/* Files attached to a chat. A user message with an "attachment" dictionary
+   (name, path, kind "text" or "image", size, tokens) stands for one file. A text
+   file is read from the copy kept in Application Support and sent as part of the
+   message; a picture is sent alongside it. */
+#define TB_ATTACH_TEXT_MAX 300000
+NSString *TBMessageContent(NSDictionary *message);
+void TBRollingBackup(NSString *path);
+/* The text as it can be drawn on this Mac. Mac OS X before Lion has no emoji font, so emoji would show as
+   boxes; common ones become words or emoticons and the rest are left out. The stored message is unchanged. */
+NSString *TBDisplayText(NSString *text);
+/* A reply as it should be read aloud: code and tables are not spoken (a short note takes their place), markdown marks
+   and addresses are dropped, links keep their words, and emoji are left out. */
+NSString *TBSpeechText(NSString *text);
+/* While a request is built: the directory the workspace is limited to, or nil. A copy of an
+   attachment outside it is not mentioned to the model, whose file tools could not reach it. */
+void TBSetPathHintRoot(NSString *root);
+/* A file a model made is stored as "<16 hex digits>-name"; this is the name to show. */
+NSString *TBDisplayFileName(NSString *stored);
+NSString *TBReadTextFile(NSString *path, unsigned maxBytes, BOOL *truncated);
+NSString *TBHumanSize(double bytes);
+NSString *TBBase64(NSData *data);
+NSString *TBImageMime(NSString *path);
 
 /* The model list the relay serves at /v1/models. The relay builds it at
    launch from each provider's own model list, keeping only models that

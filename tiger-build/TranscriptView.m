@@ -1,5 +1,6 @@
 #import "TranscriptView.h"
 #import "TBSupport.h"
+#import "TBMarkup.h"
 #if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
 #endif
@@ -7,6 +8,12 @@
 @interface TranscriptView (Selection)
 - (void)toggleActivityAtView:(NSView *)view;
 - (void)syncTextViews;
+- (void)copyCode:(NSString *)code key:(NSString *)key;
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender;
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender;
+- (void)saveCode:(NSString *)code title:(NSString *)title;
+- (void)saveFileAtPath:(NSString *)path;
+- (NSMenu *)menuForTextView:(NSTextView *)view base:(NSMenu *)base;
 @end
 
 /* One of these sits on each message so the words can be highlighted and copied.
@@ -14,8 +21,12 @@
 @interface TBSelectText : NSTextView
 {
     BOOL activity;
+    NSArray *copies;
+    NSString *speakerLabel;
 }
+- (void)setSpeakerLabel:(NSString *)label;
 - (void)setActivity:(BOOL)flag;
+- (void)setCopies:(NSArray *)list;
 @end
 
 @implementation TBSelectText
@@ -25,9 +36,91 @@
     activity = flag;
 }
 
+/* Where each code block's Copy label is, in this view's own (flipped) coordinates. */
+- (void)setCopies:(NSArray *)list
+{
+    if (list == copies)
+        return;
+    [list retain];
+    [copies release];
+    copies = list;
+}
+
+- (void)dealloc
+{
+    [copies release];
+    [speakerLabel release];
+    [super dealloc];
+}
+
+/* What VoiceOver says before the words: who spoke, and what else the message holds. */
+- (void)setSpeakerLabel:(NSString *)label
+{
+    if (label == speakerLabel || [label isEqualToString:speakerLabel])
+        return;
+    [speakerLabel release];
+    speakerLabel = [label copy];
+}
+
+- (NSArray *)accessibilityAttributeNames
+{
+    NSArray *names = [super accessibilityAttributeNames];
+    if (speakerLabel && ![names containsObject:NSAccessibilityDescriptionAttribute])
+        return [names arrayByAddingObject:NSAccessibilityDescriptionAttribute];
+    return names;
+}
+
+- (id)accessibilityAttributeValue:(NSString *)attribute
+{
+    if ([attribute isEqualToString:NSAccessibilityDescriptionAttribute] && speakerLabel)
+        return speakerLabel;
+    return [super accessibilityAttributeValue:attribute];
+}
+
+- (NSMenu *)menuForEvent:(NSEvent *)event
+{
+    return [(TranscriptView *)[self superview] menuForTextView:self base:[super menuForEvent:event]];
+}
+
+/* A file dropped on a message goes to the chat, not into the message. */
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender
+{
+    return [(TranscriptView *)[self superview] draggingEntered:sender];
+}
+
+- (NSDragOperation)draggingUpdated:(id <NSDraggingInfo>)sender
+{
+    return [(TranscriptView *)[self superview] draggingEntered:sender];
+}
+
+- (BOOL)prepareForDragOperation:(id <NSDraggingInfo>)sender
+{
+    (void)sender;
+    return YES;
+}
+
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender
+{
+    return [(TranscriptView *)[self superview] performDragOperation:sender];
+}
+
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint local;
+    if (copies && [copies count] > 0) {
+        unsigned c;
+        local = [self convertPoint:[event locationInWindow] fromView:nil];
+        for (c = 0; c < [copies count]; c++) {
+            NSDictionary *entry = [copies objectAtIndex:c];
+            if (NSPointInRect(local, [[entry objectForKey:@"rect"] rectValue])) {
+                if ([entry objectForKey:@"save"])
+                    [(TranscriptView *)[self superview] saveCode:[entry objectForKey:@"code"] title:[entry objectForKey:@"title"]];
+                else
+                    [(TranscriptView *)[self superview] copyCode:[entry objectForKey:@"code"] key:[entry objectForKey:@"key"]];
+                return;
+            }
+        }
+    }
     if (activity) {
         local = [self convertPoint:[event locationInWindow] fromView:nil];
         if (local.x < 18.0) {
@@ -273,6 +366,28 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 
 @implementation TranscriptView
 
+static float transcriptScale = 0;
+
++ (float)textScale
+{
+    if (transcriptScale <= 0) {
+        float saved = [[NSUserDefaults standardUserDefaults] floatForKey:@"TBTextScale"];
+        transcriptScale = (saved >= 0.8f && saved <= 1.8f) ? saved : 1.0f;
+    }
+    return transcriptScale;
+}
+
++ (void)setTextScale:(float)scale
+{
+    if (scale < 0.8f)
+        scale = 0.8f;
+    if (scale > 1.8f)
+        scale = 1.8f;
+    transcriptScale = scale;
+    [[NSUserDefaults standardUserDefaults] setFloat:scale forKey:@"TBTextScale"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"TBTextScaleChanged" object:nil];
+}
+
 /* The backdrop of iOS 6 Messages and iChat: a light blue-gray with very fine
    vertical lines. A tiled picture, so painting it costs one fill. */
 + (NSColor *)backgroundColor
@@ -293,9 +408,47 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     return color;
 }
 
-- (id)initWithFrame:(NSRect)frame
+/* The fonts messages are drawn in, at the chosen text size. */
+- (void)rebuildFonts
 {
     NSMutableParagraphStyle *style;
+    float scale = [TranscriptView textScale];
+    [bodyAttrs release];
+    [userAttrs release];
+    [statusAttrs release];
+    style = [[NSMutableParagraphStyle alloc] init];
+    [style setLineBreakMode:NSLineBreakByWordWrapping];
+    bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
+        [NSFont systemFontOfSize:14 * scale], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.08 alpha:1], NSForegroundColorAttributeName,
+        style, NSParagraphStyleAttributeName,
+        nil];
+    userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
+        [NSFont systemFontOfSize:14 * scale], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
+        style, NSParagraphStyleAttributeName,
+        nil];
+    statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
+        [NSFont systemFontOfSize:11 * scale], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName,
+        style, NSParagraphStyleAttributeName,
+        nil];
+    [style release];
+}
+
+- (void)textScaleChanged:(NSNotification *)note
+{
+    (void)note;
+    [self rebuildFonts];
+    [sizeCache removeAllObjects];
+    [richCache removeAllObjects];
+    forceTextReset = YES;
+    [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
+    forceTextReset = NO;
+}
+
+- (id)initWithFrame:(NSRect)frame
+{
     self = [super initWithFrame:frame];
     if (!self)
         return nil;
@@ -305,36 +458,25 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     moviePaths = [[NSMutableArray alloc] init];
     imageCache = [[NSMutableDictionary alloc] init];
     sizeCache = [[NSMutableDictionary alloc] init];
+    richCache = [[NSMutableDictionary alloc] init];
     textViews = [[NSMutableArray alloc] init];
-    style = [[NSMutableParagraphStyle alloc] init];
-    [style setLineBreakMode:NSLineBreakByWordWrapping];
-    bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:14], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.08 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
-    userAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:14], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.06 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
-    statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:11], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
-    [style release];
+    [self registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
+    [self rebuildFonts];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(textScaleChanged:) name:@"TBTextScaleChanged" object:nil];
     return self;
 }
 
 - (void)dealloc
 {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [messages release];
     [boxes release];
     [movieViews release];
     [moviePaths release];
     [imageCache release];
     [sizeCache release];
+    [richCache release];
+    [copiedKey release];
     [textViews release];
     [bodyAttrs release];
     [userAttrs release];
@@ -475,6 +617,414 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     return used;
 }
 
+/* ---- code blocks and light markup in replies ----
+   A reply is cut at its ``` fences. Each code block becomes a dark panel with
+   the language named in a header strip and a Copy label; the words in it are
+   coloured by TBMarkup. Prose gets `code`, **bold**, headings and bullets.
+   The panels are drawn behind the message's text view, from rectangles worked
+   out with a layout manager that has the same text and width as that view. */
+
+static NSColor *codeColor(int kind)
+{
+    switch (kind) {
+    case TBTokKeyword:  return [NSColor colorWithCalibratedRed:0.78 green:0.55 blue:0.88 alpha:1];
+    case TBTokType:     return [NSColor colorWithCalibratedRed:0.31 green:0.79 blue:0.69 alpha:1];
+    case TBTokString:   return [NSColor colorWithCalibratedRed:0.93 green:0.62 blue:0.47 alpha:1];
+    case TBTokComment:  return [NSColor colorWithCalibratedRed:0.42 green:0.60 blue:0.33 alpha:1];
+    case TBTokNumber:   return [NSColor colorWithCalibratedRed:0.71 green:0.81 blue:0.66 alpha:1];
+    case TBTokFunction: return [NSColor colorWithCalibratedRed:0.86 green:0.86 blue:0.67 alpha:1];
+    case TBTokProperty: return [NSColor colorWithCalibratedRed:0.61 green:0.86 blue:1.00 alpha:1];
+    case TBTokInsert:   return [NSColor colorWithCalibratedRed:0.50 green:0.85 blue:0.50 alpha:1];
+    case TBTokDelete:   return [NSColor colorWithCalibratedRed:0.96 green:0.50 blue:0.50 alpha:1];
+    }
+    return [NSColor colorWithCalibratedWhite:0.86 alpha:1];
+}
+
+static NSFont *codeFont(void)
+{
+    float size = 11 * [TranscriptView textScale];
+    NSFont *font = [NSFont fontWithName:@"Monaco" size:size];
+    if (!font)
+        font = [NSFont userFixedPitchFontOfSize:size];
+    return font;
+}
+
+static NSParagraphStyle *fixedLineStyle(float height, float head, float tail, NSLineBreakMode mode)
+{
+    NSMutableParagraphStyle *style = [[[NSMutableParagraphStyle alloc] init] autorelease];
+    [style setLineBreakMode:mode];
+    if (height > 0) {
+        [style setMinimumLineHeight:height];
+        [style setMaximumLineHeight:height];
+    }
+    [style setFirstLineHeadIndent:head];
+    [style setHeadIndent:head];
+    [style setTailIndent:tail];
+    return style;
+}
+
+/* A blank line of a fixed height, used for the header strip, the panel's lower
+   edge and the gaps around a panel. */
+static void appendBlankLine(NSMutableAttributedString *out, float height, float head, float tail)
+{
+    NSDictionary *attrs = [NSDictionary dictionaryWithObjectsAndKeys:
+        [NSFont systemFontOfSize:2], NSFontAttributeName,
+        fixedLineStyle(height, head, tail, NSLineBreakByClipping), NSParagraphStyleAttributeName, nil];
+    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:attrs] autorelease]];
+}
+
+/* One line of prose: `code` and **bold** spans, a heading, a bullet. */
+static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDictionary *base)
+{
+    NSString *work = line;
+    NSFont *baseFont = [base objectForKey:NSFontAttributeName];
+    NSMutableDictionary *attrs = [NSMutableDictionary dictionaryWithDictionary:base];
+    BOOL marked = NO;
+    unsigned n;
+    unsigned i = 0;
+    unsigned start = 0;
+    unichar buf[1];
+    NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    unsigned level = 0;
+    (void)buf;
+    if ([trimmed hasPrefix:@"#"]) {
+        while (level < [trimmed length] && [trimmed characterAtIndex:level] == '#')
+            level++;
+        if (level >= 1 && level <= 6 && level < [trimmed length] && [trimmed characterAtIndex:level] == ' ') {
+            work = [[trimmed substringFromIndex:level + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            [attrs setObject:[NSFont boldSystemFontOfSize:(level == 1 ? 17 : (level == 2 ? 16 : 14.5)) * [TranscriptView textScale]] forKey:NSFontAttributeName];
+            baseFont = [attrs objectForKey:NSFontAttributeName];
+            marked = YES;
+        }
+    }
+    if (!marked && ([line hasPrefix:@"- "] || [line hasPrefix:@"* "] || [line hasPrefix:@"  - "] || [line hasPrefix:@"  * "])
+        && ![line hasPrefix:@"**"]) {
+        NSRange mark = [line rangeOfString:@"- "];
+        if (mark.location == NSNotFound)
+            mark = [line rangeOfString:@"* "];
+        work = [[line substringToIndex:mark.location] stringByAppendingFormat:@"%C ", (unichar)0x2022];
+        work = [work stringByAppendingString:[line substringFromIndex:mark.location + 2]];
+        marked = YES;
+    }
+    n = [work length];
+    while (i < n) {
+        unichar c = [work characterAtIndex:i];
+        if (c == '`') {
+            unsigned j = i + 1;
+            while (j < n && [work characterAtIndex:j] != '`')
+                j++;
+            if (j < n && j > i + 1) {
+                NSMutableDictionary *mono = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                if (i > start)
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(start, i - start)] attributes:attrs] autorelease]];
+                [mono setObject:[NSFont fontWithName:@"Monaco" size:[baseFont pointSize] - 2] forKey:NSFontAttributeName];
+                [mono setObject:[NSColor colorWithCalibratedWhite:0.72 alpha:1] forKey:NSBackgroundColorAttributeName];
+                if (![mono objectForKey:NSFontAttributeName])
+                    [mono setObject:[NSFont userFixedPitchFontOfSize:[baseFont pointSize] - 2] forKey:NSFontAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(i + 1, j - i - 1)] attributes:mono] autorelease]];
+                i = j + 1;
+                start = i;
+                marked = YES;
+                continue;
+            }
+        } else if (c == '[' || (c == 'h' && (i + 7 < n) && ([work compare:@"http://" options:0 range:NSMakeRange(i, 7)] == NSOrderedSame
+            || (i + 8 < n && [work compare:@"https://" options:0 range:NSMakeRange(i, 8)] == NSOrderedSame)))) {
+            /* [words](address), or an address on its own */
+            NSString *shown = nil;
+            NSString *address = nil;
+            unsigned after = i;
+            if (c == '[') {
+                unsigned close = i + 1;
+                while (close < n && [work characterAtIndex:close] != ']')
+                    close++;
+                if (close + 1 < n && [work characterAtIndex:close + 1] == '(') {
+                    unsigned end = close + 2;
+                    while (end < n && [work characterAtIndex:end] != ')' && [work characterAtIndex:end] != ' ')
+                        end++;
+                    if (end < n && [work characterAtIndex:end] == ')' && close > i + 1) {
+                        shown = [work substringWithRange:NSMakeRange(i + 1, close - i - 1)];
+                        address = [work substringWithRange:NSMakeRange(close + 2, end - close - 2)];
+                        after = end + 1;
+                    }
+                }
+            } else {
+                unsigned end = i;
+                while (end < n && [work characterAtIndex:end] != ' ' && [work characterAtIndex:end] != ')' && [work characterAtIndex:end] != '>'
+                    && [work characterAtIndex:end] != '"')
+                    end++;
+                while (end > i + 8 && ([work characterAtIndex:end - 1] == '.' || [work characterAtIndex:end - 1] == ',' || [work characterAtIndex:end - 1] == ';'
+                    || [work characterAtIndex:end - 1] == ':' || [work characterAtIndex:end - 1] == '!' || [work characterAtIndex:end - 1] == '?'))
+                    end--;
+                shown = address = [work substringWithRange:NSMakeRange(i, end - i)];
+                after = end;
+            }
+            if (address && ([address hasPrefix:@"http://"] || [address hasPrefix:@"https://"] || [address hasPrefix:@"mailto:"]) && [NSURL URLWithString:address]) {
+                NSMutableDictionary *link = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                if (i > start)
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(start, i - start)] attributes:attrs] autorelease]];
+                [link setObject:[NSURL URLWithString:address] forKey:NSLinkAttributeName];
+                [link setObject:[NSColor colorWithCalibratedRed:0.05 green:0.2 blue:0.75 alpha:1] forKey:NSForegroundColorAttributeName];
+                [link setObject:[NSNumber numberWithInt:NSSingleUnderlineStyle] forKey:NSUnderlineStyleAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:shown attributes:link] autorelease]];
+                i = after;
+                start = i;
+                marked = YES;
+                continue;
+            }
+        } else if (c == '*' && i + 1 < n && [work characterAtIndex:i + 1] != '*' && [work characterAtIndex:i + 1] != ' '
+            && (i == 0 || [work characterAtIndex:i - 1] == ' ' || [work characterAtIndex:i - 1] == '(')) {
+            /* *italic* */
+            unsigned j = i + 1;
+            while (j < n && !([work characterAtIndex:j] == '*' && [work characterAtIndex:j - 1] != ' '))
+                j++;
+            if (j < n && j > i + 1 && (j + 1 >= n || [work characterAtIndex:j + 1] != '*')) {
+                NSMutableDictionary *slanted = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                if (i > start)
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(start, i - start)] attributes:attrs] autorelease]];
+                /* The system font has no italic, so the letters are slanted. */
+                [slanted setObject:[NSNumber numberWithFloat:0.22f] forKey:NSObliquenessAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(i + 1, j - i - 1)] attributes:slanted] autorelease]];
+                i = j + 1;
+                start = i;
+                marked = YES;
+                continue;
+            }
+        } else if (c == '*' && i + 1 < n && [work characterAtIndex:i + 1] == '*') {
+            unsigned j = i + 2;
+            while (j + 1 < n && !([work characterAtIndex:j] == '*' && [work characterAtIndex:j + 1] == '*'))
+                j++;
+            if (j + 1 < n && j > i + 2) {
+                NSMutableDictionary *bold = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                if (i > start)
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(start, i - start)] attributes:attrs] autorelease]];
+                [bold setObject:[NSFont boldSystemFontOfSize:[baseFont pointSize]] forKey:NSFontAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringWithRange:NSMakeRange(i + 2, j - i - 2)] attributes:bold] autorelease]];
+                i = j + 2;
+                start = i;
+                marked = YES;
+                continue;
+            }
+        }
+        i++;
+    }
+    if (start < n)
+        [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[work substringFromIndex:start] attributes:attrs] autorelease]];
+    return marked;
+}
+
+/* The attributed text of a reply, and where its code blocks are. Returns nil
+   when the reply has no markup at all, so plain replies take the old path. */
+- (NSDictionary *)buildRich:(NSString *)text
+{
+    NSArray *blocks;
+    NSMutableAttributedString *out;
+    NSMutableArray *codes;
+    BOOL marked = NO;
+    unsigned b;
+    BOOL previousProse = NO;
+    if ([text rangeOfString:@"`"].location == NSNotFound && [text rangeOfString:@"**"].location == NSNotFound
+        && [text rangeOfString:@"]("].location == NSNotFound && [text rangeOfString:@"http"].location == NSNotFound
+        && [text rangeOfString:@" *"].location == NSNotFound && [text rangeOfString:@"|"].location == NSNotFound
+        && [text rangeOfString:@"\n#"].location == NSNotFound && ![text hasPrefix:@"#"]
+        && [text rangeOfString:@"\n- "].location == NSNotFound && [text rangeOfString:@"\n* "].location == NSNotFound
+        && ![text hasPrefix:@"- "] && ![text hasPrefix:@"* "])
+        return nil;
+    blocks = TBSplitBlocks(text);
+    out = [[[NSMutableAttributedString alloc] init] autorelease];
+    codes = [NSMutableArray array];
+    for (b = 0; b < [blocks count]; b++) {
+        NSDictionary *block = [blocks objectAtIndex:b];
+        NSString *content = [block objectForKey:@"text"];
+        if ([[block objectForKey:@"code"] boolValue]) {
+            NSString *tag = [block objectForKey:@"lang"];
+            NSString *title = TBLanguageTitle(tag, content);
+            NSString *copyText = [block objectForKey:@"copy"] ? [block objectForKey:@"copy"] : content;
+            NSString *shown = [[content componentsSeparatedByString:@"\t"] componentsJoinedByString:@"    "];
+            NSData *kinds = TBHighlight(shown, tag);
+            const unsigned char *k = (const unsigned char *)[kinds bytes];
+            NSParagraphStyle *codeStyle = fixedLineStyle(0, 12, -12, NSLineBreakByCharWrapping);
+            NSMutableDictionary *attrs = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                codeFont(), NSFontAttributeName, codeStyle, NSParagraphStyleAttributeName, nil];
+            unsigned run = 0;
+            unsigned n = [shown length];
+            unsigned headerLoc;
+            unsigned footerLoc;
+            if (previousProse && [out length] > 0)
+                appendBlankLine(out, 10, 0, 0);
+            headerLoc = [out length];
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%C", (unichar)0xA0]
+                attributes:[NSDictionary dictionaryWithObjectsAndKeys:codeFont(), NSFontAttributeName,
+                    fixedLineStyle(26 * [TranscriptView textScale], 12, -12, NSLineBreakByClipping), NSParagraphStyleAttributeName, nil]] autorelease]];
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:attrs] autorelease]];
+            while (run < n) {
+                unsigned e = run + 1;
+                NSMutableDictionary *piece;
+                while (e < n && k[e] == k[run])
+                    e++;
+                piece = [NSMutableDictionary dictionaryWithDictionary:attrs];
+                [piece setObject:codeColor(k[run]) forKey:NSForegroundColorAttributeName];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[shown substringWithRange:NSMakeRange(run, e - run)]
+                    attributes:piece] autorelease]];
+                run = e;
+            }
+            if (n > 0)
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:attrs] autorelease]];
+            footerLoc = [out length];
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%C", (unichar)0xA0]
+                attributes:[NSDictionary dictionaryWithObjectsAndKeys:codeFont(), NSFontAttributeName,
+                    fixedLineStyle(9, 12, -12, NSLineBreakByClipping), NSParagraphStyleAttributeName, nil]] autorelease]];
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:attrs] autorelease]];
+            if (b + 1 < [blocks count])
+                appendBlankLine(out, 10, 0, 0);
+            [codes addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                title, @"title", copyText, @"code",
+                [NSNumber numberWithUnsignedInt:headerLoc], @"header",
+                [NSNumber numberWithUnsignedInt:footerLoc], @"footer", nil]];
+            previousProse = NO;
+            marked = YES;
+        } else {
+            NSArray *lines;
+            unsigned l;
+            /* The blank lines around a fence are the gap; the panel brings its own. */
+            while (b > 0 && [content hasPrefix:@"\n"])
+                content = [content substringFromIndex:1];
+            while (b + 1 < [blocks count] && [content hasSuffix:@"\n"])
+                content = [content substringToIndex:[content length] - 1];
+            if ([content length] == 0 && [blocks count] > 1)
+                continue;
+            lines = [content componentsSeparatedByString:@"\n"];
+            for (l = 0; l < [lines count]; l++) {
+                if (appendProseLine(out, [lines objectAtIndex:l], bodyAttrs))
+                    marked = YES;
+                if (l + 1 < [lines count] || b + 1 < [blocks count])
+                    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:bodyAttrs] autorelease]];
+            }
+            previousProse = YES;
+        }
+    }
+    if (!marked)
+        return nil;
+    /* A trailing newline would leave an empty last line. */
+    if ([out length] > 0 && [[out string] hasSuffix:@"\n"])
+        [out deleteCharactersInRange:NSMakeRange([out length] - 1, 1)];
+    return [NSDictionary dictionaryWithObjectsAndKeys:out, @"attr", codes, @"codes", nil];
+}
+
+/* The rich form of a message at a width: attributed text, its height, and for each
+   code block its panel in the text's own coordinates (y from the top). Cached. */
+- (NSDictionary *)richForMessage:(NSDictionary *)message text:(NSString *)text width:(float)width
+{
+    NSValue *key = [NSValue valueWithPointer:message];
+    NSMutableDictionary *entry = [richCache objectForKey:key];
+    NSDictionary *built;
+    NSTextStorage *storage;
+    NSLayoutManager *manager;
+    NSTextContainer *container;
+    NSMutableArray *panels;
+    NSArray *codes;
+    NSRect used;
+    unsigned c;
+    if (entry && [[entry objectForKey:@"source"] isEqualToString:text]) {
+        if (![entry objectForKey:@"attr"])
+            return nil;
+        if (fabsf([[entry objectForKey:@"width"] floatValue] - width) < 0.5f)
+            return entry;
+    } else {
+        built = [self buildRich:text];
+        if ([richCache count] > 600)
+            [richCache removeAllObjects];
+        entry = [NSMutableDictionary dictionaryWithObject:[[text copy] autorelease] forKey:@"source"];
+        [richCache setObject:entry forKey:key];
+        if (!built)
+            return nil;
+        [entry setObject:[built objectForKey:@"attr"] forKey:@"attr"];
+        [entry setObject:[built objectForKey:@"codes"] forKey:@"codes"];
+    }
+    storage = [[NSTextStorage alloc] initWithAttributedString:[entry objectForKey:@"attr"]];
+    manager = [[NSLayoutManager alloc] init];
+    container = [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(width, 1000000)];
+    [container setLineFragmentPadding:0];
+    [manager addTextContainer:container];
+    [storage addLayoutManager:manager];
+    [manager glyphRangeForTextContainer:container];
+    used = [manager usedRectForTextContainer:container];
+    panels = [NSMutableArray array];
+    codes = [entry objectForKey:@"codes"];
+    for (c = 0; c < [codes count]; c++) {
+        NSDictionary *code = [codes objectAtIndex:c];
+        NSRange headerGlyph = [manager glyphRangeForCharacterRange:NSMakeRange([[code objectForKey:@"header"] unsignedIntValue], 1) actualCharacterRange:NULL];
+        NSRange footerGlyph = [manager glyphRangeForCharacterRange:NSMakeRange([[code objectForKey:@"footer"] unsignedIntValue], 1) actualCharacterRange:NULL];
+        NSRect head = [manager lineFragmentRectForGlyphAtIndex:headerGlyph.location effectiveRange:NULL];
+        NSRect foot = [manager lineFragmentRectForGlyphAtIndex:footerGlyph.location effectiveRange:NULL];
+        [panels addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+            [NSValue valueWithRect:NSMakeRect(0, NSMinY(head), width, NSMaxY(foot) - NSMinY(head))], @"panel",
+            [NSValue valueWithRect:NSMakeRect(0, NSMinY(head), width, NSHeight(head))], @"header",
+            [code objectForKey:@"title"], @"title", [code objectForKey:@"code"], @"code", nil]];
+    }
+    [storage release];
+    [manager release];
+    [container release];
+    [entry setObject:[NSNumber numberWithFloat:width] forKey:@"width"];
+    [entry setObject:[NSNumber numberWithFloat:ceilf(NSHeight(used))] forKey:@"height"];
+    [entry setObject:panels forKey:@"panels"];
+    return entry;
+}
+
+/* The Copy label of a code block was clicked. */
+- (void)copyCode:(NSString *)code key:(NSString *)key
+{
+    NSPasteboard *board = [NSPasteboard generalPasteboard];
+    [board declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+    [board setString:code forType:NSStringPboardType];
+    [copiedKey release];
+    copiedKey = [key copy];
+    [self setNeedsDisplay:YES];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(forgetCopied) object:nil];
+    [self performSelector:@selector(forgetCopied) withObject:nil afterDelay:1.6];
+}
+
+/* Bring a message into view (used by Find in Chats). */
+- (void)scrollToMessage:(id)message
+{
+    unsigned i;
+    for (i = 0; i < [boxes count]; i++) {
+        NSDictionary *box = [boxes objectAtIndex:i];
+        if ([box objectForKey:@"message"] == message) {
+            NSRect rect = [[box objectForKey:@"rect"] rectValue];
+            [self scrollRectToVisible:NSInsetRect(rect, 0, -30)];
+            return;
+        }
+    }
+}
+
+- (void)setDropTarget:(id)target
+{
+    dropTarget = target;
+}
+
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender
+{
+    if (dropTarget && [[[sender draggingPasteboard] types] containsObject:NSFilenamesPboardType])
+        return NSDragOperationCopy;
+    return NSDragOperationNone;
+}
+
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender
+{
+    NSArray *files = [[sender draggingPasteboard] propertyListForType:NSFilenamesPboardType];
+    if (!dropTarget || ![files isKindOfClass:[NSArray class]] || [files count] == 0)
+        return NO;
+    [dropTarget performSelector:@selector(attachPaths:) withObject:files];
+    return YES;
+}
+
+- (void)forgetCopied
+{
+    [copiedKey release];
+    copiedKey = nil;
+    [self setNeedsDisplay:YES];
+}
+
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible
 {
     float maxText;
@@ -503,12 +1053,16 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
         NSRect used;
         NSRect bubble;
         NSMutableDictionary *box;
+        NSDictionary *rich;
         float imageH = 0;
         float imageW = 0;
         float videoH = 0;
         float videoW = 0;
+        NSString *filePath = [message objectForKey:@"file"];
+        float fileH = 0;
         if (!text)
             text = @"";
+        text = TBDisplayText(text);
         if (open && [text length] == 0
             && (!imagePath || [imagePath length] == 0)
             && (!videoPath || [videoPath length] == 0))
@@ -524,12 +1078,19 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
             if([[message objectForKey:@"expanded"] boolValue]&&[[message objectForKey:@"detail"] length])
                 text=[text stringByAppendingFormat:@"\n%@",[message objectForKey:@"detail"]];
             NSMutableDictionary *mono=[NSMutableDictionary dictionaryWithDictionary:statusAttrs];
-            [mono setObject:[NSFont fontWithName:@"Monaco" size:11] forKey:NSFontAttributeName];
+            [mono setObject:[NSFont fontWithName:@"Monaco" size:11 * [TranscriptView textScale]] forKey:NSFontAttributeName];
             attrs=mono;
         }
-        used = [self measureText:text attrs:attrs
-                           width:(status ? layoutWidth - (activity ? 64 : 48) : maxText)
-                          height:(activity ? 1000000 : 4000) forMessage:message];
+        rich = nil;
+        if (!status && !activity && !fromUser && [text length] > 0)
+            rich = [self richForMessage:message text:text width:maxText];
+        if (rich) {
+            used = NSMakeRect(0, 0, maxText, [[rich objectForKey:@"height"] floatValue]);
+        } else {
+            used = [self measureText:text attrs:attrs
+                               width:(status ? layoutWidth - (activity ? 64 : 48) : maxText)
+                              height:(activity ? 1000000 : 4000) forMessage:message];
+        }
         if (used.size.width < 12)
             used.size.width = 12;
         if (!status && imagePath && [self cachedImage:imagePath]) {
@@ -553,10 +1114,14 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
                 videoW = 220.0 * 16.0 / 9.0;
             }
         }
+        if (!status && filePath && [filePath length] > 0 && [[NSFileManager defaultManager] fileExistsAtPath:filePath])
+            fileH = 34;
         if (used.size.height < 16 && !((imageH > 0 || videoH > 0) && [text length] == 0))
             used.size.height = 16;
         box = [NSMutableDictionary dictionary];
-        [box setObject:text forKey:@"text"];
+        [box setObject:rich ? [[rich objectForKey:@"attr"] string] : text forKey:@"text"];
+        if (rich)
+            [box setObject:rich forKey:@"rich"];
         [box setObject:message forKey:@"message"];
         [box setObject:attrs forKey:@"attrs"];
         [box setObject:[NSNumber numberWithBool:activity] forKey:@"activity"];
@@ -566,6 +1131,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
             [box setObject:imagePath forKey:@"image"];
             [box setObject:[NSValue valueWithSize:NSMakeSize(imageW, imageH)] forKey:@"imageSize"];
         }
+        if (fileH > 0)
+            [box setObject:filePath forKey:@"file"];
         if (videoH > 0) {
             [box setObject:videoPath forKey:@"video"];
             [box setObject:[NSValue valueWithSize:NSMakeSize(videoW, videoH)] forKey:@"videoSize"];
@@ -584,6 +1151,11 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
                 bubble.size.height += imageH + 8;
             if (videoH > 0)
                 bubble.size.height += videoH + 8;
+            if (fileH > 0) {
+                bubble.size.height += fileH;
+                if (bubble.size.width < 150)
+                    bubble.size.width = 150;
+            }
             if (bubble.size.height < 36)
                 bubble.size.height = 36;
             [box setObject:[NSValue valueWithSize:used.size] forKey:@"textSize"];
@@ -620,6 +1192,8 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
                 [box setObject:[NSValue valueWithRect:imageRect] forKey:@"imageRect"];
                 stackY += imageSize.height + 8;
             }
+            if ([box objectForKey:@"file"])
+                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMinY(rect) + 10, 96, 24)] forKey:@"fileRect"];
             if ([box objectForKey:@"video"]) {
                 NSSize videoSize = [[box objectForKey:@"videoSize"] sizeValue];
                 NSRect videoRect = NSMakeRect(NSMinX(rect) + 17, stackY, videoSize.width, videoSize.height);
@@ -636,12 +1210,40 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
                 NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
                 textRect.size = textSize;
                 textRect.origin.x = NSMinX(rect) + 17;
-                if ([box objectForKey:@"image"] || [box objectForKey:@"video"])
+                if ([box objectForKey:@"image"] || [box objectForKey:@"video"] || [box objectForKey:@"file"])
                     textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
                 else
                     textRect.origin.y = NSMinY(rect) + (NSHeight(rect) - textSize.height) / 2.0;
             }
             [box setObject:[NSValue valueWithRect:textRect] forKey:@"textRect"];
+            if ([box objectForKey:@"rich"]) {
+                NSArray *panels = [[box objectForKey:@"rich"] objectForKey:@"panels"];
+                NSMutableArray *drawn = [NSMutableArray array];
+                NSMutableArray *copies = [NSMutableArray array];
+                unsigned p;
+                for (p = 0; p < [panels count]; p++) {
+                    NSDictionary *panel = [panels objectAtIndex:p];
+                    NSRect pr = [[panel objectForKey:@"panel"] rectValue];
+                    NSRect hr = [[panel objectForKey:@"header"] rectValue];
+                    NSString *key = [NSString stringWithFormat:@"%p:%u", (void *)[box objectForKey:@"message"], p];
+                    NSRect copyLocal = NSMakeRect(NSMaxX(hr) - 58, NSMinY(hr), 58, NSHeight(hr));
+                    NSRect saveLocal = NSMakeRect(NSMaxX(hr) - 58 - 46, NSMinY(hr), 46, NSHeight(hr));
+                    pr.origin.x += NSMinX(textRect);
+                    pr.origin.y = NSMaxY(textRect) - pr.origin.y - pr.size.height;
+                    hr.origin.x += NSMinX(textRect);
+                    hr.origin.y = NSMaxY(textRect) - hr.origin.y - hr.size.height;
+                    [drawn addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                        [NSValue valueWithRect:pr], @"panel", [NSValue valueWithRect:hr], @"header",
+                        [panel objectForKey:@"title"], @"title", key, @"key", nil]];
+                    [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                        [NSValue valueWithRect:copyLocal], @"rect", [panel objectForKey:@"code"], @"code", key, @"key", nil]];
+                    [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                        [NSValue valueWithRect:saveLocal], @"rect", [panel objectForKey:@"code"], @"code", key, @"key",
+                        [NSNumber numberWithBool:YES], @"save", [panel objectForKey:@"title"], @"title", nil]];
+                }
+                [box setObject:drawn forKey:@"drawnPanels"];
+                [box setObject:copies forKey:@"copies"];
+            }
         }
     }
     [self setFrameSize:NSMakeSize(layoutWidth, contentH)];
@@ -663,6 +1265,7 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     [view setRichText:YES];
     [view setImportsGraphics:NO];
     [view setFocusRingType:NSFocusRingTypeNone];
+    [view registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
     [view setVerticallyResizable:NO];
     [view setHorizontallyResizable:NO];
     [view setAutoresizingMask:NSViewNotSizable];
@@ -694,11 +1297,31 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
         if (!text)
             text = @"";
         [(TBSelectText *)view setActivity:[[box objectForKey:@"activity"] boolValue]];
+        {
+            NSString *who = [[box objectForKey:@"status"] boolValue] ? ([[box objectForKey:@"activity"] boolValue] ? @"Tool activity" : @"Status")
+                : ([[box objectForKey:@"user"] boolValue] ? @"You said" : @"Assistant said");
+            if ([box objectForKey:@"imageRect"])
+                who = [who stringByAppendingString:@", with a picture"];
+            if ([box objectForKey:@"videoRect"])
+                who = [who stringByAppendingString:@", with a video"];
+            if ([box objectForKey:@"fileRect"])
+                who = [who stringByAppendingString:@", with a file to save"];
+            if ([box objectForKey:@"copies"] && [[box objectForKey:@"copies"] count] > 0)
+                who = [who stringByAppendingString:@", with code or a table. Use Copy Last Code Block in the Chat menu to copy it"];
+            [(TBSelectText *)view setSpeakerLabel:who];
+        }
         if (!NSEqualRects([view frame], textRect))
             [view setFrame:textRect];
         if (fabsf([[view textContainer] containerSize].width - NSWidth(textRect)) > 0.5f)
             [[view textContainer] setContainerSize:NSMakeSize(NSWidth(textRect), 1000000)];
-        if (![[view string] isEqualToString:text]) {
+        if ([box objectForKey:@"rich"]) {
+            if (forceTextReset || ![[view string] isEqualToString:text])
+                [[view textStorage] setAttributedString:[[box objectForKey:@"rich"] objectForKey:@"attr"]];
+            [(TBSelectText *)view setCopies:[box objectForKey:@"copies"]];
+            continue;
+        }
+        [(TBSelectText *)view setCopies:nil];
+        if (forceTextReset || ![[view string] isEqualToString:text]) {
             [view setString:text];
             storage = [view textStorage];
             if ([text length] > 0)
@@ -728,6 +1351,51 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     clip = [scroll contentView];
     [clip scrollToPoint:NSMakePoint(0, 0)];
     [scroll reflectScrolledClipView:clip];
+}
+
+/* The dark panels behind code blocks: a header strip with the language and Copy. */
+- (void)drawCodePanels:(NSArray *)panels
+{
+    unsigned p;
+    NSDictionary *titleAttrs = [NSDictionary dictionaryWithObjectsAndKeys:
+        [NSFont boldSystemFontOfSize:10], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.72 alpha:1], NSForegroundColorAttributeName, nil];
+    for (p = 0; p < [panels count]; p++) {
+        NSDictionary *entry = [panels objectAtIndex:p];
+        NSRect panel = [[entry objectForKey:@"panel"] rectValue];
+        NSRect header = [[entry objectForKey:@"header"] rectValue];
+        NSBezierPath *shape = [NSBezierPath bezierPath];
+        BOOL copied = copiedKey && [copiedKey isEqualToString:[entry objectForKey:@"key"]];
+        NSString *label = copied ? @"Copied" : @"Copy";
+        NSDictionary *copyAttrs = [NSDictionary dictionaryWithObjectsAndKeys:
+            [NSFont boldSystemFontOfSize:10], NSFontAttributeName,
+            copied ? [NSColor colorWithCalibratedRed:0.55 green:0.88 blue:0.55 alpha:1] : [NSColor colorWithCalibratedRed:0.62 green:0.78 blue:1 alpha:1],
+            NSForegroundColorAttributeName, nil];
+        NSSize labelSize = [label sizeWithAttributes:copyAttrs];
+        NSSize titleSize = [[entry objectForKey:@"title"] sizeWithAttributes:titleAttrs];
+        appendRoundedRect(shape, panel, 7);
+        [[NSColor colorWithCalibratedWhite:0.13 alpha:1] set];
+        [shape fill];
+        [NSGraphicsContext saveGraphicsState];
+        [shape addClip];
+        [[NSColor colorWithCalibratedWhite:0.23 alpha:1] set];
+        NSRectFill(header);
+        [[NSColor colorWithCalibratedWhite:0.08 alpha:1] set];
+        NSRectFill(NSMakeRect(NSMinX(header), NSMinY(header), NSWidth(header), 1));
+        [NSGraphicsContext restoreGraphicsState];
+        [[NSColor colorWithCalibratedWhite:0.05 alpha:1] set];
+        [shape setLineWidth:1];
+        [shape stroke];
+        [[entry objectForKey:@"title"] drawAtPoint:NSMakePoint(NSMinX(header) + 12, NSMidY(header) - titleSize.height / 2) withAttributes:titleAttrs];
+        [label drawAtPoint:NSMakePoint(NSMaxX(header) - 12 - labelSize.width, NSMidY(header) - labelSize.height / 2) withAttributes:copyAttrs];
+        {
+            NSDictionary *saveAttrs = [NSDictionary dictionaryWithObjectsAndKeys:
+                [NSFont boldSystemFontOfSize:10], NSFontAttributeName,
+                [NSColor colorWithCalibratedRed:0.62 green:0.78 blue:1 alpha:1], NSForegroundColorAttributeName, nil];
+            NSSize saveSize = [@"Save" sizeWithAttributes:saveAttrs];
+            [@"Save" drawAtPoint:NSMakePoint(NSMaxX(header) - 12 - 38 - 14 - saveSize.width, NSMidY(header) - saveSize.height / 2) withAttributes:saveAttrs];
+        }
+    }
 }
 
 - (void)drawRect:(NSRect)dirty
@@ -782,6 +1450,23 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
             [[NSColor colorWithCalibratedRed:line[0] green:line[1] blue:line[2] alpha:1] set];
             [path setLineWidth:1.2];
             [path stroke];
+            if ([box objectForKey:@"drawnPanels"])
+                [self drawCodePanels:[box objectForKey:@"drawnPanels"]];
+            if ([box objectForKey:@"fileRect"]) {
+                NSRect pill = [[box objectForKey:@"fileRect"] rectValue];
+                NSBezierPath *shape = [NSBezierPath bezierPath];
+                NSDictionary *pillAttrs = [NSDictionary dictionaryWithObjectsAndKeys:
+                    [NSFont boldSystemFontOfSize:11], NSFontAttributeName,
+                    [NSColor colorWithCalibratedWhite:0.1 alpha:1], NSForegroundColorAttributeName, nil];
+                NSSize pillSize = [@"Save As..." sizeWithAttributes:pillAttrs];
+                appendRoundedRect(shape, pill, 12);
+                [[NSColor colorWithCalibratedWhite:0.97 alpha:1] set];
+                [shape fill];
+                [[NSColor colorWithCalibratedWhite:0.45 alpha:1] set];
+                [shape setLineWidth:1];
+                [shape stroke];
+                [@"Save As..." drawAtPoint:NSMakePoint(NSMidX(pill) - pillSize.width / 2, NSMidY(pill) - pillSize.height / 2) withAttributes:pillAttrs];
+            }
             if ([box objectForKey:@"imageRect"]) {
                 NSImage *picture = [self cachedImage:[box objectForKey:@"image"]];
                 NSRect imageRect = [[box objectForKey:@"imageRect"] rectValue];
@@ -802,6 +1487,50 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 - (BOOL)isFlipped
 {
     return NO;
+}
+
+/* The menu for one message: copy it, and for what the person wrote, edit from there; for any, branch. */
+- (NSMenu *)messageMenuForBox:(NSDictionary *)box
+{
+    NSMenu *menu;
+    NSMenuItem *item;
+    NSDictionary *message=[box objectForKey:@"message"];
+    NSString *content=[[box objectForKey:@"activity"] boolValue]?[message objectForKey:@"detail"]:[message objectForKey:@"text"];
+    menu=[[[NSMenu alloc] initWithTitle:@"Message"] autorelease];
+    item=[[[NSMenuItem alloc] initWithTitle:@"Copy Whole Message" action:@selector(copyMessageText:) keyEquivalent:@""] autorelease];
+    [item setTarget:self];[item setRepresentedObject:content?content:@""];[menu addItem:item];
+    if(dropTarget&&![[message objectForKey:@"status"] boolValue]&&![message objectForKey:@"activityKind"]) {
+        BOOL fromPerson=[[message objectForKey:@"role"] isEqualToString:@"user"]&&![message objectForKey:@"attachment"];
+        [menu addItem:[NSMenuItem separatorItem]];
+        if(fromPerson&&[dropTarget respondsToSelector:@selector(editFromMessage:)]) {
+            item=[[[NSMenuItem alloc] initWithTitle:@"Edit From Here" action:@selector(editFromHere:) keyEquivalent:@""] autorelease];
+            [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
+        }
+        if([dropTarget respondsToSelector:@selector(branchFromMessage:)]) {
+            item=[[[NSMenuItem alloc] initWithTitle:@"Branch Chat From Here" action:@selector(branchFromHere:) keyEquivalent:@""] autorelease];
+            [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
+        }
+    }
+    return menu;
+}
+
+/* Right-click on a message's own text: the text view's usual menu, then this one's items. */
+- (NSMenu *)menuForTextView:(NSTextView *)view base:(NSMenu *)base
+{
+    NSUInteger index=[textViews indexOfObject:view];
+    NSMenu *extra;
+    unsigned i;
+    if(index==NSNotFound||index>=[boxes count])return base;
+    extra=[self messageMenuForBox:[boxes objectAtIndex:index]];
+    if(!base)return extra;
+    [base addItem:[NSMenuItem separatorItem]];
+    while([extra numberOfItems]>0) {
+        NSMenuItem *moved=[[[extra itemAtIndex:0] retain] autorelease];
+        [extra removeItemAtIndex:0];
+        [base addItem:moved];
+    }
+    (void)i;
+    return base;
 }
 
 - (NSMenu *)menuForEvent:(NSEvent *)event
@@ -828,16 +1557,16 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
                 break;
             }
         }
+        if ([box objectForKey:@"file"] && NSPointInRect(point, [[box objectForKey:@"rect"] rectValue])) {
+            path = [box objectForKey:@"file"];
+            break;
+        }
     }
     if (!path) {
         for(i=0;i<[boxes count];i++) {
             NSDictionary *box=[boxes objectAtIndex:i];
             if(!NSPointInRect(point,[[box objectForKey:@"rect"] rectValue]))continue;
-            NSDictionary *message=[box objectForKey:@"message"];
-            NSString *content=[[box objectForKey:@"activity"] boolValue]?[message objectForKey:@"detail"]:[message objectForKey:@"text"];
-            menu=[[[NSMenu alloc] initWithTitle:@"Message"] autorelease];
-            item=[[[NSMenuItem alloc] initWithTitle:@"Copy Text" action:@selector(copyMessageText:) keyEquivalent:@"c"] autorelease];
-            [item setTarget:self];[item setRepresentedObject:content?content:@""];[menu addItem:item];return menu;
+            return [self messageMenuForBox:box];
         }
         return [super menuForEvent:event];
     }
@@ -867,6 +1596,16 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     }
     [[NSWorkspace sharedWorkspace] openFile:path];
 }
+- (void)editFromHere:(id)sender
+{
+    [dropTarget performSelector:@selector(editFromMessage:) withObject:[sender representedObject]];
+}
+
+- (void)branchFromHere:(id)sender
+{
+    [dropTarget performSelector:@selector(branchFromMessage:) withObject:[sender representedObject]];
+}
+
 - (void)copyMessageText:(id)sender
 {
     NSPasteboard *p=[NSPasteboard generalPasteboard];[p declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
@@ -875,6 +1614,12 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
+    for(i=0;i<[boxes count];i++) {
+        NSDictionary *fileBox=[boxes objectAtIndex:i];
+        if([fileBox objectForKey:@"fileRect"]&&NSPointInRect(point,[[fileBox objectForKey:@"fileRect"] rectValue])) {
+            [self saveFileAtPath:[fileBox objectForKey:@"file"]];return;
+        }
+    }
     if([event clickCount]>1) {
         for(i=0;i<[boxes count];i++) {
             NSDictionary *pictureBox=[boxes objectAtIndex:i];
@@ -909,9 +1654,42 @@ static void fillBubble(NSBezierPath *path, NSRect rect, BOOL sent)
     [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];[self setNeedsDisplay:YES];
 }
 
+/* Save As for a block of code the model wrote. */
+- (void)saveCode:(NSString *)code title:(NSString *)title
+{
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    NSString *ext = TBLanguageExtension(title);
+    NSString *name = [ext isEqualToString:@"mk"] ? @"Makefile" : [@"snippet." stringByAppendingString:ext];
+    if ([panel runModalForDirectory:[@"~/Desktop" stringByExpandingTildeInPath] file:name] != NSOKButton)
+        return;
+    if (![[code dataUsingEncoding:NSUTF8StringEncoding] writeToFile:[panel filename] atomically:YES])
+        NSBeep();
+}
+
+/* Save As for a file a model made. */
+- (void)saveFileAtPath:(NSString *)path
+{
+    NSSavePanel *panel;
+    NSData *data;
+    if (!path || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSBeep();
+        return;
+    }
+    panel = [NSSavePanel savePanel];
+    if ([panel runModalForDirectory:[@"~/Desktop" stringByExpandingTildeInPath] file:TBDisplayFileName(path)] != NSOKButton)
+        return;
+    data = [NSData dataWithContentsOfFile:path];
+    if (!data || ![data writeToFile:[panel filename] atomically:YES])
+        NSBeep();
+}
+
 - (void)saveMediaAs:(id)sender
 {
     NSString *path = [sender representedObject];
+    if ([[path lastPathComponent] length] > 17 && [[path lastPathComponent] characterAtIndex:16] == '-') {
+        [self saveFileAtPath:path];
+        return;
+    }
     NSSavePanel *panel;
     NSString *name;
     NSData *data;

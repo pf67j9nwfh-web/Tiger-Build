@@ -188,6 +188,8 @@ static NSString *splitBase(NSString *base, NSString **port)
         [[prefsFields objectForKey:@"relay_host"] setStringValue:host];
         [[prefsFields objectForKey:@"relay_port"] setStringValue:[NSString stringWithFormat:@"%d", number]];
     }
+    [relayVersion release];
+    relayVersion = nil;
     if (![RelayRequest saveServerBase:base token:([token length] ? token : nil)]) {
         NSRunAlertPanel(@"Preferences", @"Tiger Build could not save the relay address.", @"OK", nil, nil);
         return NO;
@@ -541,8 +543,8 @@ static NSString *splitBase(NSString *base, NSString **port)
     tab = [self preferencesTab:@"Relay" in:tabs];
     y = 284;
     field = [self preferencesRow:@"Relay address" key:@"relay_host" y:y secure:NO width:148
-        help:@"The IP address or name of the Mac running the relay, such as 192.168.1.10. The relay app shows it under Reachable address. "
-             @"Put the port in the Port box; the relay uses 8765 unless its config.sh says otherwise."
+        help:@"The IP address or name of the relay computer, such as 192.168.1.10 (the relay app shows it as Reachable address). "
+             @"The port goes in the Port box; the default is 8765."
         removable:nil inView:tab];
     [[field cell] setPlaceholderString:@"relay Mac address"];
     [self preferencesLabel:@"Port" frame:NSMakeRect(356, y + 2, 32, 18) inView:tab];
@@ -557,8 +559,8 @@ static NSString *splitBase(NSString *base, NSString **port)
     [field release];
     y -= 32;
     [self preferencesRow:@"Relay token" key:@"relay_token" y:y secure:YES width:280
-        help:@"The shared secret that lets this Mac use the relay. It is in relay-token on the relay Mac; "
-             @"setup.sh prints it and install-tiger.sh fills it in. Leave blank to keep the saved one."
+        help:@"The shared secret that lets this Mac use the relay: see relay-token on the relay computer, or the output of setup.sh. "
+             @"Leave blank to keep the saved one."
         removable:nil inView:tab];
     y -= 36;
     [self preferencesButton:@"Test Connection" frame:NSMakeRect(210, y, 130, 28)
@@ -587,8 +589,7 @@ static NSString *splitBase(NSString *base, NSString **port)
         [NSArray arrayWithObjects:@"OpenAI (ChatGPT)", @"openai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Anthropic (Claude)", @"anthropic_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Workspace ID (optional)", @"anthropic_workspace_id", @"0",
-            @"Anthropic workspace ID. Optional. Only needed if your Anthropic key belongs to a workspace that requires the "
-            @"workspace ID to be sent with each request. Most keys do not; leave it blank.", nil],
+            @"Only needed if your Anthropic key belongs to a workspace that requires its ID. Most keys do not; leave it blank.", nil],
         [NSArray arrayWithObjects:@"Mistral", @"mistral_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Muse", @"muse_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Google (Gemini)", @"gemini_api_key", @"1", @"", nil],
@@ -606,10 +607,8 @@ static NSString *splitBase(NSString *base, NSString **port)
     tab = [self preferencesTab:@"Local LLM Server" in:tabs];
     y = 284;
     field = [self preferencesRow:@"Local LLM server address" key:@"local_url" y:y secure:NO width:190
-        help:@"An OpenAI-compatible server such as LM Studio, as this computer sees it. "
-             @"It can be another computer. It is not the relay address. "
-             @"Example on the relay computer: http://127.0.0.1:1234/v1. "
-             @"Example on another computer: http://192.168.1.50:1234/v1. Reset removes it."
+        help:@"An OpenAI-compatible server such as LM Studio, as the relay computer sees it (not the relay's own address). "
+             @"For example http://127.0.0.1:1234/v1, or http://192.168.1.50:1234/v1 on another computer. Reset removes it."
         removable:@"Reset" inView:tab];
     [[field cell] setPlaceholderString:@"not set (e.g. " TB_LOCAL_EXAMPLE ")"];
     y -= 24;
@@ -633,15 +632,15 @@ static NSString *splitBase(NSString *base, NSString **port)
         [prefsFields setObject:popup forKey:@"new_chat_model"];
     }
     y -= 34;
-    [self preferencesNote:@"\"The model last used\" gives a new chat the model, the tool switches and the approval choices of the chat "
-        @"you used most recently in the same workspace. Or pick one model to use every time."
+    [self preferencesNote:@"\"The model last used\" starts a new chat with the model, tools and approvals of your most recent chat in the workspace. "
+        @"Or pick one model for every new chat."
         frame:NSMakeRect(16, y - 24, 520, 44) inView:tab];
 
     /* ---- Commander ---- */
     tab = [self preferencesTab:@"Commander" in:tabs];
     y = 292;
-    [self preferencesNote:@"The relay runs Commander's tools on the Mac you chat from, and keeps one connection for each Mac that uses it. "
-        @"These settings are for THIS Mac. Connect adds the relay's key here so no password is needed."
+    [self preferencesNote:@"The relay runs Commander's tools on the Mac you chat from, with one connection per Mac. "
+        @"These settings are for this Mac; Connect adds the relay's key here, so no password is needed."
         frame:NSMakeRect(16, y - 28, 520, 46) inView:tab];
     y -= 74;
     [self preferencesRow:@"Mac's address" key:@"ssh_host" y:y secure:NO width:190

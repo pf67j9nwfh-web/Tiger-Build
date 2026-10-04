@@ -31,7 +31,8 @@ class SettingsTests(unittest.TestCase):
         self.assertIn("LISTEN_PORT=", text)
         self.assertIn("# comment", text)
         self.assertIn("$HOME/ppc-commander", text)
-        self.assertEqual(oct(os.stat(self.config).st_mode & 0o777), "0o600")
+        if sys.platform != "win32":  # Windows has no POSIX file modes
+            self.assertEqual(oct(os.stat(self.config).st_mode & 0o777), "0o600")
 
     def test_update_adds_missing_home(self):
         config = connection.update_config({"TIGER_HOME": "/Users/jr/"})

@@ -1,6 +1,42 @@
 #import "RelayClient.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 NSString *TBRelayTokenHeader = @"X-TigerBuild-Token";
+
+/* This Mac's IPv4 addresses, comma separated, for a relay reached through an SSH tunnel: the relay then
+   sees the connection come from itself and needs to be told which Mac is asking. */
+static NSString *myAddresses(void)
+{
+    static NSString *cached = nil;
+    static double when = 0;
+    double now = CFAbsoluteTimeGetCurrent();
+    struct ifaddrs *list = NULL;
+    struct ifaddrs *item;
+    NSMutableArray *found;
+    if (cached && now - when < 300)
+        return cached;
+    found = [NSMutableArray array];
+    if (getifaddrs(&list) == 0) {
+        for (item = list; item; item = item->ifa_next) {
+            if (item->ifa_addr && item->ifa_addr->sa_family == AF_INET && !(item->ifa_flags & IFF_LOOPBACK)) {
+                struct sockaddr_in *address = (struct sockaddr_in *)item->ifa_addr;
+                NSString *text = [NSString stringWithUTF8String:inet_ntoa(address->sin_addr)];
+                if (text && ![found containsObject:text])
+                    [found addObject:text];
+            }
+        }
+        freeifaddrs(list);
+    }
+    [cached release];
+    cached = [[found componentsJoinedByString:@","] retain];
+    when = now;
+    return cached;
+}
 
 @interface RelayRequest (Private)
 - (BOOL)startMethod:(NSString *)method body:(NSString *)body timeout:(double)seconds;
@@ -94,6 +130,8 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     CFHTTPMessageSetHeaderFieldValue(message, CFSTR("User-Agent"), CFSTR("TigerBuild/1.2"));
     if ([token length] > 0)
         CFHTTPMessageSetHeaderFieldValue(message, (CFStringRef)TBRelayTokenHeader, (CFStringRef)token);
+    if ([base rangeOfString:@"127.0.0.1"].location != NSNotFound || [base rangeOfString:@"localhost"].location != NSNotFound)
+        CFHTTPMessageSetHeaderFieldValue(message, CFSTR("X-TigerBuild-Client"), (CFStringRef)myAddresses());
     if (body) {
         CFHTTPMessageSetBody(message, (CFDataRef)body);
         CFHTTPMessageSetHeaderFieldValue(message, CFSTR("Content-Type"), CFSTR("application/json; charset=utf-8"));
@@ -124,6 +162,28 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     return request;
 }
 
++ (RelayRequest *)sendFile:(NSData *)data
+                      name:(NSString *)name
+                      path:(NSString *)relative
+                   timeout:(double)seconds
+                    target:(id)aTarget
+                    action:(SEL)anAction
+                   context:(id)aContext
+{
+    RelayRequest *request = [[[RelayRequest alloc] init] autorelease];
+    request->target = aTarget;
+    request->action = anAction;
+    request->context = [aContext retain];
+    request->path = [relative copy];
+    request->fileData = [data retain];
+    request->fileName = [name copy];
+    if (![request startMethod:@"POST" body:nil timeout:seconds]) {
+        [request retain];
+        [request performSelector:@selector(complete) withObject:nil afterDelay:0.0];
+    }
+    return request;
+}
+
 - (id)init
 {
     self = [super init];
@@ -138,6 +198,8 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
     [payload release];
     [context release];
     [path release];
+    [fileData release];
+    [fileName release];
     [super dealloc];
 }
 
@@ -145,10 +207,16 @@ static BOOL writeText(NSString *text, NSString *file, int mode)
 {
     CFHTTPMessageRef message;
     CFStreamClientContext client;
-    NSData *bytes = body ? [body dataUsingEncoding:NSUTF8StringEncoding] : nil;
+    NSData *bytes = fileData ? fileData : (body ? [body dataUsingEncoding:NSUTF8StringEncoding] : nil);
     message = [RelayRequest copyMessage:method path:path body:bytes];
     if (!message)
         return NO;
+    if (fileData) {
+        NSString *escaped = [(NSString *)CFURLCreateStringByAddingPercentEscapes(NULL, (CFStringRef)fileName, NULL,
+            CFSTR(":/?#[]@!$&'()*+,;= %"), kCFStringEncodingUTF8) autorelease];
+        CFHTTPMessageSetHeaderFieldValue(message, CFSTR("Content-Type"), CFSTR("application/octet-stream"));
+        CFHTTPMessageSetHeaderFieldValue(message, CFSTR("X-Filename"), (CFStringRef)(escaped ? escaped : @"file"));
+    }
     stream = CFReadStreamCreateForHTTPRequest(NULL, message);
     CFRelease(message);
     if (!stream)

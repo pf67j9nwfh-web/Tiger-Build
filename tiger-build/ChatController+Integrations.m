@@ -14,7 +14,7 @@
 
 /* Data source for the server table. Rows are the same dictionaries the relay
    saves, so checking a box changes the data directly. */
-@interface TBServerSource : NSObject {
+@interface TBServerSource : NSObject TB_PROTOCOLS(NSTableViewDataSource) {
     NSMutableArray *servers;
 }
 - (NSMutableArray *)servers;
@@ -422,9 +422,8 @@
         ||![[client objectForKey:@"token"] isKindOfClass:[NSString class]]||![[client objectForKey:@"preferences"] isKindOfClass:[NSDictionary class]]) {
         NSRunAlertPanel(@"Settings",@"Malformed client configuration.",@"OK",nil,nil);return;
     }
-    if(NSRunAlertPanel(@"Replace settings?",@"This replaces client preferences, Commander login settings and the current relay's API/tool configuration. "
-        @"Custom MCP servers are imported disabled. The relay's active network and SSH settings stay unchanged. "
-        @"Chat history is not affected. Export current settings first.",@"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
+    if(NSRunAlertPanel(@"Replace settings?",@"This replaces your preferences, Commander login settings and the relay's API and tool settings. MCP servers are imported disabled. "
+        @"The relay's network and SSH settings and your chats are unchanged. Export current settings first.",@"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
     NSString *text=[[[NSString alloc] initWithData:[backup objectForKey:@"relay"] encoding:NSUTF8StringEncoding] autorelease];
     [RelayRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(settingsBackupImported:) context:backup];
 }

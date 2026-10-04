@@ -35,7 +35,8 @@ class FakeClient(object):
         FakeClient.calls.append((method, params))
         if method == "tools/list":
             return {"tools": [{"name": "start_process", "inputSchema": {"type": "object"}},
-                              {"name": "take_screenshot", "inputSchema": {"type": "object"}}]}
+                              {"name": "take_screenshot", "inputSchema": {"type": "object"}},
+                              {"name": "git_read", "inputSchema": {"type": "object"}}]}
         if params["name"] == "take_screenshot":
             return {"content": [{"type": "image", "data": "QUJD", "mimeType": "image/jpeg"},
                                 {"type": "text", "text": "shot"}]}
@@ -62,6 +63,20 @@ def script_stream(rounds, seen_logs=None):
 
 def call(name, **args):
     return {"id": name + "-1", "name": name, "arguments": json.dumps(args)}
+
+
+class ChangeStatsTests(unittest.TestCase):
+    def test_git_diff(self):
+        out = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1,2 @@\n-old\n+new\n+more\ndiff --git a/y b/y\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-a\n+b\n"
+        self.assertEqual(C.change_stats("git_read", out), (2, 3, 2))
+
+    def test_svn_diff_and_commit_line_and_nothing(self):
+        out = "Index: a.txt\n===\n--- a.txt\t(revision 1)\n+++ a.txt\t(working copy)\n@@ -1 +1,2 @@\n hello\n+world\n"
+        self.assertEqual(C.change_stats("svn_read", out), (1, 1, 0))
+        self.assertEqual(C.change_stats("git_write", "[main abc] fix\n 3 files changed, 12 insertions(+), 4 deletions(-)\n"), (3, 12, 4))
+        self.assertEqual(C.change_stats("git_write", " 1 file changed, 1 insertion(+)\n"), (1, 1, 0))
+        self.assertIsNone(C.change_stats("git_read", "On branch main\nnothing to commit"))
+        self.assertIsNone(C.change_stats("start_process", "diff --git a b\n+x"))
 
 
 class TurnTests(unittest.TestCase):
@@ -152,6 +167,18 @@ class TurnTests(unittest.TestCase):
         results = [plistlib.loads(t.encode()) for k, t in frames if k == "a"]
         self.assertTrue(results[-1]["failed"])
 
+    def test_read_only_repo_tools_never_ask(self):
+        session = self.session(approve={"commander": True})
+        asked = []
+        gen = session.iter_turn([{"role": "user", "content": "go"}], True, "claude", "m")
+        with patch.object(C, "stream_round", script_stream([{"calls": [call("git_read", args=["status"])]}, {"text": ["ok"]}])):
+            for kind, text in gen:
+                if kind == "q":
+                    asked.append(text)
+                    session.run.answer(plistlib.loads(text.encode())["id"], "deny")
+        self.assertEqual(asked, [])
+        self.assertEqual(len([c for c in FakeClient.calls if c[0] == "tools/call" and c[1]["name"] == "git_read"]), 1)
+
     def test_approval_allowed_runs_tool(self):
         session = self.session(approve={"commander": True})
         gen = session.iter_turn([{"role": "user", "content": "go"}], True, "claude", "m")
@@ -190,6 +217,29 @@ class TurnTests(unittest.TestCase):
         with patch.object(C, "stream_round", fake):
             list(session.iter_turn([{"role": "user", "content": "go"}], True, "mistral", "codestral-latest"))
         self.assertNotIn("take_screenshot", tools_seen[0])
+
+    def test_attached_pictures_reach_vision_models_only(self):
+        pictures = [{"mime": "image/png", "data": "QUJD"}]
+        for provider, model, shown in (("claude", "claude-haiku-4-5-20251001", True), ("mistral", "codestral-latest", False)):
+            session = self.session()
+            logs = []
+
+            def fake(provider, system, log, tools, holder, ctx, err, model=None, **kw):
+                logs.append([dict(m) for m in log])
+                yield "x"
+            with patch.object(C, "stream_round", fake):
+                list(session.iter_turn([{"role": "user", "content": "what is this?", "images": pictures}], False, provider, model))
+            first = logs[0][0]
+            self.assertEqual(bool(first.get("images")), shown)
+            if not shown:
+                self.assertIn("cannot view pictures", first["content"])
+
+    def test_picture_field_is_validated(self):
+        clean = C.Handler._clean_pictures if hasattr(C, "Handler") else None
+        if clean is None:
+            return
+        self.assertEqual(clean([{"mime": "text/html", "data": "QUJD"}, {"mime": "image/png", "data": ""}, "x"]), [])
+        self.assertEqual(clean([{"mime": "image/gif", "data": "QUJD"}]), [{"mime": "image/gif", "data": "QUJD"}])
 
     def test_stop_ends_turn_quietly(self):
         session = self.session()
@@ -284,10 +334,6 @@ class RunTests(unittest.TestCase):
             run.wait("c1", 5)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class HttpTests(unittest.TestCase):
     """The new HTTP routes, through a real server."""
 
@@ -311,6 +357,42 @@ class HttpTests(unittest.TestCase):
         response = conn.getresponse()
         return response.status, response.read()
 
+    def test_tunnelled_client_is_recognised_only_from_this_computer(self):
+        C.ALLOWED = {"127.0.0.1", "10.9.9.9", "10.9.9.10"}
+        class Fake(C.Handler):
+            def __init__(self, address, claimed):
+                self.client_address = (address, 1)
+                self.headers = {"X-TigerBuild-Client": claimed} if claimed else {}
+                self.server = type("S", (), {"server_address": ("10.0.1.105", 8765)})()
+            def _x(self):
+                return self._caller_address()
+        self.assertEqual(Fake("127.0.0.1", "10.9.9.10, 10.9.9.9")._x(), "10.9.9.10")
+        self.assertEqual(Fake("10.0.1.105", "10.9.9.9")._x(), "10.9.9.9")
+        self.assertEqual(Fake("127.0.0.1", "10.7.7.7")._x(), "127.0.0.1")       # not an allowed client
+        self.assertEqual(Fake("10.9.9.10", "10.9.9.9")._x(), "10.9.9.10")       # a remote Mac cannot pretend
+        self.assertEqual(Fake("127.0.0.1", None)._x(), "127.0.0.1")
+
+    def test_transcribe_route(self):
+        def post(body, token="tok"):
+            conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=20)
+            conn.request("POST", "/v1/transcribe", body, {"X-TigerBuild-Token": token, "Content-Type": "audio/wav"})
+            response = conn.getresponse()
+            return response.status, response.read(), response.getheader("X-Transcribed-By")
+        import transcribe
+        wav = b"RIFF" + b"\x24\x00\x00\x00" + b"WAVE" + b"\0" * 200
+        with patch.object(transcribe, "transcribe", lambda data, ctx, language="": ("hello world", "OpenAI")):
+            status, data, who = post(wav)
+        self.assertEqual((status, data, who), (200, b"hello world", "OpenAI"))
+        self.assertEqual(post(b"short")[0], 422)
+        self.assertEqual(post(wav, token="wrong")[0], 401)
+        with patch.object(transcribe, "transcribe", lambda data, ctx, language="": (_ for _ in ()).throw(transcribe.NoService("no key"))):
+            self.assertEqual(post(wav)[0], 424)
+
+    def test_version_route(self):
+        from version import VERSION
+        status, data = self.call("GET", "/v1/version")
+        self.assertEqual((status, data.decode().strip()), (200, VERSION))
+
     def test_tools_catalogue(self):
         status, data = self.call("GET", "/v1/tools")
         self.assertEqual(status, 200)
@@ -333,6 +415,24 @@ class HttpTests(unittest.TestCase):
         status, data = self.call("GET", "/v1/ssh")
         self.assertEqual(status, 200)
         self.assertIn(b"host=", data)
+
+    def test_extract_route(self):
+        import io, zipfile, urllib.parse
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello from Word</w:t></w:r></w:p></w:body></w:document>')
+        def post(name, body, token="tok"):
+            conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=20)
+            conn.request("POST", "/v1/extract", body, {"X-TigerBuild-Token": token, "X-Filename": urllib.parse.quote(name),
+                                                        "Content-Type": "application/octet-stream"})
+            response = conn.getresponse()
+            return response.status, response.read()
+        status, data = post("My File.docx", buffer.getvalue())
+        self.assertEqual(status, 200)
+        self.assertEqual(plistlib.loads(data)["text"], "Hello from Word")
+        self.assertEqual(post("x.docx", b"not a zip")[0], 422)
+        self.assertEqual(post("x.exe", b"abc")[0], 422)
+        self.assertEqual(post("x.docx", buffer.getvalue(), token="wrong")[0], 401)
 
     def test_auth_required(self):
         conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
@@ -443,5 +543,9 @@ class ConcurrencyTests(unittest.TestCase):
             [t.start() for t in threads]
             [t.join() for t in threads]
         self.assertEqual(len(starts), 1)
-        self.assertEqual(results, [2] * 8)
+        self.assertEqual(results, [3] * 8)
         C.invalidate_tools()
+
+
+if __name__ == "__main__":
+    unittest.main()

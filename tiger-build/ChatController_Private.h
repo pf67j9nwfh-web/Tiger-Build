@@ -79,6 +79,68 @@
 @end
 
 /* ChatController+Run.m */
+@interface ChatController (Attachments)
+- (IBAction)attachFile:(id)sender;
+- (BOOL)chatHasAttachments:(NSDictionary *)chat;
+- (BOOL)confirmCloudAttach;
+- (BOOL)cancelAttachments;
+- (BOOL)attachmentsRunning;
+- (IBAction)attachPDFPages:(id)sender;
+- (void)attachPaths:(NSArray *)paths;
+- (NSArray *)attachmentsForPath:(NSString *)path problem:(NSString **)problem;
+- (void)sweepStoredFiles;
+- (NSArray *)imageAttachmentsForChat:(NSDictionary *)chat;
+@end
+
+@interface ChatController (ChatFile)
+- (IBAction)exportChat:(id)sender;
+- (IBAction)importChat:(id)sender;
+@end
+
+@interface ChatController (Extras)
+- (NSArray *)findResultsFor:(NSString *)query;
+- (void)openFindResult:(NSDictionary *)hit;
+- (IBAction)showFind:(id)sender;
+- (IBAction)editInstructions:(id)sender;
+- (IBAction)biggerText:(id)sender;
+- (IBAction)copyLastCode:(id)sender;
+- (void)applyTextScale;
+- (IBAction)smallerText:(id)sender;
+- (IBAction)normalTextSize:(id)sender;
+@end
+
+/* Ask once and remember (see ChatController+Attachments.m). */
+BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle);
+
+@interface ChatController (Dictation)
+- (IBAction)toggleDictation:(id)sender;
+- (IBAction)toggleDictationSend:(id)sender;
+- (BOOL)isDictating;
+- (BOOL)cancelDictation;
+- (BOOL)dictationRunning;
+- (void)finishDictation:(BOOL)keep;
+- (void)beginDictation;
+- (void)updateDictationClock:(NSTimer *)timer;
+@end
+
+@interface ChatController (Voice)
+- (IBAction)speakLast:(id)sender;
+- (IBAction)stopSpeaking:(id)sender;
+- (IBAction)toggleAutoSpeak:(id)sender;
+- (IBAction)toggleVoiceCommands:(id)sender;
+- (IBAction)chooseVoice:(id)sender;
+- (BOOL)isSpeakingNow;
+- (BOOL)voiceCommandsOn;
+- (void)speakFinishedReplyIfWanted:(NSMutableDictionary *)chat;
+- (void)resumeVoiceIfWanted;
+@end
+
+@interface ChatController (EditAnywhere)
+- (void)editAtIndex:(int)index;
+- (void)editFromMessage:(NSMutableDictionary *)message;
+- (void)branchFromMessage:(NSMutableDictionary *)message;
+@end
+
 @interface ChatController (Run)
 - (NSArray *)currentToolCatalog;
 - (BOOL)serverEnabled:(NSString *)key chat:(NSDictionary *)chat;

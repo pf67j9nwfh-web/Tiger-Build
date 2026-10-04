@@ -96,6 +96,8 @@ static NSString *newRunId(void)
     value = [approve isKindOfClass:[NSDictionary class]] ? [approve objectForKey:@"all"] : nil;
     if (value)
         return [value boolValue];
+    if (([key isEqualToString:@"commander"] || [key hasPrefix:@"mcp_"]) && [self chatHasAttachments:chat])
+        return YES;
     return [[[self catalogEntry:key] objectForKey:@"approval"] boolValue];
 }
 
@@ -123,6 +125,24 @@ static NSString *newRunId(void)
         [out appendFormat:@"%@\"%@\":%s", i ? @"," : @"", TBJSONEscape(key), [self serverEnabled:key chat:chat] ? "true" : "false"];
     }
     [out appendString:@"},\"approve\":{"];
+    {
+        /* A document, web page or search result can contain instructions aimed at the model. In a chat that has
+           attached files, tools that can act on the Mac ask first unless the person has chosen otherwise for them. */
+        BOOL attached = NO;
+        NSArray *messages = [chat objectForKey:@"messages"];
+        unsigned m;
+        for (m = 0; m < [messages count] && !attached; m++)
+            attached = [[messages objectAtIndex:m] objectForKey:@"attachment"] != nil;
+        if (attached) {
+            NSMutableDictionary *merged = [NSMutableDictionary dictionaryWithDictionary:[approve isKindOfClass:[NSDictionary class]] ? approve : [NSDictionary dictionary]];
+            for (i = 0; i < [list count]; i++) {
+                NSString *key = [[list objectAtIndex:i] objectForKey:@"id"];
+                if (([key isEqualToString:@"commander"] || [key hasPrefix:@"mcp_"]) && ![merged objectForKey:key] && ![merged objectForKey:@"all"])
+                    [merged setObject:[NSNumber numberWithBool:YES] forKey:key];
+            }
+            approve = merged;
+        }
+    }
     if ([approve isKindOfClass:[NSDictionary class]]) {
         NSEnumerator *keys = [approve keyEnumerator];
         NSString *key;
@@ -135,6 +155,8 @@ static NSString *newRunId(void)
     [out appendString:@"}"];
     if ([[workspaceSettings objectForKey:@"limitRoot"] boolValue] && [root length] > 0)
         [out appendFormat:@",\"root\":\"%@\"", TBJSONEscape(root)];
+    if ([[chat objectForKey:@"instructions"] length] > 0)
+        [out appendFormat:@",\"instructions\":\"%@\"", TBJSONEscape([chat objectForKey:@"instructions"])];
     return out;
 }
 
@@ -351,18 +373,17 @@ static NSString *newRunId(void)
 
 /* ---- stop ---- */
 
-- (BOOL)runInProgress
-{
-    return busy && bodyStream != NULL;
-}
-
 - (IBAction)stopRun:(id)sender
 {
     NSMutableDictionary *chat;
     (void)sender;
-    if (!busy)
+    if (!busy) {
+        if (![self cancelDictation])
+            [self cancelAttachments];
         return;
+    }
     stopping = YES;
+    [self stopSpeaking:nil];
     if (sideRequest) {
         /* Still compacting, before the chat stream started. */
         [sideRequest cancel];
@@ -534,10 +555,11 @@ static NSString *newRunId(void)
     BOOL guide = [self guidanceAvailable];
     if (!sendButton)
         return;
-    [stopButton setEnabled:busy && !stopping];
+    [stopButton setEnabled:(busy && !stopping) || [self attachmentsRunning] || [self dictationRunning]];
     if (!busy) {
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];
+        [sendButton setToolTip:@"Send the message (Return)"];
     } else if (guide) {
         [sendButton setTitle:[NSString stringWithFormat:@"Guide %C", (unichar)((pulse % 2) ? 0x25CB : 0x25CF)]];
         [sendButton setEnabled:YES];
@@ -547,8 +569,9 @@ static NSString *newRunId(void)
         [sendButton setEnabled:NO];
         [sendButton setToolTip:nil];
     }
-    [editButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
+    [editButton setEnabled:!busy && (editBackup || [self lastUserIndex] >= 0) && ![self chatIsBusyElsewhere:current]];
     [retryButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
+    [attachButton setEnabled:!busy && current && ![self chatIsBusyElsewhere:current]];
     [editButton setTitle:editBackup ? @"Cancel Edit" : @"Edit Last"];
 }
 
@@ -560,7 +583,8 @@ static NSString *newRunId(void)
     int i;
     for (i = (int)[messages count] - 1; i >= 0; i--) {
         NSDictionary *message = [messages objectAtIndex:i];
-        if ([[message objectForKey:@"role"] isEqualToString:@"user"] && ![[message objectForKey:@"status"] boolValue])
+        if ([[message objectForKey:@"role"] isEqualToString:@"user"] && ![[message objectForKey:@"status"] boolValue]
+            && ![message objectForKey:@"attachment"])
             return i;
     }
     return -1;
@@ -586,8 +610,18 @@ static NSString *newRunId(void)
     }
     messages = [current objectForKey:@"messages"];
     userMessage = [[messages objectAtIndex:index] retain];
-    while ((int)[messages count] > index)
-        [messages removeLastObject];
+    {
+        /* Files attached after that message stay, and go in front of it again. */
+        NSMutableArray *kept = [NSMutableArray array];
+        unsigned k;
+        for (k = index + 1; k < [messages count]; k++) {
+            if ([[messages objectAtIndex:k] objectForKey:@"attachment"])
+                [kept addObject:[messages objectAtIndex:k]];
+        }
+        while ((int)[messages count] > index)
+            [messages removeLastObject];
+        [messages addObjectsFromArray:kept];
+    }
     [messages addObject:userMessage];
     [userMessage release];
     openMessage = [NSMutableDictionary dictionary];
@@ -604,10 +638,6 @@ static NSString *newRunId(void)
 
 - (IBAction)editLast:(id)sender
 {
-    NSMutableArray *messages;
-    NSMutableArray *removed;
-    int index;
-    NSString *text;
     (void)sender;
     if (busy || !current || [self chatIsBusyElsewhere:current])
         return;
@@ -615,16 +645,48 @@ static NSString *newRunId(void)
         [self cancelEdit:nil];
         return;
     }
-    index = [self lastUserIndex];
+    [self editAtIndex:[self lastUserIndex]];
+}
+
+/* Edit From Here, from the right-click menu of any message the person wrote. */
+- (void)editFromMessage:(NSMutableDictionary *)message
+{
+    NSUInteger index;
+    if (busy || !current || [self chatIsBusyElsewhere:current])
+        return;
+    if (editBackup)
+        [self cancelEdit:nil];
+    index = [[current objectForKey:@"messages"] indexOfObjectIdenticalTo:message];
+    if (index == NSNotFound)
+        return;
+    [self editAtIndex:(int)index];
+}
+
+/* Take the message at this position back into the message box, with everything after it set aside
+   (Cancel Edit puts it back). Files attached after it are kept, since they are not part of what is redone. */
+- (void)editAtIndex:(int)index
+{
+    NSMutableArray *messages;
+    NSMutableArray *removed;
+    NSMutableArray *kept;
+    NSString *text;
+    unsigned k;
     if (index < 0)
         return;
     messages = [current objectForKey:@"messages"];
     removed = [NSMutableArray array];
+    kept = [NSMutableArray array];
     text = [[messages objectAtIndex:index] objectForKey:@"text"];
-    while ((int)[messages count] > index) {
-        [removed insertObject:[messages lastObject] atIndex:0];
-        [messages removeLastObject];
+    for (k = index; k < [messages count]; k++) {
+        NSMutableDictionary *message = [messages objectAtIndex:k];
+        if ((int)k > index && [message objectForKey:@"attachment"])
+            [kept addObject:message];
+        else
+            [removed addObject:message];
     }
+    while ((int)[messages count] > index)
+        [messages removeLastObject];
+    [messages addObjectsFromArray:kept];
     [editBackup release];
     editBackup = [removed retain];
     [input setStringValue:text ? text : @""];

@@ -295,7 +295,7 @@ def main():
         last.clear()
         last.update(result)
         pid = int(result.get("pid") or 0)
-        version = result.get("version") or "1.3.1"
+        version = result.get("version") or "1.4"
         root.title("Tiger Build Relay %s" % version)
         status.set("Version %s, running in background (PID %s)" % (version, pid) if pid else "Version %s, stopped" % version)
         address.set("Reachable address: %s" % (result.get("url") or "unknown"))

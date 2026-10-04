@@ -87,7 +87,7 @@ def write_config(data):
     finally:
         handle.close()
     os.chmod(temporary, 0o600)
-    os.rename(temporary, path)
+    os.replace(temporary, path)
     os.chmod(path, 0o600)
     return payload
 
@@ -369,7 +369,7 @@ def clean_title(text):
 
 
 def _get_json(url, timeout=8):
-    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.3.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "TigerBuild-relay/1.4"})
     response = urllib.request.urlopen(request, timeout=timeout)
     try:
         return json.loads(response.read().decode("utf-8", "replace"))

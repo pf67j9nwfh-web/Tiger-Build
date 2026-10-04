@@ -29,6 +29,10 @@ static NSMutableArray *extraWindows = nil;
 - (void)layoutPanes;
 - (void)updateContextReadout;
 - (BOOL)startCompactionIfNeeded;
+- (NSString *)versionNote;
+- (BOOL)confirmCloudAttach;
+- (void)refreshRelayVersion;
+- (BOOL)relayTooOldForPictures:(NSDictionary *)chat;
 - (void)beginChatStream;
 - (void)autonameChat:(NSMutableDictionary *)chat;
 - (void)attachMedia:(NSString *)line toChat:(NSMutableDictionary *)chat;
@@ -46,6 +50,66 @@ static NSMutableArray *extraWindows = nil;
 /* Every open window, so they can tell each other about changes. Windows do not
    retain each other. */
 static NSMutableArray *allControllers = nil;
+
+/* The message box's text editor. Pasting a picture (a screenshot copied to the clipboard) or files
+   copied in the Finder attaches them to the chat instead of pasting nothing, or their names. */
+@interface TBFieldEditor : NSTextView {
+    id owner;
+}
+- (void)setOwner:(id)controller;
+@end
+
+@implementation TBFieldEditor
+
+- (void)setOwner:(id)controller
+{
+    owner = controller;
+}
+
+/* Files copied in the Finder, or a picture on the clipboard (a screenshot), are attached to the chat.
+   Returns NO for anything else, which is then pasted as text as usual. */
+- (BOOL)pasteSpecial
+{
+    NSPasteboard *board = [NSPasteboard generalPasteboard];
+    NSArray *types = [board types];
+    if ([types containsObject:NSFilenamesPboardType]) {
+        NSArray *files = [board propertyListForType:NSFilenamesPboardType];
+        if ([files isKindOfClass:[NSArray class]] && [files count] > 0) {
+            [owner performSelector:@selector(attachPaths:) withObject:files];
+            return YES;
+        }
+    }
+    if (![types containsObject:NSStringPboardType] && [types containsObject:NSTIFFPboardType]) {
+        NSData *data = [board dataForType:NSTIFFPboardType];
+        if ([data length] > 0) {
+            static unsigned counter = 0;
+            NSString *path;
+            counter++;
+            path = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"Pasted Picture %u.tiff", counter]];
+            if ([data writeToFile:path atomically:YES]) {
+                [owner performSelector:@selector(attachPaths:) withObject:[NSArray arrayWithObject:path]];
+                return YES;
+            }
+        }
+    }
+    return NO;
+}
+
+- (void)paste:(id)sender
+{
+    if (![self pasteSpecial])
+        [super paste:sender];
+}
+
+/* Command-V can be taken by the text editor before the menu sees it. */
+- (BOOL)performKeyEquivalent:(NSEvent *)event
+{
+    if (([event modifierFlags] & NSCommandKeyMask) && [[event charactersIgnoringModifiers] isEqualToString:@"v"] && [self pasteSpecial])
+        return YES;
+    return [super performKeyEquivalent:event];
+}
+
+@end
 
 static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void *info)
 {
@@ -130,6 +194,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [relayTimer invalidate];
     [relayTimer release];
     [self closeStream];
@@ -148,6 +213,19 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [stopButton release];
     [editButton release];
     [retryButton release];
+    [attachButton release];
+    [attachQueue release];
+    [fieldEditor release];
+    [finder release];
+    [voiceSynth release];
+    [voiceSample release];
+    if (voiceRecognizer) {
+        [voiceRecognizer stopListening];
+        [voiceRecognizer setDelegate:nil];
+        [voiceRecognizer release];
+    }
+    [attachProblems release];
+    [relayVersion release];
     [thinkingField release];
     [runId release];
     [store release];
@@ -282,6 +360,27 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
         chats = [[store chats] retain];
         [workspaceSettings release];
         workspaceSettings = [[store settings] retain];
+    }
+    {
+        /* A conversion that was still running when the app quit leaves a note; drop it. A reply that was
+           still arriving (saved along the way) is closed: its text is kept, an empty one is dropped. */
+        unsigned c;
+        BOOL idle = ![self anyWindowBusy];
+        for (c = 0; c < [chats count]; c++) {
+            NSMutableArray *list = [[chats objectAtIndex:c] objectForKey:@"messages"];
+            int m;
+            for (m = (int)[list count] - 1; m >= 0; m--) {
+                NSMutableDictionary *message = [list objectAtIndex:m];
+                if ([message objectForKey:@"converting"]) {
+                    [list removeObjectAtIndex:m];
+                } else if (idle && [[message objectForKey:@"open"] boolValue]) {
+                    if ([[message objectForKey:@"text"] length] == 0 && ![message objectForKey:@"image"] && ![message objectForKey:@"video"])
+                        [list removeObjectAtIndex:m];
+                    else
+                        [message setObject:[NSNumber numberWithBool:NO] forKey:@"open"];
+                }
+            }
+        }
     }
     if ([chats count] == 0)
         [chats addObject:[self blankChat]];
@@ -605,6 +704,18 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [retryButton setToolTip:@"Send your last message again and replace the reply"];
     [chatPane addSubview:retryButton];
 
+    attachButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+    [attachButton setTitle:@"Attach..."];
+    [attachButton setBezelStyle:NSRoundedBezelStyle];
+    [[attachButton cell] setControlSize:NSSmallControlSize];
+    [attachButton setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [attachButton setTarget:self];
+    [attachButton setAction:@selector(attachFile:)];
+    [attachButton setToolTip:@"Add a file to this chat: text, code, PDF, Word or RTF, or a picture. You can also drop files on the chat."];
+    [chatPane addSubview:attachButton];
+    [transcript setDropTarget:self];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applyTextScale) name:@"TBTextScaleChanged" object:nil];
+
     thinkingField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
     [thinkingField setStringValue:@""];
     [thinkingField setEditable:NO];
@@ -644,6 +755,14 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [contextField setDrawsBackground:NO];
     [contextField setAlignment:NSRightTextAlignment];
     [contextField setFont:[NSFont systemFontOfSize:12]];
+    /* Names for VoiceOver on controls that have no title of their own: it reads a control's tooltip as its help. */
+    [workspacePopup setToolTip:@"Workspace"];
+    [modelPopup setToolTip:@"Service"];
+    [variantPopup setToolTip:@"Model"];
+    [toolsPopup setToolTip:@"Tools for this chat"];
+    [input setToolTip:@"Message to send"];
+    [contextField setToolTip:@"Context size and cost"];
+    [table setToolTip:@"Chats"];
     [contextField setTextColor:[NSColor colorWithCalibratedWhite:0.25 alpha:1]];
     [chatPane addSubview:contextField];
 
@@ -787,9 +906,10 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     }
     {
         NSRect actions = chatLayout.actions;
-        float half = floorf((NSWidth(actions) - 4) / 2.0f);
-        [editButton setFrame:NSMakeRect(NSMinX(actions), NSMinY(actions) - 1, half, 20)];
-        [retryButton setFrame:NSMakeRect(NSMinX(actions) + half + 4, NSMinY(actions) - 1, half, 20)];
+        float third = floorf((NSWidth(actions) - 8) / 3.0f);
+        [editButton setFrame:NSMakeRect(NSMinX(actions), NSMinY(actions) - 1, third, 20)];
+        [retryButton setFrame:NSMakeRect(NSMinX(actions) + third + 4, NSMinY(actions) - 1, third, 20)];
+        [attachButton setFrame:NSMakeRect(NSMinX(actions) + 2 * (third + 4), NSMinY(actions) - 1, third, 20)];
     }
     if (!NSEqualRects(oldSendFrame, chatLayout.send)) {
         [sendButton setFrame:chatLayout.send];
@@ -879,7 +999,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             BOOL shifted = [key isEqualToString:[key uppercaseString]] && ![[key lowercaseString] isEqualToString:[key uppercaseString]];
             unsigned mask = NSCommandKeyMask | (shifted ? NSShiftKeyMask : 0);
             if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
-                || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:))
+                || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:)
+                || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:)
+                || [item action] == @selector(toggleDictation:) || [item action] == @selector(toggleDictationSend:)
+                || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
+                || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
+                || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
+                || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
                 mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
             [item setKeyEquivalentModifierMask:mask];
@@ -1007,6 +1133,38 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Edit Last Message" action:@selector(editLast:) keyEquivalent:@"R"] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Attach File..." action:@selector(attachFile:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Copy Last Code Block" action:@selector(copyLastCode:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        {
+            NSMenu *voiceMenu = [[[NSMenu alloc] initWithTitle:@"Voice"] autorelease];
+            NSMenuItem *voiceSlot = [[[NSMenuItem alloc] initWithTitle:@"Voice" action:NULL keyEquivalent:@""] autorelease];
+            NSArray *titles = [NSArray arrayWithObjects:@"Speak Last Reply", @"Stop Speaking", @"Speak Replies Automatically", @"Voice Commands", @"Choose Voice...",
+                @"Dictate", @"Send Dictation Automatically", nil];
+            SEL actions[7];
+            unsigned v;
+            actions[0] = @selector(speakLast:); actions[1] = @selector(stopSpeaking:); actions[2] = @selector(toggleAutoSpeak:);
+            actions[3] = @selector(toggleVoiceCommands:); actions[4] = @selector(chooseVoice:);
+            actions[5] = @selector(toggleDictation:); actions[6] = @selector(toggleDictationSend:);
+            for (v = 0; v < 7; v++) {
+                NSMenuItem *entry = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:v] action:actions[v] keyEquivalent:@""] autorelease];
+                [entry setTarget:self];
+                [voiceMenu addItem:entry];
+            }
+            [voiceSlot setSubmenu:voiceMenu];
+            [chat addItem:voiceSlot];
+        }
+        item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Attach PDF Pages..." action:@selector(attachPDFPages:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Export This Chat..." action:@selector(exportChat:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Import Chat..." action:@selector(importChat:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Compact Chat Now" action:@selector(compactNow:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         [chat addItem:[NSMenuItem separatorItem]];
@@ -1035,6 +1193,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             actions[2] = @selector(copyAnswer:); actions[3] = @selector(expandActivities:);
             actions[4] = @selector(collapseActivities:);
             for (i = 0; i < 5; i++) {
+                item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
+                [item setTarget:self]; [menu addItem:item];
+            }
+            [menu addItem:[NSMenuItem separatorItem]];
+            titles = [NSArray arrayWithObjects:@"Bigger Text", @"Smaller Text", @"Normal Text Size", nil];
+            actions[0] = @selector(biggerText:); actions[1] = @selector(smallerText:); actions[2] = @selector(normalTextSize:);
+            for (i = 0; i < 3; i++) {
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
                 [item setTarget:self]; [menu addItem:item];
             }
@@ -1112,7 +1277,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
@@ -1279,6 +1444,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"The relay is still testing %d models. More may appear.", [[ModelCatalog shared] checkingCount]]];
         [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
     }
+    if (!text && [[relayStatusField stringValue] length] == 0 && [self versionNote]) {
+        [relayStatusField setStringValue:[self versionNote]];
+        [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
+    }
     /* A Commander problem (SSH cannot sign in, the Mac is unreachable...) is
        shown when nothing more basic is wrong. */
     commander = text ? nil : [self commanderStatusLine];
@@ -1290,8 +1459,61 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [self relayStatusChanged];
 }
 
-/* Every 30 seconds: while the relay is unreachable or still testing models,
-   ask again; otherwise refresh the model list every 10 minutes. */
+/* The relay's version, so a relay older than this app is not asked for what it cannot do. */
+- (void)refreshRelayVersion
+{
+    [RelayRequest send:@"GET" path:@"/v1/version" body:nil timeout:10 target:self action:@selector(relayVersionArrived:) context:nil];
+}
+
+/* "1.4" against "1.4.1": whether version a is older than b. */
+static BOOL versionOlder(NSString *a, NSString *b)
+{
+    NSArray *x = [a componentsSeparatedByString:@"."];
+    NSArray *y = [b componentsSeparatedByString:@"."];
+    unsigned i;
+    for (i = 0; i < 3; i++) {
+        int p = i < [x count] ? [[x objectAtIndex:i] intValue] : 0;
+        int q = i < [y count] ? [[y objectAtIndex:i] intValue] : 0;
+        if (p != q)
+            return p < q;
+    }
+    return NO;
+}
+
+- (void)relayVersionArrived:(RelayRequest *)request
+{
+    NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    [relayVersion release];
+    if ([request ok] && [text length] > 0 && [text length] < 20)
+        relayVersion = [text copy];
+    else if ([request status] == 404)
+        relayVersion = [@"1.3" copy];
+    else
+        relayVersion = nil;
+    [self setRelayProblem:nil];
+}
+
+/* A gentle note when the app and the relay are different releases. */
+- (NSString *)versionNote
+{
+    NSString *mine = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    if (!relayVersion || !mine)
+        return nil;
+    if (versionOlder(mine, relayVersion))
+        return [NSString stringWithFormat:@"The relay is version %@ and this Tiger Build is %@. A newer Tiger Build is available: install TigerBuild-%@.pkg.", relayVersion, mine, relayVersion];
+    if (versionOlder(relayVersion, mine))
+        return [NSString stringWithFormat:@"This Tiger Build is %@ but the relay is %@. Update the relay to use everything in this version.", mine, relayVersion];
+    return nil;
+}
+
+/* A relay older than 1.4 drops attached pictures without a word. */
+- (BOOL)relayTooOldForPictures:(NSDictionary *)chat
+{
+    if (!relayVersion || !versionOlder(relayVersion, @"1.4"))
+        return NO;
+    return [[self imageAttachmentsForChat:chat] count] > 0;
+}
+
 - (void)relayTick:(NSTimer *)timer
 {
     double now = CFAbsoluteTimeGetCurrent();
@@ -1304,6 +1526,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [self refreshCatalog];
     if (relayReachable)
         [self refreshToolCatalog];
+    if (relayReachable && !relayVersion)
+        [self refreshRelayVersion];
     if (relayReachable && [[self providerForChat:current] isEqualToString:@"local"] && [localModels count] == 0)
         [self refreshLocalModels];
 }
@@ -1549,6 +1773,28 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
 }
 
+/* Files dropped on the Dock icon, or opened with Tiger Build, go into the current chat. */
+/* The window asks for a text editor for the message box; this one understands pasted pictures and files. */
+- (id)windowWillReturnFieldEditor:(NSWindow *)sender toObject:(id)client
+{
+    (void)sender;
+    if (client != input && client != [input cell])
+        return nil;
+    if (!fieldEditor) {
+        fieldEditor = [[TBFieldEditor alloc] initWithFrame:NSMakeRect(0, 0, 100, 20)];
+        [fieldEditor setFieldEditor:YES];
+        [(TBFieldEditor *)fieldEditor setOwner:self];
+    }
+    return fieldEditor;
+}
+
+- (void)application:(NSApplication *)app openFiles:(NSArray *)filenames
+{
+    (void)app;
+    [self attachPaths:filenames];
+    [app replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)note
 {
     [TBMachine startDetection];
@@ -1556,7 +1802,35 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self loadStore];
     [self buildWindow];
     [self layoutSubviews];
+    if ([TranscriptView textScale] != 1.0f)
+        [self applyTextScale];
+    
     [self reloadTableSelect:0 show:YES];
+    [self resumeVoiceIfWanted];
+    if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
+        /* What the controls and messages tell VoiceOver, for checking without it. */
+        NSArray *views = [transcript subviews];
+        unsigned v;
+        freopen("/tmp/tb-accessibility.txt", "w", stdout);
+        NSArray *named = [NSArray arrayWithObjects:workspacePopup, modelPopup, variantPopup, toolsPopup, input, contextField, editButton, retryButton,
+            attachButton, stopButton, sendButton, nil];
+        for (v = 0; v < [named count]; v++) {
+            id control = [named objectAtIndex:v];
+            id label = nil;
+            @try { label = [control accessibilityAttributeValue:NSAccessibilityHelpAttribute]; } @catch (id e) { label = @"(error)"; }
+            NSString *title = [control respondsToSelector:@selector(title)] ? [control title] : @"";
+            fprintf(stdout, "control %s: description %s, title %s\n", [NSStringFromClass([control class]) UTF8String],
+                label ? [[label description] UTF8String] : "(none)", title ? [title UTF8String] : "");
+        }
+        for (v = 0; v < [views count]; v++) {
+            id label = [[views objectAtIndex:v] accessibilityAttributeValue:NSAccessibilityDescriptionAttribute];
+            if (label)
+                fprintf(stdout, "message %u: %s\n", v, [[label description] UTF8String]);
+        }
+        fflush(stdout);
+        exit(0);
+    }
+    
     [window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     [window makeFirstResponder:input];
@@ -1889,10 +2163,31 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [item setState:(win && [win level] > NSNormalWindowLevel) ? NSOnState : NSOffState];
     }
     if ([item action] == @selector(stopRun:))
-        return busy && !stopping;
-    if ([item action] == @selector(retryLast:) || [item action] == @selector(editLast:))
+        return (busy && !stopping) || [self attachmentsRunning] || [self dictationRunning];
+    if ([item action] == @selector(toggleDictation:)) {
+        [item setTitle:[self isDictating] ? @"Stop Dictating" : @"Dictate"];
+        return !busy || [self isDictating];
+    }
+    if ([item action] == @selector(toggleDictationSend:)) {
+        [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBDictationSend"] ? NSOnState : NSOffState];
+        return YES;
+    }
+    if ([item action] == @selector(toggleAutoSpeak:)) {
+        [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBVoiceAutoSpeak"] ? NSOnState : NSOffState];
+        return YES;
+    }
+    if ([item action] == @selector(toggleVoiceCommands:)) {
+        [item setState:[self voiceCommandsOn] ? NSOnState : NSOffState];
+        return YES;
+    }
+    if ([item action] == @selector(stopSpeaking:))
+        return [self isSpeakingNow];
+    if ([item action] == @selector(editLast:))
+        return !busy && (editBackup || [self lastUserIndex] >= 0);
+    if ([item action] == @selector(retryLast:))
         return !busy && [self lastUserIndex] >= 0;
-    if ([item action] == @selector(compactNow:))
+    if ([item action] == @selector(compactNow:) || [item action] == @selector(attachFile:) || [item action] == @selector(attachPDFPages:)
+        || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:))
         return !busy;
     if ([[[item menu] title] isEqualToString:@"Workspace"]) return !busy && !naming;
     if ([[[item menu] title] isEqualToString:@"Configuration"]) return !busy;
@@ -1942,6 +2237,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self saveStore];
     [self reloadTableSelect:row show:YES];
     [window makeFirstResponder:input];
+    [self sweepStoredFiles];
 }
 
 - (IBAction)newChat:(id)sender
@@ -2090,7 +2386,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.3.1";
+        version = @"1.4";
     NSRunAlertPanel(@"About Tiger Build",
         @"Version %@\nLicensed under the MIT License.",
         @"OK", nil, nil, version);
@@ -2125,6 +2421,23 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         || [name rangeOfString:@".."].location != NSNotFound)
         return;
     open = [self openMessageIn:chat];
+    if ([kind isEqualToString:@"file"]) {
+        /* A file the model made gets its own message, with a Save As button. */
+        NSMutableDictionary *fileMessage = [NSMutableDictionary dictionary];
+        if (open && [[open objectForKey:@"text"] length] == 0 && ![open objectForKey:@"image"]
+            && ![open objectForKey:@"video"] && ![open objectForKey:@"pendingMedia"])
+            [[chat objectForKey:@"messages"] removeObject:open];
+        else if (open)
+            [open setObject:[NSNumber numberWithBool:NO] forKey:@"open"];
+        [fileMessage setObject:@"assistant" forKey:@"role"];
+        [fileMessage setObject:[NSString stringWithFormat:@"%@ (downloading...)", TBDisplayFileName(name)] forKey:@"text"];
+        [fileMessage setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+        [[chat objectForKey:@"messages"] addObject:fileMessage];
+        info = [NSDictionary dictionaryWithObjectsAndKeys:kind, @"kind", name, @"name", fileMessage, @"message", chat, @"chat", nil];
+        [RelayRequest send:@"GET" path:[@"/v1/media/" stringByAppendingString:name] body:nil timeout:60
+            target:self action:@selector(mediaArrived:) context:info];
+        return;
+    }
     /* A message holds one picture or video. A second one (a model showing
        several search results) goes in a new message below. */
     if (open && ([open objectForKey:@"image"] || [open objectForKey:@"video"] || [open objectForKey:@"pendingMedia"])) {
@@ -2158,12 +2471,22 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     NSString *dir = [[self supportDir] stringByAppendingPathComponent:@"media"];
     NSString *path = [dir stringByAppendingPathComponent:[info objectForKey:@"name"]];
     int pending = [[message objectForKey:@"pendingMedia"] intValue] - 1;
-    if (pending > 0)
-        [message setObject:[NSNumber numberWithInt:pending] forKey:@"pendingMedia"];
-    else
-        [message removeObjectForKey:@"pendingMedia"];
+    BOOL isFile = [[info objectForKey:@"kind"] isEqualToString:@"file"];
+    if (!isFile) {
+        if (pending > 0)
+            [message setObject:[NSNumber numberWithInt:pending] forKey:@"pendingMedia"];
+        else
+            [message removeObjectForKey:@"pendingMedia"];
+    }
     [[NSFileManager defaultManager] createDirectoryAtPath:dir attributes:nil];
-    if ([request ok] && [[request data] length] > 0 && [[request data] writeToFile:path atomically:YES]) {
+    if (isFile) {
+        if ([request ok] && [[request data] length] > 0 && [[request data] writeToFile:path atomically:YES]) {
+            [message setObject:path forKey:@"file"];
+            [message setObject:[NSString stringWithFormat:@"%@ (%@)", TBDisplayFileName(path), TBHumanSize([[request data] length])] forKey:@"text"];
+        } else {
+            [message setObject:[NSString stringWithFormat:@"%@ could not be downloaded from the relay.", TBDisplayFileName(path)] forKey:@"text"];
+        }
+    } else if ([request ok] && [[request data] length] > 0 && [[request data] writeToFile:path atomically:YES]) {
         if ([[info objectForKey:@"kind"] isEqualToString:@"image"])
             [message setObject:path forKey:@"image"];
         else
@@ -2384,7 +2707,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     earlier = [NSMutableString string];
     for (i = 0; i < [older count]; i++) {
         NSDictionary *message = [older objectAtIndex:i];
-        NSString *piece = [message objectForKey:@"text"];
+        NSString *piece = TBMessageContent(message);
         if ([piece length] > 4000)
             piece = [piece substringToIndex:4000];
         [earlier appendFormat:@"%@: %@\n\n", [message objectForKey:@"role"], piece];
@@ -2428,6 +2751,23 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
                 if (!inserted) {
                     [rebuilt addObject:summary];
                     inserted = YES;
+                }
+                /* A small attachment stays as it was. A large one is replaced by a note: the summary
+                   has its substance, and the file is still on this Mac. */
+                if ([message objectForKey:@"attachment"]) {
+                    NSDictionary *file = [message objectForKey:@"attachment"];
+                    if ([[file objectForKey:@"tokens"] intValue] <= 3000) {
+                        [rebuilt addObject:message];
+                    } else {
+                        NSMutableDictionary *stub = [NSMutableDictionary dictionaryWithDictionary:file];
+                        NSMutableDictionary *note = [NSMutableDictionary dictionaryWithDictionary:message];
+                        [stub setObject:[NSNumber numberWithBool:YES] forKey:@"stub"];
+                        [stub setObject:[NSNumber numberWithInt:40] forKey:@"tokens"];
+                        [note setObject:stub forKey:@"attachment"];
+                        [note removeObjectForKey:@"image"];
+                        [note setObject:[NSString stringWithFormat:@"Attached earlier: %@ (summarized to save space)", [file objectForKey:@"name"]] forKey:@"text"];
+                        [rebuilt addObject:note];
+                    }
                 }
                 continue;
             }
@@ -2548,14 +2888,18 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 {
     NSArray *messages = [chat objectForKey:@"messages"];
     NSMutableString *body = [NSMutableString stringWithString:@"{\"messages\":["];
+    NSArray *sendImages = [self imageAttachmentsForChat:chat];
     unsigned i;
     BOOL first = YES;
+    TBSetPathHintRoot([[workspaceSettings objectForKey:@"limitRoot"] boolValue] ? [workspaceSettings objectForKey:@"root"] : nil);
     for (i = 0; i < [messages count]; i++) {
         NSDictionary *message = [messages objectAtIndex:i];
         NSString *role;
-        NSString *text = [message objectForKey:@"text"];
+        NSString *text = TBMessageContent(message);
         if ([[message objectForKey:@"status"] boolValue])
             continue;
+        if ([[[message objectForKey:@"attachment"] objectForKey:@"kind"] isEqualToString:@"image"] && ![sendImages containsObject:message])
+            text = [text stringByAppendingString:@" (This picture is no longer sent with the conversation; ask the person to attach it again if you need to see it.)"];
         if ([[message objectForKey:@"open"] boolValue] && [text length] == 0)
             continue;
         if ([[message objectForKey:@"role"] isEqualToString:@"user"])
@@ -2565,7 +2909,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         if (!first)
             [body appendString:@","];
         first = NO;
-        [body appendFormat:@"{\"role\":\"%@\",\"content\":\"%@\"}", role, TBJSONEscape(text)];
+        [body appendFormat:@"{\"role\":\"%@\",\"content\":\"%@\"", role, TBJSONEscape(text)];
+        if ([sendImages containsObject:message]) {
+            NSData *picture = [NSData dataWithContentsOfFile:[[message objectForKey:@"attachment"] objectForKey:@"path"]];
+            if (picture)
+                [body appendFormat:@",\"images\":[{\"mime\":\"%@\",\"data\":\"%@\"}]",
+                    TBImageMime([[message objectForKey:@"attachment"] objectForKey:@"path"]), TBBase64(picture)];
+        }
+        [body appendString:@"}"];
     }
     /* Provider and model come from saved chats and the local server's model
        list, so they are escaped like any other text. */
@@ -2581,6 +2932,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         TBJSONEscape(NSUserName()), TBJSONEscape(NSHomeDirectory())];
     [body appendString:[self runOptionsJSONForChat:chat]];
     [body appendString:@"}"];
+    TBSetPathHintRoot(nil);
     return body;
 }
 
@@ -2633,6 +2985,16 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         NSBeep();
         return;
     }
+    if ([self chatHasAttachments:current] && ![self confirmCloudAttach]) {
+        NSBeep();
+        return;
+    }
+    if ([self relayTooOldForPictures:current]) {
+        [self setRelayProblem:[NSString stringWithFormat:@"The relay is version %@, which does not pass attached pictures to the model. Update it to 1.4 (or remove the pictures from this chat).", relayVersion]];
+        NSBeep();
+        return;
+    }
+    [self stopSpeaking:nil];
     [self forgetEdit];
     [input setStringValue:@""];
     if (editor)
@@ -2711,6 +3073,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     lastFrame = CFAbsoluteTimeGetCurrent();
     sideRequest = nil;
     payload = [[self requestBodyForChat:chat] dataUsingEncoding:NSUTF8StringEncoding];
+    if ([payload length] > 38 * 1024 * 1024) {
+        [self addStatus:[NSString stringWithFormat:@"This chat with its attached files is %.0f MB, more than the relay accepts (38 MB). Remove or shorten some attachments, or start a new chat.",
+            [payload length] / 1048576.0] toChat:chat];
+        [self finishWithoutStream:chat];
+        return;
+    }
     message = [RelayRequest copyMessage:@"POST" path:@"/v1/chat" body:payload];
     if (!message) {
         [self addStatus:@"Set the relay address and token in Preferences first." toChat:chat];
@@ -2859,8 +3227,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self updateContextReadout];
     }
     [self setBusy:NO];
-    if (chat)
+    if (chat) {
+        [self speakFinishedReplyIfWanted:chat];
         [self autonameChat:chat];
+    }
 }
 
 - (void)dispatchFrameKind:(char)kind payload:(NSData *)payload
@@ -2915,6 +3285,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             NSString *state=finished?([[event objectForKey:@"failed"] boolValue]?@"Failed":@"Completed"):@"Running";
             [activity setObject:[NSString stringWithFormat:@"%@ - %@%@",[event objectForKey:@"name"],state,
                 finished?[NSString stringWithFormat:@" (%.1fs)",[[event objectForKey:@"elapsed"] doubleValue]]:@""] forKey:@"text"];
+            if(finished&&[event objectForKey:@"files"]) {
+                /* A diff or commit: what changed, as +added -removed in n files. */
+                int files=[[event objectForKey:@"files"] intValue];
+                [activity setObject:[NSString stringWithFormat:@"%@   %d file%@  +%d  %C%d",[activity objectForKey:@"text"],files,files==1?@"":@"s",
+                    [[event objectForKey:@"added"] intValue],(unichar)0x2212,[[event objectForKey:@"removed"] intValue]] forKey:@"text"];
+            }
             [activity setObject:[NSString stringWithFormat:@"%@\n\n%@",[event objectForKey:@"detail"],[event objectForKey:@"output"]] forKey:@"detail"];
             [activity setObject:[event objectForKey:@"failed"] forKey:@"failed"];
             [self refreshTranscriptIfCurrent:chat];
@@ -2940,8 +3316,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self guidanceDelivered:text chat:chat];
     else if (kind == 'c')
         [self addStatus:text toChat:chat];
-    else if (kind == 't')
+    else if (kind == 't') {
         [self appendDelta:text toChat:chat];
+        /* A long reply is saved now and then as it arrives, so quitting or a crash does not lose it. */
+        if (lastFrame - lastPartialSave > 8) {
+            lastPartialSave = lastFrame;
+            [self saveStore];
+        }
+    }
     else if (kind == 'm')
         [self attachMedia:text toChat:chat];
     else if (kind == 's' || kind == 'e')

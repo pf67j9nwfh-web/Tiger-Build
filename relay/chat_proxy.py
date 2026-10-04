@@ -36,6 +36,7 @@ from security import token_ok
 from security import token_path
 from version import VERSION
 from integrations import fetch_image
+from outputs import save as save_output_file
 from media import create_media
 from media import media_dir
 from media import media_tools
@@ -363,6 +364,8 @@ OFFLINE_RETRY_SECONDS = 15
 
 CONSULT_TOOL = "consult_model"
 SCREENSHOT_TOOL = "take_screenshot"
+# Commander tools that cannot change anything never ask first, however approval is set.
+READ_ONLY_TOOLS = ("git_read", "svn_read", "repo_info")
 LIMIT_NOTE = (
     "\n\n[The reply stopped here because the model reached its output limit. "
     "Say \"continue\" and it will pick up where it left off.]"
@@ -457,12 +460,33 @@ def cached_status(config):
     return entry["tools"] is not None, entry["code"], entry["detail"] or entry["offline"]
 
 
+def local_addresses():
+    """The addresses of this computer, for telling a tunnelled request from a remote one."""
+    found = set(["127.0.0.1", "::1"])
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            found.add(info[4][0].split("%")[0])
+    except OSError:
+        pass
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("10.255.255.255", 1))
+        found.add(probe.getsockname()[0])
+        probe.close()
+    except OSError:
+        pass
+    return found
+
+
 def clean_options(incoming):
     """The per-chat switches Tiger Build sends with a request. Anything that is
     not the expected shape is ignored."""
-    options = {"servers": {}, "approve": {}, "root": ""}
+    options = {"servers": {}, "approve": {}, "root": "", "instructions": ""}
     if not isinstance(incoming, dict):
         return options
+    instructions = incoming.get("instructions")
+    if isinstance(instructions, str):
+        options["instructions"] = clean_text(instructions.strip())[:4000]
     for name in ("servers", "approve"):
         table = incoming.get(name)
         if isinstance(table, dict):
@@ -493,6 +517,18 @@ def supports_images(provider, model):
     return False
 
 
+def without_pictures(messages):
+    """For a model that cannot look at pictures: drop them and say so in the message."""
+    out = []
+    for item in messages:
+        if item.get("images"):
+            count = len(item["images"])
+            item = {k: v for k, v in item.items() if k != "images"}
+            item["content"] += "\n[%d attached picture%s not shown: this model cannot view pictures.]" % (count, "" if count == 1 else "s")
+        out.append(item)
+    return out
+
+
 _CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -517,6 +553,34 @@ def _clean(data):
 
 def _plist(data):
     return plistlib.dumps(_clean(data), fmt=plistlib.FMT_XML).decode()
+
+
+_COMMIT_LINE = re.compile(r"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?")
+
+
+def change_stats(name, output):
+    """(files, added, removed) from a diff or a commit's own summary line, or None when the output has neither.
+    Counts the + and - lines of a unified diff (git or Subversion), leaving out the +++ and --- headers."""
+    if name not in ("git_read", "git_write", "svn_read", "svn_write") or not output:
+        return None
+    found = _COMMIT_LINE.search(output)
+    if found:
+        return int(found.group(1)), int(found.group(2) or 0), int(found.group(3) or 0)
+    files = added = removed = 0
+    seen = False
+    for line in output.split("\n"):
+        if line.startswith("diff --git ") or line.startswith("Index: "):
+            files += 1
+            seen = True
+        elif line.startswith("+++ ") or line.startswith("--- "):
+            seen = True
+        elif line.startswith("+") and seen:
+            added += 1
+        elif line.startswith("-") and seen and not line.startswith("-----"):
+            removed += 1
+    if not seen:
+        return None
+    return max(files, 1), added, removed
 
 
 class ToolSession(object):
@@ -736,9 +800,13 @@ class ToolSession(object):
         args = self._call_args(call)
         name = call.get("name") or "tool"
         detail = args.get("command") or args.get("input") or args.get("query") or args.get("url") or args.get("question") or json.dumps(args, ensure_ascii=False)
-        return _plist({"id": call.get("id") or call.get("call_id") or name, "name": name, "phase": phase,
-                       "detail": str(detail)[:20000], "output": str(output)[:100000],
-                       "failed": bool(failed), "elapsed": float(elapsed)})
+        event = {"id": call.get("id") or call.get("call_id") or name, "name": name, "phase": phase,
+                 "detail": str(detail)[:20000], "output": str(output)[:100000],
+                 "failed": bool(failed), "elapsed": float(elapsed)}
+        stats = change_stats(name, str(output)) if phase == "result" and not failed else None
+        if stats:
+            event["files"], event["added"], event["removed"] = stats
+        return _plist(event)
 
     # ---- model consult ----
 
@@ -849,6 +917,14 @@ class ToolSession(object):
                 return "Asking another model", self._consult(args), None, False, []
             except Exception as exc:
                 return "Asking another model", "error: %s" % exc, None, True, []
+        if name == "agent_save_file":
+            try:
+                if name not in self.extra.offered:
+                    raise ValueError("Tool was not enabled or advertised for this request.")
+                stored = save_output_file(args.get("name"), args.get("content"), content_base64=args.get("content_base64"))
+            except Exception as exc:
+                return "Saving a file", "error: %s" % exc, None, True, []
+            return "Saving a file", "The file is now in the chat with a Save As button. Do not paste it again.", "file " + stored, False, []
         if name == "agent_show_image":
             try:
                 if name not in self.extra.offered:
@@ -865,12 +941,22 @@ class ToolSession(object):
         if not self.extra.config['ppc_enabled']:
             return "Commander disabled", "error: Commander is disabled in the relay's tool settings.", None, True, []
         images = []
+        shown = None
         try:
             client = self._client_for(client_holder)
             result = client.request("tools/call", {"name": name, "arguments": args})
             output = result_text(result)
             failed = bool(isinstance(result, dict) and result.get("isError"))
             images = result_images(result)
+            if images and not failed:
+                # Show the picture the model looked at in the chat too.
+                try:
+                    import base64
+                    from media import save_bytes
+                    ext = {"image/png": "png", "image/gif": "gif"}.get(images[0]["mime"], "jpg")
+                    shown = "image " + save_bytes(base64.b64decode(images[0]["data"]), ext)
+                except Exception:
+                    shown = None
         except Exception as exc:
             self.run.check()
             if client_holder[0] is not None:
@@ -884,12 +970,14 @@ class ToolSession(object):
             failed = True
             # The next request should look at the link again.
             invalidate_tools(self.config.get("TIGER_HOST"))
-        return tool_summary(name, args), output, None, failed, images
+        return tool_summary(name, args), output, shown, failed, images
 
     def _gate(self, call):
         """Ask the person before a tool runs, when approval is on for it.
         Yields the question for Tiger Build; returns "allow" or "deny"."""
         key = self._tool_key(call.get("name") or "")
+        if (call.get("name") or "") in READ_ONLY_TOOLS:
+            return "allow"
         if not self._needs_approval(key):
             return "allow"
         call_id = call.get("id") or call.get("call_id") or call.get("name") or "call"
@@ -963,6 +1051,8 @@ class ToolSession(object):
     def _iter_turn(self, messages, use_tools, provider, model, system_override):
         refresh_settings()
         chosen = resolve_model(provider, model)
+        if not supports_images(provider, chosen):
+            messages = without_pictures(messages)
         skip = self.skip_keys()
         tools = []
         if use_tools and not system_override:
@@ -1019,14 +1109,21 @@ class ToolSession(object):
             ) % (self.account(), self.home(), self.home())
             if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
+            if any(t.get("name") == "repo_info" for t in tools):
+                system += (" For source control on that Mac, start with repo_info. Use git_read and svn_read to look and git_write and "
+                           "svn_write to change things. Check status and diff before committing, write a clear message, commit only what "
+                           "was asked for, and never force-push. git may not be installed, and Subversion 1.4 to 1.6 lacks newer options.")
             if any(t.get("name") == "view_image" for t in tools):
-                system += (" To look at a picture file on that Mac (JPEG, PNG, GIF, TIFF, PDF and so on), call view_image "
-                           "with its path; read_file only returns text.")
+                system += " To look at a picture file on that Mac, call view_image with its path; read_file returns only text."
             if self.options["root"]:
                 system += (
                     " This workspace is restricted to the directory %s. File tools and shell commands "
                     "cannot reach outside it; work inside it."
                 ) % self.options["root"]
+        if not system_override and any(t.get("name") == "agent_save_file" for t in tools):
+            system += (" Attached files appear in the conversation (documents as text, pictures as pictures). To give the person a new or "
+                       "changed file, call agent_save_file with its whole content; a name ending .docx, .xlsx or .pdf makes a real file "
+                       "from plain text (for .xlsx, tab or comma separated rows).")
         if any(t.get("name") == CONSULT_TOOL for t in tools):
             system += (
                 " You may use consult_model to get a second opinion from another model on hard "
@@ -1034,6 +1131,8 @@ class ToolSession(object):
             )
         if self.extra.errors:
             sys.stderr.write("tigerbuild-relay: custom MCP connection failures: %s\n" % "; ".join(self.extra.errors))
+        if not system_override and self.options.get("instructions"):
+            system += " The person's instructions for this chat: " + self.options["instructions"]
         if provider == "grok":
             system = system.replace("You are an assistant", "You are Grok", 1)
         try:
@@ -1056,7 +1155,7 @@ class ToolSession(object):
         payload = {
             "model": chosen,
             "store": True,
-            "input": [{"role": "system", "content": system}] + messages,
+            "input": [{"role": "system", "content": system}] + openai_responses_input(messages),
         }
         if not bare and self.extra.config['grok_native_search'] and "search" not in self.skip_keys():
             tools = list(tools) + [{"type": "web_search"}]
@@ -1256,7 +1355,10 @@ class ToolSession(object):
     def _iter_foreign(self, provider, messages, system, tools, model):
         log = []
         for message in messages:
-            log.append({"role": message["role"], "content": message["content"]})
+            entry = {"role": message["role"], "content": message["content"]}
+            if message.get("images"):
+                entry["images"] = message["images"]
+            log.append(entry)
         client_holder = [None]
         round_index = 0
         last_output = ""
@@ -1450,8 +1552,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
-        if length < 0 or length > 1000000:
-            raise RuntimeError("request is too large")
+        if length < 0 or length > 40000000:
+            raise RuntimeError("The conversation with its attached files is %.0f MB, more than the relay accepts (%.0f MB). "
+                               "Remove some attachments, or start a new chat." % (length / 1048576.0, 40000000 / 1048576.0))
         raw = self.rfile.read(length) if length else b""
         try:
             incoming = json.loads(raw.decode("utf-8")) if raw else {}
@@ -1475,12 +1578,28 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError("messages need role user or assistant and string content")
             if content.strip() == "":
                 continue
-            cleaned.append({"role": role, "content": content})
+            entry = {"role": role, "content": content}
+            pictures = self._clean_pictures(item.get("images")) if role == "user" else []
+            if pictures:
+                entry["images"] = pictures
+            cleaned.append(entry)
         if not cleaned:
             raise RuntimeError("messages must be a non-empty list")
         if require_user_end and cleaned[-1]["role"] != "user":
             raise RuntimeError("the last message must be from the user")
         return cleaned
+
+    @staticmethod
+    def _clean_pictures(value):
+        """Pictures the person attached to a message: [{"mime", "data" (base64)}]."""
+        pictures = []
+        if not isinstance(value, list):
+            return pictures
+        for image in value[:8]:
+            if (isinstance(image, dict) and image.get("mime") in ("image/jpeg", "image/png", "image/gif")
+                    and isinstance(image.get("data"), str) and 0 < len(image["data"]) <= 8000000):
+                pictures.append({"mime": image["mime"], "data": image["data"]})
+        return pictures
 
     def _provider_and_model(self, incoming):
         try:
@@ -1655,6 +1774,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/history":
             self._history_download()
             return
+        if path == "/v1/version":
+            from version import VERSION
+            self._send(200, VERSION + "\n")
+            return
         if path == "/v1/tools":
             from integrations import catalogue
             target, _address = self._client_target()
@@ -1701,6 +1824,8 @@ class Handler(BaseHTTPRequestHandler):
                 kind = "image/png"
             elif name.endswith(".gif"):
                 kind = "image/gif"
+            elif not name.endswith((".jpg", ".jpeg", ".png", ".mp4")):
+                kind = "application/octet-stream"
             elif name.endswith(".mp4"):
                 kind = "video/mp4"
             self.send_response(200)
@@ -1733,10 +1858,79 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, "not found\n")
 
+    def _transcribe(self):
+        """A recorded clip (WAV) in, its words out as plain text. See transcribe.py."""
+        import transcribe as speech
+        try:
+            size = int(self.headers.get("Content-Length") or "0")
+            if size < 100 or size > speech.MAX_BYTES:
+                raise ValueError("Recordings from a moment to about three minutes can be transcribed.")
+            self.connection.settimeout(120)
+            data = self.rfile.read(size)
+            if len(data) != size:
+                raise ValueError("The upload was cut short.")
+            text, service = speech.transcribe(data, ssl_context(), (self.headers.get("X-Language") or "")[:8])
+        except speech.NoService as exc:
+            self._send(424, str(exc) + "\n")
+            return
+        except ValueError as exc:
+            self._send(422, str(exc) + "\n")
+            return
+        except Exception as exc:
+            self._send(502, "Could not transcribe: %s\n" % exc)
+            return
+        payload = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("X-Transcribed-By", service)
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _extract(self):
+        """Turn an Office, iWork, HEIC or WebP file into text and JPEG pictures (see extract.py)."""
+        import extract as converter
+        from urllib.parse import unquote
+        try:
+            size = int(self.headers.get("Content-Length") or "0")
+            if size < 1 or size > 80 * 1024 * 1024:
+                raise ValueError("Files from 1 byte to 80 MB can be converted.")
+            self.connection.settimeout(120)
+            data = self.rfile.read(size)
+            if len(data) != size:
+                raise ValueError("The upload was cut short.")
+            name = unquote(self.headers.get("X-Filename") or "file")
+            if not converter.handles(name):
+                raise ValueError("The relay does not convert this kind of file.")
+            result = converter.extract(name, data)
+        except converter.Busy as exc:
+            self._send(503, str(exc) + "\n")
+            return
+        except (ValueError, converter.Unsupported) as exc:
+            self._send(422, str(exc) + "\n")
+            return
+        except Exception as exc:
+            self._send(500, "Could not convert the file: %s\n" % exc)
+            return
+        payload = plistlib.dumps({"text": result["text"], "images": result["images"], "note": result["note"]}, fmt=plistlib.FMT_XML)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-plist")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_POST(self):
         if not self._authorized():
             return
         path = self.path.split("?", 1)[0]
+        if path == "/v1/extract":
+            self._extract()
+            return
+        if path == "/v1/transcribe":
+            self._transcribe()
+            return
         if path in ("/v1/integrations", "/v1/config-import"):
             from integrations import write as write_integrations
             from config_backup import restore
@@ -1800,10 +1994,10 @@ class Handler(BaseHTTPRequestHandler):
             requested_model = None
         streaming = self.headers.get("X-TigerBuild-Protocol") == "frames"
         run = runs.start(incoming.get("run"))
-        session = ToolSession(run, clean_options(incoming), self.client_address[0] if self.client_address else "")
+        session = ToolSession(run, clean_options(incoming), self._caller_address())
         reported = session.set_client(incoming.get("client"))
         if reported:
-            note_client(self.client_address[0] if self.client_address else "", reported)
+            note_client(self._caller_address(), reported)
         if not streaming:
             try:
                 reply = session.run_turn(cleaned, use_tools, provider, requested_model)
@@ -1877,10 +2071,24 @@ class Handler(BaseHTTPRequestHandler):
     def _lines(self, rows):
         self._send(200, "".join("%s=%s\n" % (key, str(value).replace("\n", " ")) for key, value in rows))
 
+    def _caller_address(self):
+        """Who is asking. Normally the address the connection came from. A client reaching the relay
+        through an SSH tunnel arrives from the relay computer itself, so it says which Mac it is in
+        X-TigerBuild-Client (its own addresses, comma separated); that is believed only when the
+        connection is from this computer and one of the addresses is on the allowed list."""
+        address = self.client_address[0] if self.client_address else ""
+        claimed = self.headers.get("X-TigerBuild-Client", "")
+        if claimed and (address in ("127.0.0.1", "::1") or address == self.server.server_address[0] or address in local_addresses()):
+            for piece in claimed.split(","):
+                piece = piece.strip()
+                if piece and piece in ALLOWED and piece not in ("127.0.0.1", "::1"):
+                    return piece
+        return address
+
     def _client_target(self):
         """(config, is_relay_itself): the Commander settings for whoever is asking."""
         config = load_shell_config()
-        address = self.client_address[0] if self.client_address else ""
+        address = self._caller_address()
         return connection.target_config(config, address), address
 
     def _ssh_state(self):
@@ -2210,6 +2418,16 @@ def main(argv):
     pricing.start(ssl_context())
     # The default queue holds 5 waiting connections, so a burst of chats from
     # several computers had some of them reset before the relay accepted them.
+    def prune_loop():
+        import time
+        from media import prune_media
+        while True:
+            try:
+                prune_media(3)
+            except Exception:
+                pass
+            time.sleep(6 * 3600)
+    threading.Thread(target=prune_loop, daemon=True).start()
     ThreadingHTTPServer.request_queue_size = 128
     server = ThreadingHTTPServer((address, port), Handler)
     server.daemon_threads = True

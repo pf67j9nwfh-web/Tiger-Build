@@ -62,6 +62,7 @@ FLAGS = (
 )
 TEXT = {"type": "string"}
 AUXILIARY = (
+    "agent_save_file",
     "agent_web_search",
     "agent_image_search",
     "agent_show_image",
@@ -218,6 +219,19 @@ def function(name, desc, props, required=()):
 
 def auxiliary(provider, config, skip=()):
     tools = []
+    if "toolbox" not in skip:
+        tools.append(function(
+            "agent_save_file",
+            "Hand the person a file to save on their Mac: a new document, script, data file, or the complete changed "
+            "version of a file they attached. Give the whole content. They get a Save As button in the chat. "
+            "Use this instead of pasting long files into the reply when they ask for a file. A name ending in .docx, "
+            ".xlsx or .pdf makes a real Word, Excel or PDF file: for .docx and .pdf give plain text (# headings, - bullets, "
+            "**bold**, | tables | work); for .xlsx give rows separated by new lines and cells by tabs or commas.",
+            {"name": {"type": "string", "description": "File name with extension, for example report.docx, data.xlsx, notes.md or fixed.py."},
+             "content": {"type": "string", "description": "The complete text of the file."},
+             "content_base64": {"type": "string", "description": "Instead of content: the file's bytes as base64, for a binary file such as an image (up to 8 MB)."}},
+            ("name",),
+        ))
     if config["toolbox_enabled"] and "toolbox" not in skip:
         tools.append(function("agent_current_time", "Current UTC date and time.", {}))
         tools.append(function("agent_notes_read", "Read persistent agent scratch notes on the relay host.", {}))
@@ -308,7 +322,7 @@ def _keyed_search(query, provider, key, config):
     return json.dumps(rows, ensure_ascii=False)
 
 
-UA = "TigerBuildRelay/1.3.1 (Tiger Build chat relay; https://github.com/pf67j9nwfh-web/Tiger-Build) python-urllib"
+UA = "TigerBuildRelay/1.4 (Tiger Build chat relay; https://github.com/pf67j9nwfh-web/Tiger-Build) python-urllib"
 
 
 def _get(url, data=None, headers=None, timeout=20, limit=2000000):

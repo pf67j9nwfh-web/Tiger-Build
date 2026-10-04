@@ -19,6 +19,8 @@ extern NSString *TBRelayTokenHeader;
     SEL action;
     id context;
     NSString *path;
+    NSData *fileData;
+    NSString *fileName;
 }
 
 + (NSString *)supportDir;
@@ -36,6 +38,15 @@ extern NSString *TBRelayTokenHeader;
                 target:(id)target
                 action:(SEL)action
                context:(id)context;
+
+/* POST a file's bytes (X-Filename carries its name) and get the relay's answer. */
++ (RelayRequest *)sendFile:(NSData *)data
+                      name:(NSString *)name
+                      path:(NSString *)path
+                   timeout:(double)seconds
+                    target:(id)target
+                    action:(SEL)action
+                   context:(id)context;
 
 - (void)cancel;
 - (int)status;

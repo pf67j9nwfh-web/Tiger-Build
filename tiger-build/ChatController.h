@@ -4,7 +4,8 @@
 @class RelayRequest;
 @class TBStore;
 
-@interface ChatController : NSObject {
+@interface ChatController : NSObject TB_PROTOCOLS(NSApplicationDelegate, NSWindowDelegate, NSSplitViewDelegate, NSTableViewDataSource,
+    NSTableViewDelegate, NSTextFieldDelegate, NSMenuDelegate, NSSpeechRecognizerDelegate) {
     NSWindow *window;
     NSPopUpButton *workspacePopup;
     NSView *content;
@@ -17,6 +18,26 @@
     NSButton *stopButton;
     NSButton *editButton;
     NSButton *retryButton;
+    NSButton *attachButton;
+    NSMutableArray *attachQueue;
+    RelayRequest *attachRequest;
+    int attachGeneration;
+    NSTextView *fieldEditor;
+    id finder;
+    unsigned long dictationDevice;
+    unsigned long dictationRate;
+    double dictationStarted;
+    NSTimer *dictationTimer;
+    RelayRequest *dictationRequest;
+    NSString *dictationSaved;
+    NSSpeechSynthesizer *voiceSynth;
+    NSSpeechSynthesizer *voiceSample;
+    NSSpeechRecognizer *voiceRecognizer;
+    NSPopUpButton *voicePopup;
+    double lastPartialSave;
+    NSMutableArray *attachProblems;
+    BOOL attachWorking;
+    NSString *relayVersion;
     NSTextField *thinkingField;
     NSString *runId;
     NSMutableDictionary *workspaceSettings;

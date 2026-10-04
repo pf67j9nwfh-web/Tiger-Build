@@ -1,4 +1,5 @@
 #import "TBSupport.h"
+#import "TBMarkup.h"
 
 NSString *TBJSONEscape(NSString *value)
 {
@@ -279,6 +280,11 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
         unsigned wide = 0;
         if ([[message objectForKey:@"status"] boolValue])
             continue;
+        if ([message objectForKey:@"attachment"]) {
+            /* Counted when the file was attached, so a long text is not read again on every update. */
+            tokens += [[[message objectForKey:@"attachment"] objectForKey:@"tokens"] intValue] + 12;
+            continue;
+        }
         text = [message objectForKey:@"text"];
         n = [text length];
         for (j = 0; j < n; j++) {
@@ -294,6 +300,335 @@ int TBEstimateTokens(NSArray *messages, BOOL toolsOn)
     /* The relay adds a system prompt, and the tool list when Commander is on. */
     tokens += toolsOn ? 3500 : 400;
     return (int)tokens;
+}
+
+/* ---- attached files ---- */
+
+NSString *TBHumanSize(double bytes)
+{
+    if (bytes < 1024)
+        return [NSString stringWithFormat:@"%.0f bytes", bytes];
+    if (bytes < 1024 * 1024)
+        return [NSString stringWithFormat:@"%.0f KB", bytes / 1024.0];
+    return [NSString stringWithFormat:@"%.1f MB", bytes / (1024.0 * 1024.0)];
+}
+
+NSString *TBImageMime(NSString *path)
+{
+    NSString *ext = [[path pathExtension] lowercaseString];
+    if ([ext isEqualToString:@"png"])
+        return @"image/png";
+    if ([ext isEqualToString:@"gif"])
+        return @"image/gif";
+    return @"image/jpeg";
+}
+
+/* The text of a file, or nil when it is not text. Reads at most maxBytes; the
+   flag says whether there was more. UTF-8 first, then the Mac's own encoding. */
+NSString *TBReadTextFile(NSString *path, unsigned maxBytes, BOOL *truncated)
+{
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+    NSData *data;
+    NSString *text;
+    const unsigned char *bytes;
+    unsigned n;
+    unsigned i;
+    unsigned cut;
+    if (truncated)
+        *truncated = NO;
+    if (!handle)
+        return nil;
+    data = [handle readDataOfLength:maxBytes + 1];
+    [handle closeFile];
+    n = [data length];
+    bytes = (const unsigned char *)[data bytes];
+    if (n > maxBytes) {
+        n = maxBytes;
+        if (truncated)
+            *truncated = YES;
+    }
+    for (i = 0; i < n && i < 8192; i++) {
+        if (bytes[i] == 0)
+            return nil;
+    }
+    cut = n;
+    /* Do not cut a UTF-8 character in two. */
+    if (truncated && *truncated) {
+        while (cut > 0 && (bytes[cut - 1] & 0xC0) == 0x80)
+            cut--;
+        if (cut > 0 && bytes[cut - 1] >= 0xC0)
+            cut--;
+    }
+    text = [[[NSString alloc] initWithBytes:bytes length:cut encoding:NSUTF8StringEncoding] autorelease];
+    if (!text)
+        text = [[[NSString alloc] initWithBytes:bytes length:n encoding:NSMacOSRomanStringEncoding] autorelease];
+    return text;
+}
+
+NSString *TBDisplayFileName(NSString *stored)
+{
+    NSString *name = [stored lastPathComponent];
+    unsigned i;
+    if ([name length] > 17 && [name characterAtIndex:16] == '-') {
+        for (i = 0; i < 16; i++) {
+            unichar c = [name characterAtIndex:i];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+                return name;
+        }
+        return [name substringFromIndex:17];
+    }
+    return name;
+}
+
+static NSString *pathHintRoot = nil;
+
+void TBSetPathHintRoot(NSString *root)
+{
+    [pathHintRoot release];
+    pathHintRoot = [root length] > 0 ? [root copy] : nil;
+}
+
+/* " A copy is on their Mac at ~/Library/...": the home folder is written as ~ so the account name
+   is not repeated to the service, and nothing is said when a workspace restriction hides the copy. */
+static NSString *copyHint(NSString *path, NSString *what)
+{
+    NSString *home = NSHomeDirectory();
+    NSString *shown = path;
+    if (![path isKindOfClass:[NSString class]] || [path length] == 0)
+        return @"";
+    if (pathHintRoot && ![path hasPrefix:pathHintRoot])
+        return @"";
+    if ([path hasPrefix:home])
+        shown = [@"~" stringByAppendingString:[path substringFromIndex:[home length]]];
+    return [NSString stringWithFormat:@" %@ is on their Mac at %@.", what, shown];
+}
+
+/* What a message says to the model: for an attached text file, the file. */
+NSString *TBMessageContent(NSDictionary *message)
+{
+    NSDictionary *file = [message objectForKey:@"attachment"];
+    NSString *name;
+    NSString *kind;
+    NSString *body;
+    BOOL truncated = NO;
+    if (!file)
+        return [message objectForKey:@"text"];
+    name = [file objectForKey:@"name"];
+    kind = [file objectForKey:@"kind"];
+    if ([[file objectForKey:@"stub"] boolValue])
+        return [NSString stringWithFormat:@"[The person attached \"%@\" earlier in the conversation. Its content is summarized in the summary above to save space.%@]",
+            name, copyHint([file objectForKey:@"path"], @"The original")];
+    if ([kind isEqualToString:@"image"])
+        return [NSString stringWithFormat:@"[The person attached a picture named \"%@\".%@%@]",
+            name, copyHint([file objectForKey:@"path"], @"A copy"), [file objectForKey:@"note"] ? [@" " stringByAppendingString:[file objectForKey:@"note"]] : @""];
+    body = TBReadTextFile([file objectForKey:@"path"], TB_ATTACH_TEXT_MAX, &truncated);
+    if (!body)
+        return [NSString stringWithFormat:@"[The person attached a file named \"%@\", but it is no longer available on this Mac.]", name];
+    return [NSString stringWithFormat:@"[The person attached a file named \"%@\". Its contents%@ follow.%@%@]\n\n%@\n\n[End of \"%@\".]",
+        name, truncated ? @" (only the first part; the file is longer)" : @"", copyHint([file objectForKey:@"path"], @"A text copy"),
+        [file objectForKey:@"note"] ? [@" Note: " stringByAppendingString:[file objectForKey:@"note"]] : @"", body, name];
+}
+
+static const char base64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+NSString *TBBase64(NSData *data)
+{
+    const unsigned char *in = (const unsigned char *)[data bytes];
+    unsigned n = [data length];
+    unsigned i;
+    unsigned o = 0;
+    char *out = (char *)malloc(((n + 2) / 3) * 4 + 1);
+    NSString *result;
+    if (!out)
+        return @"";
+    for (i = 0; i + 2 < n; i += 3) {
+        out[o++] = base64Table[in[i] >> 2];
+        out[o++] = base64Table[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+        out[o++] = base64Table[((in[i + 1] & 15) << 2) | (in[i + 2] >> 6)];
+        out[o++] = base64Table[in[i + 2] & 63];
+    }
+    if (i < n) {
+        out[o++] = base64Table[in[i] >> 2];
+        if (i + 1 < n) {
+            out[o++] = base64Table[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+            out[o++] = base64Table[(in[i + 1] & 15) << 2];
+        } else {
+            out[o++] = base64Table[(in[i] & 3) << 4];
+            out[o++] = '=';
+        }
+        out[o++] = '=';
+    }
+    out[o] = 0;
+    result = [NSString stringWithUTF8String:out];
+    free(out);
+    return result;
+}
+
+typedef struct { unsigned long code; const char *name; } EmojiName;
+
+static const EmojiName emojiTable[] = {
+    {0x1F600, ":D"}, {0x1F603, ":D"}, {0x1F604, ":D"}, {0x1F601, ":D"}, {0x1F60A, ":)"}, {0x1F642, ":)"}, {0x1F609, ";)"},
+    {0x1F641, ":("}, {0x1F61E, ":("}, {0x1F622, ":'("}, {0x1F62D, ":'("}, {0x1F62E, ":O"}, {0x1F61B, ":P"},
+    {0x1F602, "(laughing)"}, {0x1F923, "(laughing)"}, {0x1F914, "(thinking)"}, {0x1F60E, "(cool)"}, {0x1F60D, "(love)"},
+    {0x1F680, "(rocket)"}, {0x1F44D, "(+1)"}, {0x1F44E, "(-1)"}, {0x1F44F, "(clap)"}, {0x1F44B, "(wave)"}, {0x1F64F, "(thanks)"},
+    {0x1F389, "(party)"}, {0x1F525, "(fire)"}, {0x1F4A1, "(idea)"}, {0x1F4DD, "(note)"}, {0x1F4C4, "(file)"}, {0x1F4C1, "(folder)"},
+    {0x1F50D, "(search)"}, {0x1F527, "(tool)"}, {0x1F4CA, "(chart)"}, {0x1F4D6, "(book)"}, {0x1F4BB, "(computer)"}, {0x1F512, "(lock)"},
+    {0x1F41B, "(bug)"}, {0x1F4AF, "(100)"}, {0x2705, "(check)"}, {0x274C, "(x)"}, {0x26A0, "(warning)"}, {0x2728, "*"}, {0x2B50, "*"},
+    {0x1F31F, "*"}, {0x2600, "(sun)"}, {0x26A1, "(zap)"}, {0x1F496, "(heart)"}, {0x1F499, "<3"}, {0x1F49A, "<3"}, {0x2139, "(info)"},
+    {0, NULL}
+};
+
+static BOOL isPictograph(unichar c)
+{
+    return c == 0x2705 || c == 0x274C || c == 0x26A0 || c == 0x2728 || c == 0x2600 || c == 0x26A1 || c == 0x2139 || (c >= 0x2B00 && c <= 0x2BFF);
+}
+
+NSString *TBDisplayText(NSString *text)
+{
+    NSMutableString *out;
+    unsigned n = [text length];
+    unsigned i;
+    BOOL needed = NO;
+    if (n == 0 || TBSystemMinor() >= 7)
+        return text;
+    for (i = 0; i < n; i++) {
+        unichar c = [text characterAtIndex:i];
+        if ((c >= 0xD800 && c <= 0xDFFF) || c == 0xFE0F || c == 0x200D || isPictograph(c)) {
+            needed = YES;
+            break;
+        }
+    }
+    if (!needed)
+        return text;
+    out = [NSMutableString stringWithCapacity:n];
+    i = 0;
+    while (i < n) {
+        unichar c = [text characterAtIndex:i];
+        if (c == 0xFE0F || c == 0x200D) {
+            i++;
+        } else if ((c >= 0xD800 && c <= 0xDBFF && i + 1 < n) || isPictograph(c)) {
+            unsigned long code = c;
+            const EmojiName *row;
+            if (c >= 0xD800 && c <= 0xDBFF) {
+                unichar low = [text characterAtIndex:i + 1];
+                code = 0x10000 + (((unsigned long)c - 0xD800) << 10) + ((unsigned long)low - 0xDC00);
+                i += 2;
+            } else {
+                i++;
+            }
+            for (row = emojiTable; row->name; row++) {
+                if (row->code == code) {
+                    NSString *name = [NSString stringWithUTF8String:row->name];
+                    unsigned have = [out length];
+                    if (have > 0 && row->name[0] == '(' && [out characterAtIndex:have - 1] != ' ')
+                        [out appendString:@" "];
+                    [out appendString:name];
+                    break;
+                }
+            }
+            /* skin tones and the rest of the pictographs have no text form, and are left out */
+        } else {
+            [out appendFormat:@"%C", c];
+            i++;
+        }
+    }
+    return out;
+}
+
+NSString *TBSpeechText(NSString *text)
+{
+    NSArray *blocks = TBSplitBlocks(text);
+    NSMutableString *out = [NSMutableString string];
+    unsigned b;
+    for (b = 0; b < [blocks count]; b++) {
+        NSDictionary *block = [blocks objectAtIndex:b];
+        NSString *body;
+        NSArray *lines;
+        unsigned l;
+        if ([[block objectForKey:@"code"] boolValue]) {
+            [out appendString:[[block objectForKey:@"lang"] isEqualToString:@"table"] ? @"\nThere is a table here.\n" : @"\nThere is a block of code here.\n"];
+            continue;
+        }
+        body = [block objectForKey:@"text"];
+        lines = [body componentsSeparatedByString:@"\n"];
+        for (l = 0; l < [lines count]; l++) {
+            NSString *line = [[lines objectAtIndex:l] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableString *clean = [NSMutableString string];
+            unsigned i = 0;
+            unsigned n;
+            while ([line hasPrefix:@"#"])
+                line = [[line substringFromIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if ([line hasPrefix:@"- "] || [line hasPrefix:@"* "])
+                line = [line substringFromIndex:2];
+            n = [line length];
+            while (i < n) {
+                unichar c = [line characterAtIndex:i];
+                if (c == '[') {
+                    /* [words](address): keep the words */
+                    unsigned close = i + 1;
+                    while (close < n && [line characterAtIndex:close] != ']')
+                        close++;
+                    if (close + 1 < n && [line characterAtIndex:close + 1] == '(') {
+                        unsigned end = close + 2;
+                        while (end < n && [line characterAtIndex:end] != ')')
+                            end++;
+                        if (end < n) {
+                            [clean appendString:[line substringWithRange:NSMakeRange(i + 1, close - i - 1)]];
+                            i = end + 1;
+                            continue;
+                        }
+                    }
+                }
+                if (c == 'h' && (([line compare:@"http://" options:0 range:NSMakeRange(i, MIN(7u, n - i))] == NSOrderedSame)
+                    || ([line compare:@"https://" options:0 range:NSMakeRange(i, MIN(8u, n - i))] == NSOrderedSame))) {
+                    while (i < n && [line characterAtIndex:i] != ' ')
+                        i++;
+                    [clean appendString:@"a link"];
+                    continue;
+                }
+                if (c == '*' || c == '`' || c == '_' || c == '|' || c == 0xFE0F || c == 0x200D || (c >= 0xD800 && c <= 0xDFFF)) {
+                    i++;
+                    continue;
+                }
+                [clean appendFormat:@"%C", c];
+                i++;
+            }
+            if ([clean length] > 0) {
+                [out appendString:clean];
+                [out appendString:@"\n"];
+            }
+        }
+    }
+    return [out stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+}
+
+/* Before a workspace file is replaced, keep the old one: five copies in a ring, one slot for each half hour, and one
+   at the first save of every session. A bad write or a bug then costs at most half an hour of chats. */
+void TBRollingBackup(NSString *path)
+{
+    static NSMutableDictionary *last = nil;
+    NSFileManager *manager = [NSFileManager defaultManager];
+    double now = CFAbsoluteTimeGetCurrent();
+    NSNumber *before;
+    NSString *dir;
+    NSString *target;
+    int slot;
+    if (!last)
+        last = [[NSMutableDictionary alloc] init];
+    if (![manager fileExistsAtPath:path])
+        return;
+    before = [last objectForKey:path];
+    if (before && now - [before doubleValue] < 1800)
+        return;
+    if ([[[manager fileAttributesAtPath:path traverseLink:YES] objectForKey:NSFileSize] doubleValue] < 200)
+        return;
+    dir = [[path stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"backups"];
+    [manager createDirectoryAtPath:dir attributes:nil];
+    slot = (int)(now / 1800.0) % 5;
+    target = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%d.plist", [[path lastPathComponent] stringByDeletingPathExtension], slot]];
+    [manager removeFileAtPath:target handler:nil];
+    if ([manager copyPath:path toPath:target handler:nil])
+        [last setObject:[NSNumber numberWithDouble:now] forKey:path];
 }
 
 NSString *TBStoreChangedNotification = @"TBStoreChanged";
@@ -440,7 +775,9 @@ static NSMutableDictionary *openStores = nil;
         [error release];
     }
     if (data) {
-        [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+        NSFileManager *manager = [NSFileManager defaultManager];
+        [manager createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+        TBRollingBackup(path);
         [data writeToFile:path atomically:YES];
     }
 }
