@@ -1,59 +1,39 @@
-# Tiger Build release review
+# Release review
+
+What was tested, where, and what was not. Features are listed in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## 1.4
 
-### What changed
-- **Attach files.** Attach... button (beside Edit Last and Retry), Chat → Attach File (⇧⌘A), drop on the chat or the Dock icon. Text and code files, PDF (text via PDFKit, or the first page as a picture when there is none), RTF, Word, HTML, and pictures (kept as they are when small, else redrawn as a JPEG of at most 1600 pixels). Each is a message in the chat; the model gets the text (with where the copy is on that Mac) or the picture, and keeps it for the rest of the conversation. PDFs made mostly of drawings (little text for their pages) also send the first three pages as pictures, and text scraps such as one-letter-per-line watermarks are dropped. Non-vision models are told a picture was attached. Files kept for deleted chats, workspaces and cleared history are removed (a file stays while any chat uses it, and for ten minutes). Compaction summarizes older attachments.
-- **Conversion on the relay** (`relay/extract.py`, `POST /v1/extract`): Word, Excel, PowerPoint and OpenDocument files become text; Pages, Numbers and Keynote files become the text read from their stored text objects plus the preview picture; HEIC, WebP, AVIF and JPEG photos become upright JPEGs (rotation tags are applied to the pixels, since Tiger ignores them). Standard library only, except pictures (`sips`, Pillow or ImageMagick).
-- **Files from the model.** `agent_save_file` (not tied to the agent toolbox switch) puts a file in the chat with Save As. Each code block has Save and Copy.
-- **Pictures a tool looks at** (`view_image`, `take_screenshot`) are also shown in the chat.
-- **Code blocks.** Dark panels with the language named, syntax colours for about 30 languages and aliases, wrapping, selectable text; bold, inline code, headings and bullets in prose.
-- **One chat to a file and back.** Export This Chat (⌥⌘E): a Tiger Build file with its attachments and pictures inside, Markdown, or plain text. Import Chat (⌥⌘I) adds it to the current workspace. No relay involved.
-
-### Added after the first 1.4 review
-- **Attach:** queued with progress notes, consent notice per service, context-fit check with a shortened copy, ~ paths and workspace-restriction awareness, pasted pictures and files, Attach PDF Pages, page pictures as separate steps, per-picture token estimate, picture and payload caps, relay-version check (`/v1/version`), stored files kept for import backups.
-- **Chats:** edit from any message, branch from any message, retry/edit keep later attachments, compaction keeps small attachments and stubs large ones, History export carries attachments, Find in Chats, Custom Instructions (also appended to the system prompt by the relay), text size, partial replies saved while streaming.
-- **Replies:** italics, links, tables; Save for tables and code.
-- **Models:** `agent_save_file` makes real Word/Excel/PDF files and takes base64; Claude prompt caching (a second turn over a 31k-token attachment cost $0.006 instead of $0.077).
-- **Relay:** conversion limits, entity refusal, two at a time (busy answer), media pruning, tunnel identification header, clearer too-large error, `/v1/version`; the HTTP tests in `test_run_control.py` had never run (the file ended its test run before them) and now do.
+### Test machines
+Tiger 10.4.11 (PowerPC G4) and 10.4.12 (iMac G3 700 MHz), Leopard 10.5.8 (Intel), Snow Leopard 10.6.8 (Intel). Relays: macOS, Ubuntu 26.04 ARM64, Windows 11 ARM64. Services: Claude, Grok, Gemini, ChatGPT, Mistral and a local model.
 
 ### Verified
-- `make test` on Tiger 10.4.11 PowerPC and Snow Leopard 10.6.8 (new checks: fence splitting, language names, colouring, attachment text, base64, file names); relay tests and self-test.
-- On both Macs, in the app: attaching text, RTF and pictures (Snow Leopard also PDF), a model reading them, Grok fixing an attached script through Commander and viewing the attached picture, `agent_save_file` giving a Save As file, export and import of a chat with a picture and a file, code blocks on PowerPC (including a long streamed answer). Pictures reach Claude, Grok, Gemini, ChatGPT and Mistral; the local model without vision is told.
-- Menu shortcuts unique on both Macs (`--list-shortcuts`: 0 problems).
-
-- Conversion run on real documents from both Macs' desktops: .docx, .xlsx, .pptx, .pages, .numbers, .key, .heic, .webp, a phone-style JPEG with a rotation tag, and a truncated 20 MB .key (clear error). Models answered questions about each on Tiger and Snow Leopard.
-
-- **Last items:** text size now covers the chat list and message box; VoiceOver labels on controls and messages (checked by `--list-accessibility`, VoiceOver itself not run); Claude prompts over about 15k tokens use the one-hour cache (checked live: the second call reads from cache).
-
-- **Source control (Commander 0.4.0):** self-test passes on Python 2.3 (Tiger), 2.5 (Leopard) and 2.6 (Snow Leopard). Real Subversion repositories driven through the tools on Snow Leopard (1.6) and Leopard (1.4, which needed a retry without `--non-interactive`); a model did status, diff, commit and log through the relay on Snow Leopard. git with a stand-in program only: argument and environment handling, path limits, refusals, missing-git message.
-
-- **Voice (optional):** reading replies aloud heard working on Snow Leopard (the user confirmed); voice commands start and stop cleanly on Tiger and Snow Leopard, but the spoken phrases themselves (NSSpeechRecognizer) were not exercised because that needs a microphone and a person. Dictate (record on the Mac, transcribe on the relay): the relay route and all three services (OpenAI, Mistral, Google) transcribed a spoken test sentence correctly; on Snow Leopard and on Leopard (i386, x86_64 and PowerPC under Rosetta) the app recorded through the built-in microphone while the Mac spoke a sentence aloud, and the words arrived in the message box. Tiger: the G4 has no working microphone (confirmed by the user), and there the app says nothing was heard and points to System Preferences, Sound, Input. On the 700 MHz iMac G3 (Tiger 10.4.12, working microphone) Dictate recorded a spoken sentence acoustically through the Mac's own speakers and the words arrived in the message box (with one misheard word, from the speaker-to-microphone path).
+- **Automated.** The relay test suite and self-test (also on Ubuntu and Windows), `make test` on every client Mac, and the Commander self-test on Python 2.3, 2.5 and 2.6. Menu shortcuts are unique everywhere (`--list-shortcuts`).
+- **Leopard.** The app launches and works as i386, x86_64 and ppc under Rosetta. Video plays inline in i386 and ppc; x86_64 offers double-click playback, because 64-bit QuickTime needs 10.6.
+- **Attachments.** Text, RTF, PDF (including a 19-page drawing set), Word, Excel, PowerPoint, Pages, Numbers, Keynote, HEIC, WebP and sideways JPEGs were attached from real files and a model answered questions about each. A truncated Keynote file gives a clear error. Drag and drop, paste, cancel, the context-fit prompt and the relay-version notice were each exercised.
+- **Models.** Pictures reach all five cloud services; a model without vision is told. Files from the model (Save As, Word, Excel, PDF) and pictures a tool views appear in the chat. Claude's prompt cache was confirmed live (a second turn over a 31k-token attachment cost $0.006 instead of $0.077).
+- **Chats.** Export and import of a chat with files, edit and branch from any message, find, custom instructions, text size, emoji shown as text on Tiger, rolling backups.
+- **Source control.** Real Subversion repositories on Leopard (1.4) and Snow Leopard (1.6), and a model completing status, diff, commit and log through the relay. git with a stand-in program only (arguments, environment, path limits, refusals, missing-git message); no test Mac has git.
+- **Voice.** Reading replies aloud was heard on Tiger and Snow Leopard. Dictate recorded and transcribed correctly on Snow Leopard, Leopard (all three builds) and the iMac G3, and all three speech services transcribed a test clip. The G4 has no microphone and says so.
+- **Relays.** Windows needed `os.replace` instead of `os.rename`, and converts HEIC and WebP with the built-in imaging component. Ubuntu needs `libheif-examples` and `libheif-plugin-libde265` for HEIC.
 
 ### Not verified
-- Pages, Numbers and Keynote text is recovered, not exact: slide order can differ and table layout is lost. Real drag-and-drop, `.doc` through the OS, a Keynote saved as a folder (tested), and PDFs were all run on Tiger and Snow Leopard in round 2.
-- The `ppc64` slice (no G5 now: its power supply failed) and Intel Tiger hardware. Both byte orders are covered by other runs (PowerPC Tiger and Rosetta; Intel Leopard and Snow Leopard).
+- The `ppc64` slice (no working G5) and Intel Tiger hardware. Both byte orders are covered by other runs.
+- The spoken phrases of Voice Commands (they need a person speaking), and VoiceOver itself; only the labels were checked with `TigerBuild --list-accessibility`.
+- Pages, Numbers and Keynote text is recovered, not exact: slide order can differ and table layout is lost.
 
 ## 1.3
 
-## What changed
-- **Platforms.** One universal app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard: `ppc` and `i386` (10.4 SDK) joined with `ppc64` and `x86_64` (10.6 SDK when installed, else 10.5) when built on Leopard or Snow Leopard. Brushed metal stays on Tiger; Leopard and Snow Leopard use their native textured look. 64-bit-safe delegate types (`TBCompat.h`), 64-bit CoreGraphics callbacks, inline QuickTime playback in the 32-bit slices and in x86_64 on 10.6+ (QTKit weak-linked, checked at run time; other 64-bit cases open the default player), Quick Look on 10.5+ for pictures, Tiger-only private menu calls skipped on 10.5+.
-- **Chats.** Stop (⌘.), guidance while a model works, Retry and Edit Last, thinking strip above the message box, estimated cost per chat (summed across models, tiered rates, N/A for local), real context readout, graceful output-limit note, automatic and manual compaction, relay heartbeats instead of false disconnection warnings, throttled and cached transcript layout, Commander status read off the main thread.
-- **Tools.** Tools button replaces the Commander button: per-chat on/off for Commander, toolbox, web search, other models and each MCP server; per-chat Ask Before Running (all or per tool) with Always Allow; model consult tool; web and picture search on the relay (free with no key; models can show pictures in the chat); Commander screenshots; workspace directory restriction.
-- **Workspaces and history.** Delete a workspace; deleting the last creates a new Default; Clear All History removes workspaces; export, import and relay copy cover all workspaces; new chats start from the last chat's model and tools or a chosen default.
-- **Setup.** SSH key made by the relay; Tiger Build installs it on its own Mac with no password (Configuration, Connect Commander over SSH); Tiger Mac address, user and home settable in the relay apps and in Preferences; SSH failures explained with the fix; `setup.sh` no longer needs config.sh edited first, can install the key from a terminal, and the Mac package runs it for the logged-in user.
-- **UI.** Preferences and the tools window are tabbed and fit 1024x768 (and smaller windows clamp to the screen); MCP servers are a table with an edit sheet; Commander menu is named Commander; bubbles drawn like iOS 6 Messages on a pinstriped backdrop.
-
-## Requirement checklist (1.3 list)
+### Requirements
 
 | Requirement | Status |
 | --- | --- |
-| Formal Snow Leopard and Leopard support | Snow Leopard 10.6.8 tested (x86_64 and i386). Leopard: built against the 10.5 SDK and uses the same code paths, but no Leopard machine was available |
+| Formal Snow Leopard and Leopard support | Tested on Snow Leopard 10.6.8 and Leopard 10.5.8 (i386, x86_64, and ppc under Rosetta) |
 | Brushed metal still on Tiger | Yes (screenshots) |
 | Extra capability on newer systems | 64-bit slices, native Cocoa look, Quick Look on pictures (10.5+), no private menu calls on 10.5+. Modest by design |
 | Delete all history deletes workspaces | Yes, tested |
 | Delete one workspace; deleting all makes a new Default | Yes, tested on Snow Leopard |
-| Intel client and Commander, 32 and 64-bit | Yes: i386 and x86_64 tested on Snow Leopard, Commander on Python 2.6 |
+| Intel client and Commander, 32 and 64-bit | Yes: i386 and x86_64 on Snow Leopard and Leopard; Commander on Python 2.5 and 2.6 |
 | PPC64 where possible; G5 on Tiger falls back to 32-bit | `ppc64` slice builds; not run (no G5). Tiger has no 64-bit Cocoa, so it uses `ppc` |
 | Export and import history for all workspaces at once | Yes, tested; 1.2 single-workspace files still import |
 | Edit last message; retry last message | Yes, tested |
@@ -75,26 +55,17 @@
 | Avoid beach balls; no false disconnect warning on long runs | Warning fixed (75 s run, no warning). Beach balls reduced by design, not measured |
 | Estimated cost, running total, price fetched at start, tiered rates | Yes ("Cost (est)"); local is N/A |
 | Graceful exit at the output limit | Yes, tested live |
-| Run needed shell commands in setup | `setup.sh` now makes the key and installs it from a terminal; the Mac package runs setup for the logged-in user (not run here: needs root) |
+| Run needed shell commands in setup | `setup.sh` now makes the key and installs it from a terminal; the Mac package runs setup for the logged-in user (not run: needs root) |
 | Context compaction | Yes: automatic and manual in the app (tested), trimming and summary inside long tool runs (unit-tested) |
 | Model consult MCP | Yes, tested live (Claude asked Gemini) |
 
-## Verified
-- 69 relay tests, relay self-test, `make test` on Tiger 10.4.11 PowerPC and Snow Leopard 10.6.8 Intel, `ppc_commander.py --self-test` on Python 2.3.5 (Tiger) and 2.6.1 (Snow Leopard).
-- Live, against real models: Claude, Grok and Gemini replies with usage and cost frames; guidance delivered between steps; Stop ending a 15 s command in under 4 s; approval allow/deny; screenshot seen by Claude; model consult (Claude asked Gemini and the cost was counted); mid-run trimming; output-limit note; price list fetched and tiered rates applied.
-- On Tiger (screenshots over SSH, driven with AppleScript and synthetic clicks): all windows and tabs, Stop, Guide, Edit Last, Tools menu, workspace restriction blocking `cat /etc/hosts`, Commander connect flow restoring a removed SSH key, commander auto-update 0.3.0 to 0.3.1.
-- On Snow Leopard: x86_64 and i386 slices launch and chat; menu bar, workspaces create/delete, history export/clear/import across workspaces, approval dialog, thinking strip, SSH error line.
-- Commander per client: Power Mac G4 and MacBook Pro chatted at the same time through one relay and each ran its own `uname`; a computer that was never connected got a clear refusal. (Found after a model on the MacBook described the G4: the relay had one global Commander target.)
-- Menu bar: `TigerBuild --list-shortcuts` lists every item; all have unique shortcuts on Tiger and Snow Leopard.
-- Custom MCP servers: three example servers (`mcp-examples/`) plus the official filesystem, reference ("everything") and time servers, 41 tools, run through the relay, the Tools menu, per-server approval and Stop.
-- Linux (Ubuntu 26.04 ARM64) and Windows 11 ARM64 relays installed from the packages, connected to Tiger over SSH, and ran a tool turn with a local model.
-- Packages built: relay `.pkg`, `.deb`, Windows zip, Tiger `.pkg`.
+### Verified
+- 69 relay tests, `make test` on Tiger and Snow Leopard, the Commander self-test, live runs against Claude, Grok and Gemini (usage and cost, guidance between steps, Stop ending a 15 s command in under 4 s, approvals, screenshots, model consult, output-limit note, price list and tiered rates).
+- Custom MCP servers: the three examples plus the official filesystem, reference and time servers (41 tools), through the Tools menu, per-server approval and Stop.
+- Commander per client: a Power Mac G4 and a MacBook Pro chatted at once through one relay and each ran its own `uname`; a computer that never connected was refused clearly.
+- Ubuntu and Windows relays installed from the packages and ran a tool turn with a local model.
 
-## Not verified
-- No Leopard (10.5) machine and no G5 (`ppc64`) were available: those slices compile but have not been run.
-- Windows: run `setup.py` from your own desktop session. From an elevated SSH session the settings folder gets an ACL the desktop user cannot read, and `ssh.exe` output pipes hang; neither happens when run normally (shown by running setup through a scheduled task in the desktop session).
-- The Tk settings window was rendered (Linux, virtual display) but its Tiger Mac tab was not clicked; its backing `control.py` commands were run.
-- x64 Windows/Linux runtime is as untested as before.
-- The Mac relay package's post-install step (runs setup for the logged-in user) was not run: it needs root.
-- The relay Mac app (Swift) was rendered with its snapshot mode, not clicked through.
-- Beach-ball reduction is by design (cache, throttle, background thread), not measured against 1.2.
+### Not verified
+- Windows setup must run from your own desktop session; from an elevated SSH session the settings folder gets an ACL the desktop user cannot read.
+- The Tk settings window's Tiger Mac tab was not clicked (its `control.py` commands were run), and the Swift relay app was rendered but not clicked through.
+- The Mac package's post-install step needs root and was not run. x64 Windows and Linux are untested.

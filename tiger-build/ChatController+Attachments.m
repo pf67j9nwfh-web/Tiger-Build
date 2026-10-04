@@ -496,8 +496,8 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
     if (!service)
         service = provider;
     return TBConfirmOnce([@"attach:" stringByAppendingString:provider], [NSString stringWithFormat:@"Send attached files to %@?", service],
-        [NSString stringWithFormat:@"Files you attach are sent to %@ together with your messages, so that service can read them. "
-        @"Attach only files you are happy to share with it. A model on your own local server keeps them on your network.", service], @"Attach");
+        [NSString stringWithFormat:@"Attached files are sent to %@ with your messages. Attach only what you are happy to share with it. "
+        @"A model on your own local server keeps them on your network.", service], @"Attach");
 }
 
 - (void)attachPaths:(NSArray *)paths

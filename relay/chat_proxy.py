@@ -1110,24 +1110,20 @@ class ToolSession(object):
             if any(t.get("name") == SCREENSHOT_TOOL for t in tools):
                 system += " Use take_screenshot when you need to see what is on that Mac's screen."
             if any(t.get("name") == "repo_info" for t in tools):
-                system += (" For source control on that Mac, call repo_info first to see whether a folder is a git repository or a "
-                           "Subversion working copy and which programs are installed. Use git_read and svn_read to look (status, diff, "
-                           "log), and git_write or svn_write to change things. Check status and diff before committing, give every "
-                           "commit a clear message, never commit files the person did not ask about, and do not force-push. These Macs "
-                           "are old: git may not be installed, and Subversion 1.4 to 1.6 does not know newer options.")
+                system += (" For source control on that Mac, start with repo_info. Use git_read and svn_read to look and git_write and "
+                           "svn_write to change things. Check status and diff before committing, write a clear message, commit only what "
+                           "was asked for, and never force-push. git may not be installed, and Subversion 1.4 to 1.6 lacks newer options.")
             if any(t.get("name") == "view_image" for t in tools):
-                system += (" To look at a picture file on that Mac (JPEG, PNG, GIF, TIFF, PDF and so on), call view_image "
-                           "with its path; read_file only returns text.")
+                system += " To look at a picture file on that Mac, call view_image with its path; read_file returns only text."
             if self.options["root"]:
                 system += (
                     " This workspace is restricted to the directory %s. File tools and shell commands "
                     "cannot reach outside it; work inside it."
                 ) % self.options["root"]
         if not system_override and any(t.get("name") == "agent_save_file" for t in tools):
-            system += (" Files the person attaches are given to you in the conversation (text, PDF, Word, Excel, PowerPoint and "
-                       "Pages/Numbers/Keynote contents as text, pictures as pictures). To give them a new or changed file, call "
-                       "agent_save_file with the whole content; they get a Save As button. A name ending in .docx, .xlsx or .pdf "
-                       "makes a real Word, Excel or PDF file from plain text (for .xlsx give tab or comma separated rows).")
+            system += (" Attached files appear in the conversation (documents as text, pictures as pictures). To give the person a new or "
+                       "changed file, call agent_save_file with its whole content; a name ending .docx, .xlsx or .pdf makes a real file "
+                       "from plain text (for .xlsx, tab or comma separated rows).")
         if any(t.get("name") == CONSULT_TOOL for t in tools):
             system += (
                 " You may use consult_model to get a second opinion from another model on hard "
@@ -1136,7 +1132,7 @@ class ToolSession(object):
         if self.extra.errors:
             sys.stderr.write("tigerbuild-relay: custom MCP connection failures: %s\n" % "; ".join(self.extra.errors))
         if not system_override and self.options.get("instructions"):
-            system += " The person's own instructions for this chat, which you follow: " + self.options["instructions"]
+            system += " The person's instructions for this chat: " + self.options["instructions"]
         if provider == "grok":
             system = system.replace("You are an assistant", "You are Grok", 1)
         try:

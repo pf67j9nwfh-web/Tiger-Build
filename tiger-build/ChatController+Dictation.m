@@ -167,8 +167,8 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
     if (!current)
         return;
     if (!TBConfirmOnce(@"dictation", @"Send recordings to a speech service?",
-        @"Dictation records from the microphone and sends the clip to the relay, which sends it to a speech service (OpenAI, Mistral or Google, "
-        @"whichever has a key) to turn it into text. The recording is not kept. Say only what you are happy to share with it.", @"Dictate"))
+        @"The clip goes to the relay, which sends it to a speech service (OpenAI, Mistral or Google) to turn it into text. "
+        @"It is not kept. Say only what you are happy to share.", @"Dictate"))
         return;
     status = AudioHardwareGetProperty(kAudioHardwarePropertyDefaultInputDevice, &size, &device);
     if (status != 0 || device == kAudioDeviceUnknown) {

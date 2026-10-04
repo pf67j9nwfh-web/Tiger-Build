@@ -2758,9 +2758,8 @@ def tool_defs():
         {
             'name': 'repo_info',
             'description': (
-                'Say which git repository or Subversion working copy a folder belongs to, its top folder, its current state '
-                '(branch and changes), and whether git and svn are installed on this Mac. Use it first when asked about '
-                'source control.'
+                'Say which git repository or Subversion working copy a folder is in, its current state, and whether git and svn are '
+                'installed. Use it first for any source control question.'
             ),
             'inputSchema': {
                 'type': 'object',
@@ -2771,9 +2770,8 @@ def tool_defs():
         {
             'name': 'git_read',
             'description': (
-                'Read-only git: status, diff, log, show, blame, branch (listing), remote -v, tag (listing), stash list, ls-files, '
-                'grep, rev-parse, describe, config --get and similar. Give the sub-command and its options as an array, for '
-                'example ["log", "--oneline", "-20"] or ["diff", "--stat"]. It never changes the repository.'
+                'Read-only git (status, diff, log, show, blame, listings, grep, rev-parse and similar). Give the sub-command and options '
+                'as an array, for example ["log", "--oneline", "-20"]. It never changes the repository.'
             ),
             'inputSchema': {
                 'type': 'object',
@@ -2789,10 +2787,9 @@ def tool_defs():
         {
             'name': 'git_write',
             'description': (
-                'git commands that change things: add, rm, mv, restore, checkout, switch, commit (give -m "message"), branch, tag, '
-                'merge, rebase (not interactive), cherry-pick, revert, reset, stash, pull, fetch, push, clone, init, remote, '
-                'config (user.name, user.email and a few more), clean, apply. Force-pushing, deleting remote branches, skipping '
-                'hooks and options that run other programs are refused. Check with git_read status and diff before committing.'
+                'git commands that change things (add, commit with -m, checkout, branch, merge, rebase, reset, stash, pull, push, clone, '
+                'and so on). Force pushes, deleting remote branches, skipping hooks and options that run other programs are refused. '
+                'Check status and diff with git_read before committing.'
             ),
             'inputSchema': {
                 'type': 'object',
@@ -2808,8 +2805,8 @@ def tool_defs():
         {
             'name': 'svn_read',
             'description': (
-                'Read-only Subversion: status, diff, log, info, list, cat, blame, propget, proplist. Give the sub-command and '
-                'options as an array, for example ["log", "-l", "10"] or ["status"]. It never changes the working copy.'
+                'Read-only Subversion (status, diff, log, info, list, cat, blame, properties). Give the sub-command and options as an '
+                'array, for example ["log", "-l", "10"]. It never changes the working copy.'
             ),
             'inputSchema': {
                 'type': 'object',
@@ -2825,9 +2822,8 @@ def tool_defs():
         {
             'name': 'svn_write',
             'description': (
-                'Subversion commands that change things: add, delete, commit (give -m "message"), update, revert, move, copy, '
-                'mkdir, checkout, switch, merge, resolve, propset, import, cleanup, lock, unlock, patch. Passwords on the command '
-                'line, and options that run other programs, are refused: use credentials Subversion has already saved.'
+                'Subversion commands that change things (add, delete, commit with -m, update, revert, move, copy, checkout, merge, and '
+                'so on). Passwords on the command line and options that run other programs are refused: use saved credentials.'
             ),
             'inputSchema': {
                 'type': 'object',

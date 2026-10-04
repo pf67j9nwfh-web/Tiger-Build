@@ -194,9 +194,8 @@
     NSButton *choose=[[[NSButton alloc] initWithFrame:NSMakeRect(388,153,96,30)] autorelease];
     [choose setTitle:@"Choose..."];[choose setBezelStyle:NSRoundedBezelStyle];[choose setTarget:self];[choose setAction:@selector(workspaceSettingsChoose:)];[view addSubview:choose];
     NSTextField *note=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,60,460,86)] autorelease];
-    [note setStringValue:@"With a directory set, Commander's file tools can only read and write inside it, and shell commands start there "
-        @"and may only name paths inside it (programs in the system folders still run). A command line can only be checked so far: "
-        @"for a hard limit, run Tiger Build under a separate account."];
+    [note setStringValue:@"Commander's file tools stay inside this directory, and shell commands start there and may only name paths inside it "
+        @"(system programs still run). A command line can only be checked so far: for a hard limit, use a separate account."];
     [note setEditable:NO];[note setBezeled:NO];[note setDrawsBackground:NO];[note setFont:[NSFont systemFontOfSize:11]];[[note cell] setWraps:YES];[view addSubview:note];
     NSButton *save=[[[NSButton alloc] initWithFrame:NSMakeRect(290,16,92,30)] autorelease];
     [save setTitle:@"Save"];[save setBezelStyle:NSRoundedBezelStyle];[save setKeyEquivalent:@"\r"];[save setTarget:self];[save setAction:@selector(workspaceSettingsSave:)];[view addSubview:save];
