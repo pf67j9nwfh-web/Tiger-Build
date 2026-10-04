@@ -12,7 +12,7 @@
         <line choice="tigerbuildrelay"/>
         <line choice="tigerbuildrelayapp"/>
     </choices-outline>
-    <choice id="tigerbuildrelay" title="Tiger Build Relay" description="The relay Tiger Build uses to reach AI services. API keys are added afterward, in Tiger Build Preferences, the Tiger Build Relay app, or .env.">
+    <choice id="tigerbuildrelay" title="Tiger Build Relay" description="The relay Tiger Build uses to reach AI services.">
         <pkg-ref id="local.tigerbuild.relay.pkg"/>
     </choice>
     <pkg-ref id="local.tigerbuild.relay.pkg" version="1.4" auth="root">TigerBuildRelay-component.pkg</pkg-ref>

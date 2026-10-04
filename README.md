@@ -1,17 +1,19 @@
 # Tiger Build
 
-**A native AI chat app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard, on PowerPC and Intel, that can also work on the Mac it runs on.**
+**A native AI chat app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard for PowerPC and Intel.**
 
-Tiger Build is a Cocoa chat window for old Macs. Each chat picks its own service and model: Grok, ChatGPT, Claude, Mistral, Muse, Gemini, or a model on your own local server such as LM Studio. With **Commander** (ppc-commander) on, the model can list folders, read and edit files, run shell commands, use git and Subversion, and take screenshots on that Mac. It keeps its brushed-metal look on Tiger, uses the same layout on Leopard and Snow Leopard, and fits a 1024x768 screen (iMac G3 and up).
+Tiger Build is a Cocoa chat window for old Macs. It has support for a broad range of providers including: Grok, ChatGPT, Claude, Mistral, Muse, Gemini, and local LLM servers. With **Commander** (ppc-commander) on, the model can list folders, read and edit files, run shell commands, use git and Subversion, and take screenshots on that Mac. Tiger Build is also designed to look right at home on these older Macs
+and uses a UI that is mostly period accurate for the OSes it's operating on. It's almost like a glance into an alternate reality where the
+LLM revolution occured around 2009 instead of the 2020s.
 
 > [!WARNING]
-> USE THIS AT YOUR OWN RISK. MAC OS X TIGER IS A 20+ YEAR OLD OPERATING SYSTEM AND IS VERY INSECURE. I AM NOT LIABLE FOR ANY SECURITY VULNERABILITIES ABLE TO BE EXPLOITED FROM USING THIS APPLICATION ON TIGER. YOU HAVE BEEN WARNED.
+> USE THIS AT YOUR OWN RISK. MAC OS X TIGER, LEOPARD, AND SNOW LEOPARD ARE A 15+ YEAR OLD OPERATING SYSTEMS AND ARE VERY INSECURE. I AM NOT LIABLE FOR ANY SECURITY VULNERABILITIES ABLE TO BE EXPLOITED FROM USING THIS APPLICATION ON THESE MACHINES. YOU HAVE BEEN WARNED. SAFEGUARDS HAVE BEEN INCLUDED THOUGH AS MUCH AS IS FEASIBLE WITHIN THE CONFINES OF THE LIMITATIONS OF ITS OPERATING ENVIRONMENT.
 
 Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE).
 
 ## Screenshots
 
-**The client**, on Mac OS X 10.4 Tiger (PowerPC, brushed metal), 10.5 Leopard (Intel) and 10.6 Snow Leopard (Intel):
+**The client**, on Mac OS X 10.4 Tiger, 10.5 Leopard, and 10.6 Snow Leopard:
 
 | Tiger | Leopard | Snow Leopard |
 | --- | --- | --- |
@@ -55,29 +57,30 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 
 ## How it fits together
 
-Tiger cannot open modern HTTPS connections, so Tiger Build never calls an AI service itself. **Tiger Build Relay** runs on a current Mac on the same network. It receives each chat over plain HTTP (protected by a token), calls the AI service, and, when the model wants a tool, runs ppc-commander on the Tiger Mac over SSH.
+Tiger and the Leopards cannot open modern HTTPS connections, so Tiger Build never calls an AI service itself. **Tiger Build Relay** runs on a current Mac on the same network. It receives each chat over plain HTTP (protected by a token), calls the AI service, and, when the model wants a tool, runs ppc-commander on the Tiger Mac over SSH. The basic operation of this application can be seen in the diagram below:
 
 ```
  Tiger Mac (10.4, PowerPC)                  Relay (Mac, Windows, or Linux)
- ┌──────────────────────┐   HTTP + token    ┌───────────────────────────┐   HTTPS   ┌──────────────────┐
- │ Tiger Build.app      │ ────────────────▶ │ Tiger Build Relay         │ ────────▶ │ AI services      │
- │ chats, workspaces    │                   │ keys, model checks, tools │           └──────────────────┘
- └──────────────────────┘                   │                           │   HTTP    ┌──────────────────┐
- ┌──────────────────────┐   SSH (ssh-rsa)   │                           │ ────────▶ │ local server     │
- │ ~/ppc-commander/     │ ◀──────────────── │ runs tools when asked     │           │ (optional)       │
- └──────────────────────┘                   └───────────────────────────┘           └──────────────────┘
+ ┌──────────────────────┐   HTTP + token    ┌───────────────────────────┐   HTTPS   ┌──────────────────────┐
+ │ Tiger Build (client) │ ────────────────▶ │ Tiger Build Relay         │ ────────▶ │ External LLM services│
+ │                      │                   │                           │           │ (if configured)      │
+ │ chats, workspaces    │                   │ keys, model checks, tools │           └──────────────────────┘
+ └──────────────────────┘                   │                           │   HTTP    ┌──────────────────────┐
+ ┌──────────────────────┐   SSH (ssh-rsa)   │                           │ ────────▶ │ local LLM server     │
+ │ ~/ppc-commander/     │ ◀──────────────── │ runs tools when asked     │           │ (if configured)      │
+ └──────────────────────┘                   └───────────────────────────┘           └──────────────────────┘
 ```
 
-Chats stay on the Tiger Mac. API keys stay on the relay computer; Tiger Build is only told whether each key is saved.
+Your chat history stays on the Tiger Build client. API keys stay on the relay computer; The Tiger Build client is only told whether each key is saved and available for use.
 
 ## What you need
 
 | Where | What |
 | --- | --- |
-| Client Mac | Mac OS X 10.4 to 10.6, PowerPC or Intel, with its built-in Python (2.3, 2.5 or 2.6) and Remote Login on (System Preferences → Sharing). To build the app yourself: Xcode 2.5 on Tiger, or Xcode 3.1/3.2 on Leopard and Snow Leopard. One universal binary covers `ppc`, `i386`, `ppc64` and `x86_64`; a G5 on Tiger uses the 32-bit part |
+| Client Mac | Mac OS X 10.4 to 10.6, PowerPC or Intel, with its built-in Python (2.3, 2.5 or 2.6) and Remote Login on (System Preferences → Sharing). To build the app yourself: Xcode 2.5 on Tiger, or Xcode 3.1/3.2 on Leopard and Snow Leopard. It's generated as a universal binary covers that `ppc`, `i386`, `ppc64` and `x86_64`; ppc64 is only supported on Leopard due to OS API limitations.  As a sidenote, there is very little software that ever took advantage of 64 bit on the G5s because of said API limitations. |
 | Relay computer | A Mac, Windows PC, or Linux computer that meets the minimums in [Relay system requirements](#relay-system-requirements) |
 | Network | The Tiger Mac and the relay computer on the same network, and the Tiger Mac able to reach the relay directly |
-| Optional | API keys for xAI, OpenAI, Anthropic, Mistral, Muse or Google (one is enough), a Brave or Tavily key for better web search, and/or a local OpenAI-compatible server |
+| Optional | API keys for xAI, OpenAI, Anthropic, Mistral, Muse, or Google (as few or as many as you want to configure), a Brave or Tavily key for better web search if desired, and/or a local OpenAI-compatible model server. |
 
 ### Relay system requirements
 
@@ -89,13 +92,11 @@ The relay needs an OpenSSH client 9.1 or later (it enforces `RequiredRSASize=204
 | Windows | Windows 11 version 24H2 | Python 3.8 or later from python.org, with Tk (the default install includes it). ARM64 PCs can use native ARM64 Python (3.11 or later) or x64 Python |
 | Linux | Ubuntu 24.04 or Debian 12 for the `.deb`; other systemd distributions with the same parts can run `scripts/setup.py` | Python 3.8 or later, `python3-tk`, OpenSSH client 9.1 or later |
 
-Older systems ship an older client that cannot reach the Tiger Mac.
-
-You need two pieces of information: the **Tiger Mac's IP address** (System Preferences → Network on that Mac) and the **short user name** of the account on it that will run ppc-commander.
+For the client computer, you will need two pieces of information: the **Tiger Build Mac's IP address** (System Preferences → Network on that Mac) and the **short user name** of the account on it that will run ppc-commander.
 
 ## Setup
 
-All commands run on the **relay Mac**, from a checkout of this repository. Replace `TIGERUSER` and `TIGER.MAC.ADDRESS` with your own values.
+All commands run on the **relay computer** aside from ones that need to execute directly on the client. Replace `TIGERUSER` and `TIGER.MAC.ADDRESS` with your own values.
 
 > [!TIP]
 > Steps 1–3 can be skipped: run `./scripts/setup.sh` (step 4), then on the Tiger Mac choose **Configuration → Connect Commander over SSH** in Tiger Build. It installs the relay's key and tells the relay the address and user name; no password is typed.
@@ -146,7 +147,7 @@ This copies ppc-commander to `~/ppc-commander`, builds Tiger Build there, puts i
 
 Or open **Tiger Build → Preferences**, enter the address, port and token from step 4, and click **Test Connection**. For the installer packages, see [`RELEASE.txt`](RELEASE.txt).
 
-## Where settings are kept
+## Configuration and Setting File Locations and Content
 
 **Relay computer:** `~/Library/Application Support/Tiger Build Relay/` (macOS), `%APPDATA%\Tiger Build Relay` (Windows), `~/.local/share/tiger-build-relay` (Linux). `TIGERBUILD_RELAY_HOME` overrides it, and **Show Folder** in the relay app opens it.
 
@@ -162,6 +163,8 @@ Or open **Tiger Build → Preferences**, enter the address, port and token from 
 
 Start at login is a launchd agent on macOS, a scheduled task (or Startup shortcut) on Windows, and a systemd user service on Linux. Stop stops the relay; turning start-at-login off does not. The SSH key is `~/.ssh/ppc_tiger_rsa`. Program files are in `/usr/local/tiger-build-relay`, `/opt/tiger-build-relay` or `%LOCALAPPDATA%\Tiger Build Relay\package`.
 
+Note: Pricing estimates on model usage are provided as a convience and may not always be accurate. Check the usage directly on the provider's API dashboard for the actual numbers.
+
 **Tiger Mac:** `~/Library/Application Support/Tiger Build/`
 
 | File | Contents |
@@ -175,10 +178,8 @@ Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`, pp
 
 ## Using Tiger Build
 
-Every menu command has a keyboard shortcut, shown in the menu.
-
 **Chats**
-- **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander to one folder. Clear All History deletes every chat and workspace.
+- **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander to one folder.
 - **Chat list.** Hover a chat to see its full title.
 - **Models.** The popups under the chat list pick service and model. A new chat starts with the last chat's model, tools and approvals, or a fixed model chosen in Preferences. Services with no key or no working model are dimmed with the reason.
 - **Stop and guidance.** Stop (⌘.) ends a reply at once, even mid-command. While a model uses tools, Send becomes **Guide**: a note typed then reaches the model between steps (Grok, ChatGPT, Claude, Gemini, Mistral).
@@ -221,7 +222,8 @@ Every menu command has a keyboard shortcut, shown in the menu.
 
 ## Tiger Build Relay app
 
-The Mac app and the Windows and Linux settings windows show whether the relay is running, its address, port and token, the Tiger Mac, start and stop, start at login, API keys and the local server. Closing the window leaves the relay running. **Connected Macs** lists each Mac that chats through the relay, with its account, home folder and where its tools run, and has Add, Save, Test and Remove. A Mac can also be connected from Tiger Build's Preferences (Commander tab) or Configuration → Connect Commander over SSH.
+The Mac app and the Windows and Linux settings windows show whether the relay is running, its address, port and token, the Tiger Mac, start and stop, start at login, API keys and the local server. Closing the window leaves the relay running in the background. **Connected Macs** lists each Mac that chats through the relay, with its account, home folder and where its tools run, and has Add, Save, Test and Remove. A Mac can also be connected from Tiger Build's Preferences (Commander tab) or Configuration → Connect Commander over SSH.  The
+relay client does support having multiple machines connected at once.  Up to four computers has been formally tested in testing.
 
 From Terminal, without a window:
 
@@ -232,12 +234,13 @@ python3 "$HOME/Library/Application Support/Tiger Build Relay/app/relay/control.p
 
 ## Models, tools and search
 
-- **Live model list.** At start and every six hours the relay asks each keyed service for its models, drops non-chat ones, and test-calls each with a tool. Only models that pass are offered; changing a key retests that service.
-- **Local LLM server.** None is assumed. Give its address as the relay computer sees it, for example `http://127.0.0.1:1234/v1` for LM Studio on the relay computer.
+- **Live model list.** At start and every six hours the relay asks each keyed service for its models, drops non-chat ones, and test-calls each with a tool. Only models that pass are offered; changing a key retests that service. This means this app will theorically always have
+the latest and greatest models available for you to use excluding an API updates that break compatability. The more powerful models tend to do a much better job or working within the confines of the old OS environments than the less powerful ones.
+- **Local LLM server.** None is assumed. Give its address as the relay computer sees it, for example `http://127.0.0.1:1234/v1` for LM Studio or similar on the relay computer.
 - **Custom MCP servers.** Add stdio servers (program path, arguments, environment) in the MCP Servers tab of either app; double-click to edit. They run on the relay computer, start disabled, and can be set to ask first. Enable only programs you trust. `relay/http_mcp.py` bridges Streamable HTTP servers.
 - **Example servers.** `mcp-examples/` has three dependency-free Python 3 servers: `mcp_calc.py`, `mcp_notes.py` and `mcp_sysinfo.py` (with `slow_task` and `always_fails` for testing Stop). Add one with your Python 3 as the program and the script's full path as the argument. The official servers work too, for example program `/path/to/npx`, arguments `-y|@modelcontextprotocol/server-filesystem|/some/folder`.
 - **Web search and pictures.** Search runs on the relay computer. It works with no key (DuckDuckGo, with Wikipedia as a fallback); a Brave or Tavily key broadens it, and a refused key falls back to the free search. Models can find pictures (Brave or Tavily, else Wikimedia Commons) and show them in the chat; the relay downloads them, and only from public addresses. Grok uses its own search while that switch is on.
-- **Agent toolbox** adds UTC time and scratch notes. **Claude thinking** passes signed blocks back unchanged, as Anthropic requires.
+- **Agent toolbox** adds UTC time and scratch notes. **Claude thinking** passes signed blocks back unchanged, as Anthropic requires in their more recent updates for 5.5 and later models.
 - **Settings backups.** Export/Import All Settings in either app. Backups hold API keys and the token in plain text; imported MCP servers stay disabled.
 
 ## Security
@@ -286,12 +289,8 @@ ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-
 | `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-1.4.pkg` (Tiger Build for the old Macs) |
 | `scripts/build-relay-gui.sh` | the Mac relay app |
 
-The macOS package has a universal settings app. The Windows zip and Linux package are source-based and use the platform's Python (3.8+), Tk and OpenSSH. Run setup as your own user, not as administrator. The Windows `.cmd` unpacks the files; then run the setup command it shows. `/health` reports the version. What was tested, and on which Macs, is in [`docs/RELEASE-REVIEW.md`](docs/RELEASE-REVIEW.md).
-
-## Upgrading from Tiger Desk
-
-`scripts/setup.sh` stops the old relay, moves `~/Library/Application Support/TigerDesk` to `Tiger Build Relay` (keys, token and history included), rewrites the launchd job and replaces `Tiger Desk.app`. The same token keeps working, and old settings backups still import.
+The macOS package has a universal settings app. The Windows zip and Linux package are source-based and use the platform's Python (3.8+), Tk and OpenSSH. Run setup as your own user, not as administrator. The Windows `.cmd` unpacks the files; then run the setup command it shows. `/health` reports the version. What was tested, and on which Macs, is in [`docs/RELEASE-REVIEW.md`](docs/RELEASE-REVIEW.md).  The macOS relay application uses Swift UI for prettiness, the Linux and Windows versions have their GUI built from Python which is uglyier looking. (Linux and Windows relay support is primarily provided as a courteousy and aren't my primary focus)
 
 ## Why Do This?
 
-This is just a project for fun.  I saw people creating similar chat environments for older operating systems like Windows 95 and decided to give this a try myself.  As far as I can tell at the time of writing, this is the only LLM chat app for PowerPC Mac OS X that supports interaction with the system itself and is not just a chat interface only.  This app was made with heavy LLM support from Grok Build for fun so don't expect perfection.  However, I think it's actually a decently cromulent LLM chat build environment.  Don't expect any future updates or support for this.  I might add some but no promises.  Feel free to suggest improvements.  As stated above, Mac OS X Tiger is a very old operating system with security vulnerabilities, use at your own risk.
+This is just a project for fun.  I saw people creating similar chat environments for older operating systems like Windows 95 and decided to give this a try myself.  As far as I can tell at the time of writing, this is the only LLM chat app for older Mac OS X that supports interaction with the system itself and is not just a chat interface only.  This app was made with heavy LLM support from Grok Build and Claude Code for fun so don't expect perfection.  However, I think it's actually a decently cromulent LLM chat build environment.  Don't expect any future updates or long term support for this.  I might add some but no promises.  Feel free to suggest improvements.  If anybody is interested in contributing or maintaining this project, be sure to let me know; I welcome collaboration.

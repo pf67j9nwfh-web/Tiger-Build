@@ -4,10 +4,9 @@
 
 cat > /usr/local/tiger-build-relay/ENV-SETUP.txt << 'EOF'
 Tiger Build Relay 1.4 is installed at /usr/local/tiger-build-relay.
-This package does not contain API keys.
 
 The installer also ran setup for the account that was logged in, so the relay
-should already be running (SETUP-RESULT.txt in this folder says what happened).
+should already be running.
 If it did not, as your own user, not with sudo, run:
 
    /usr/local/tiger-build-relay/scripts/setup.sh
@@ -26,7 +25,8 @@ address, port and token, then click Test Connection.
 
 Add API keys in Preferences or in the Tiger Build Relay app. With no keys at
 all, a local model server such as LM Studio still works. Keys can instead go
-in /usr/local/tiger-build-relay/.env (see .env.example).
+in /usr/local/tiger-build-relay/.env (see .env.example).  You are able to
+configure as many or as little providers to use this application.
 
 Check the relay, using the address setup.sh printed:
 

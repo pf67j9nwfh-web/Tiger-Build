@@ -508,7 +508,7 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
         service = provider;
     return TBConfirmOnce([@"attach:" stringByAppendingString:provider], [NSString stringWithFormat:@"Send attached files to %@?", service],
         [NSString stringWithFormat:@"Attached files are sent to %@ with your messages. Attach only what you are happy to share with it. "
-        @"A model on your own local server keeps them on your network.", service], @"Attach");
+        @"Locally hosted models will only have attachments sent to them in the manner you've configured.", service], @"Attach");
 }
 
 - (void)attachPaths:(NSArray *)paths

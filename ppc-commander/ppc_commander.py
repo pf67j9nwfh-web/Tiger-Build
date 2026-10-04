@@ -635,7 +635,6 @@ def instructions():
         'ppc-commander executes on this PowerPC Mac, not on the MCP client. '
         'uname: %s. sw_vers: %s. model: %s. memory_bytes: %s. Python: %s. '
         'Default shell: %s. There is no Node.js and no ripgrep. The compiler is gcc 4.0. '
-        'Excel, PDF, and DOCX tools are not available. '
         'allowedDirectories limits file tools only; an empty list means the whole filesystem. '
         'Terminal commands are not limited by that list. Disk-erase commands stay blocked. '
         'blockedCommands, allowedDirectories, and defaultShell are locked, and the file '

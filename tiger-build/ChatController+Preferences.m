@@ -154,7 +154,7 @@ static NSString *splitBase(NSString *base, NSString **port)
             saved++;
     }
     if (saved == 0)
-        [self setPreferencesStatus:@"No provider keys yet. Add any you use, or use only a local LLM server."];
+        [self setPreferencesStatus:@"No provider keys yet. Add some or a configure a local LLM server connection to get started."];
 }
 
 /* Write the relay address, port, and token. NO (with an alert) if unusable. */
@@ -240,7 +240,7 @@ static NSString *splitBase(NSString *base, NSString **port)
         [self setRelayTestText:[NSString stringWithFormat:@"Connected. %d models ready: %@.",
             models, [ready componentsJoinedByString:@", "]]];
     else
-        [self setRelayTestText:@"Connected. No provider keys yet; Local works if a server is set."];
+        [self setRelayTestText:@"Connected. No provider keys yet or local LLM server set."];
     [self requestSettings];
     [self refreshAfterPreferences];
 }
@@ -581,7 +581,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     /* ---- API keys ---- */
     tab = [self preferencesTab:@"API Keys" in:tabs];
     y = 304;
-    [self preferencesNote:@"Add a key for each service you use. One is enough, and none is fine if you only use a local LLM server."
+    [self preferencesNote:@"Add a key for each service or local LLM server IP. You do not have to setup everything, you can configure as many or little as you want."
         frame:NSMakeRect(16, y - 14, 520, 30) inView:tab];
     y -= 40;
     keys = [NSArray arrayWithObjects:
@@ -589,7 +589,7 @@ static NSString *splitBase(NSString *base, NSString **port)
         [NSArray arrayWithObjects:@"OpenAI (ChatGPT)", @"openai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Anthropic (Claude)", @"anthropic_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Workspace ID (optional)", @"anthropic_workspace_id", @"0",
-            @"Only needed if your Anthropic key belongs to a workspace that requires its ID. Most keys do not; leave it blank.", nil],
+            @"Only needed if your Anthropic key belongs to a workspace that requires its ID. Most keys do not.", nil],
         [NSArray arrayWithObjects:@"Mistral", @"mistral_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Muse", @"muse_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Google (Gemini)", @"gemini_api_key", @"1", @"", nil],
@@ -607,7 +607,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     tab = [self preferencesTab:@"Local LLM Server" in:tabs];
     y = 284;
     field = [self preferencesRow:@"Local LLM server address" key:@"local_url" y:y secure:NO width:190
-        help:@"An OpenAI-compatible server such as LM Studio, as the relay computer sees it (not the relay's own address). "
+        help:@"An OpenAI-compatible server such as LM Studio, as the relay computer sees it. "
              @"For example http://127.0.0.1:1234/v1, or http://192.168.1.50:1234/v1 on another computer. Reset removes it."
         removable:@"Reset" inView:tab];
     [[field cell] setPlaceholderString:@"not set (e.g. " TB_LOCAL_EXAMPLE ")"];
@@ -648,7 +648,7 @@ static NSString *splitBase(NSString *base, NSString **port)
         removable:nil inView:tab];
     y -= 32;
     [self preferencesRow:@"Account (short name)" key:@"ssh_user" y:y secure:NO width:190
-        help:@"The short user name Commander signs in as, such as jr."
+        help:@"The short user name Commander signs in as, such as thomas."
         removable:nil inView:tab];
     y -= 32;
     [self preferencesRow:@"Home folder (optional)" key:@"ssh_home" y:y secure:NO width:190
