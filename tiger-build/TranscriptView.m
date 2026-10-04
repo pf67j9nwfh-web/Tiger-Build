@@ -1852,9 +1852,9 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 - (void)drawRect:(NSRect)dirty
 {
     [TBTheme drawBackground:dirty visible:[self bounds]];
-    [self drawSample:@"Can you help me with this?" sent:YES y:NSHeight([self bounds]) - 52];
-    [self drawSample:@"Yes. What would you like to know?" sent:NO y:NSHeight([self bounds]) - 98];
-    paintThoughtCloud(NSMakeRect(16, 6, 84, 50), 1);
+    [self drawSample:@"Can you help me with this?" sent:YES y:NSHeight([self bounds]) - 46];
+    [self drawSample:@"Yes. What would you like to know?" sent:NO y:NSHeight([self bounds]) - 86];
+    paintThoughtCloud(NSMakeRect(16, 3, 84, 50), 1);
     /* The thin frame around the sample, as in iChat's preferences. */
     [[NSColor colorWithCalibratedWhite:0.45f alpha:1] set];
     NSFrameRect(NSInsetRect([self bounds], 0, 0));

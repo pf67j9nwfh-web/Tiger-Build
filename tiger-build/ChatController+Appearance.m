@@ -102,32 +102,32 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
     NSButton *reset;
     NSButton *done;
     NSView *preview;
-    panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 520) styleMask:NSTitledWindowMask | NSClosableWindowMask
+    panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 470) styleMask:NSTitledWindowMask | NSClosableWindowMask
                                          backing:NSBackingStoreBuffered defer:NO];
     [panel setTitle:@"Appearance"];
     [panel setReleasedWhenClosed:NO];
-    preview = [[[TBThemePreview alloc] initWithFrame:NSMakeRect(20, 340, 420, 160)] autorelease];
+    preview = [[[TBThemePreview alloc] initWithFrame:NSMakeRect(20, 312, 420, 140)] autorelease];
     [[panel contentView] addSubview:preview];
-    [self section:@"Your messages" y:240 bubble:&sentBubble text:&sentText font:&sentFont size:&sentSize
+    [self section:@"Your messages" y:232 bubble:&sentBubble text:&sentText font:&sentFont size:&sentSize
      bubbleAction:@selector(sentBubbleChanged:) textAction:@selector(sentTextChanged:) fontAction:@selector(sentFontChanged:) sizeAction:@selector(sentFontChanged:)];
-    [self section:@"Replies" y:150 bubble:&gotBubble text:&gotText font:&gotFont size:&gotSize
+    [self section:@"Replies" y:142 bubble:&gotBubble text:&gotText font:&gotFont size:&gotSize
      bubbleAction:@selector(gotBubbleChanged:) textAction:@selector(gotTextChanged:) fontAction:@selector(gotFontChanged:) sizeAction:@selector(gotFontChanged:)];
-    [self label:@"Background" frame:NSMakeRect(20, 118, 420, 18) right:NO bold:YES];
-    [self label:@"Style:" frame:NSMakeRect(20, 88, 100, 17) right:YES bold:NO];
-    backdrop = [self popup:NSMakeRect(130, 84, 130, 22) tip:@"Chat background" action:@selector(backdropChanged:)];
+    [self label:@"Background" frame:NSMakeRect(20, 112, 420, 18) right:NO bold:YES];
+    [self label:@"Style:" frame:NSMakeRect(20, 84, 100, 17) right:YES bold:NO];
+    backdrop = [self popup:NSMakeRect(130, 80, 130, 22) tip:@"Chat background" action:@selector(backdropChanged:)];
     [backdrop addItemWithTitle:@"Default"];
     [backdrop addItemWithTitle:@"Solid Color"];
     [backdrop addItemWithTitle:@"Gradient"];
     [backdrop addItemWithTitle:@"Picture"];
-    backColor = [self well:NSMakeRect(272, 82, 44, 24) tip:@"Background color, or the top of the gradient" action:@selector(backColorChanged:)];
-    backColor2 = [self well:NSMakeRect(322, 82, 44, 24) tip:@"Bottom of the gradient" action:@selector(backColorChanged:)];
-    pictureButton = [[[NSButton alloc] initWithFrame:NSMakeRect(130, 48, 140, 28)] autorelease];
+    backColor = [self well:NSMakeRect(272, 78, 44, 24) tip:@"Background color, or the top of the gradient" action:@selector(backColorChanged:)];
+    backColor2 = [self well:NSMakeRect(322, 78, 44, 24) tip:@"Bottom of the gradient" action:@selector(backColorChanged:)];
+    pictureButton = [[[NSButton alloc] initWithFrame:NSMakeRect(130, 44, 140, 28)] autorelease];
     [pictureButton setTitle:@"Choose Picture..."];
     [pictureButton setBezelStyle:NSRoundedBezelStyle];
     [pictureButton setTarget:self];
     [pictureButton setAction:@selector(choosePicture:)];
     [[panel contentView] addSubview:pictureButton];
-    pictureName = [self label:@"" frame:NSMakeRect(276, 54, 164, 17) right:NO bold:NO];
+    pictureName = [self label:@"" frame:NSMakeRect(276, 50, 164, 17) right:NO bold:NO];
     [[pictureName cell] setLineBreakMode:NSLineBreakByTruncatingMiddle];
     reset = [[[NSButton alloc] initWithFrame:NSMakeRect(20, 10, 150, 28)] autorelease];
     [reset setTitle:@"Reset to Default"];

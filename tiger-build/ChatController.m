@@ -1865,6 +1865,20 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     return (NSInteger)[chats count];
 }
 
+/* Hovering a chat in the list shows its whole title, for the ones the column cuts off. */
+- (NSString *)tableView:(NSTableView *)aTable toolTipForCell:(NSCell *)cell rect:(NSRectPointer)rect tableColumn:(NSTableColumn *)column
+                    row:(NSInteger)row mouseLocation:(NSPoint)mouseLocation
+{
+    (void)aTable;
+    (void)cell;
+    (void)rect;
+    (void)column;
+    (void)mouseLocation;
+    if (row < 0 || row >= (NSInteger)[chats count])
+        return nil;
+    return [[chats objectAtIndex:row] objectForKey:@"title"];
+}
+
 - (id)tableView:(NSTableView *)aTable objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     NSString *title;
