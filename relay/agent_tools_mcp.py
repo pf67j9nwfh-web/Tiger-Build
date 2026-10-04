@@ -11,7 +11,7 @@ from integrations import read, auxiliary, run_auxiliary
 def respond(request):
     method=request.get('method'); params=request.get('params') or {}
     if method=='initialize':
-        return {'protocolVersion':'2025-06-18','capabilities':{'tools':{}},'serverInfo':{'name':'tiger-agent-toolbox','version':'1.4'}}
+        return {'protocolVersion':'2025-06-18','capabilities':{'tools':{}},'serverInfo':{'name':'tiger-agent-toolbox','version':'1.5'}}
     provider=sys.argv[sys.argv.index('--provider')+1] if '--provider' in sys.argv else 'other'
     config=read();tools=auxiliary(provider,config)
     if method=='tools/list':

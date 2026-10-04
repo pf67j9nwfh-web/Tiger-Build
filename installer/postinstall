@@ -3,7 +3,7 @@
 # the relay so they can be read again later.
 
 cat > /usr/local/tiger-build-relay/ENV-SETUP.txt << 'EOF'
-Tiger Build Relay 1.4 is installed at /usr/local/tiger-build-relay.
+Tiger Build Relay 1.5 is installed at /usr/local/tiger-build-relay.
 
 The installer also ran setup for the account that was logged in, so the relay
 should already be running.
@@ -24,7 +24,7 @@ Then, on the Tiger Mac, open Tiger Build > Preferences. Enter the relay
 address, port and token, then click Test Connection.
 
 Add API keys in Preferences or in the Tiger Build Relay app. With no keys at
-all, a local model server such as LM Studio still works. Keys can instead go
+all, a local model server such as LM Studio or Ollama still works. Keys can instead go
 in /usr/local/tiger-build-relay/.env (see .env.example).  You are able to
 configure as many or as little providers to use this application.
 

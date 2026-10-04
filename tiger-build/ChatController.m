@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TranscriptView.h"
+#import "TBProviderIcons.h"
 #import <CoreServices/CoreServices.h>
 
 static BOOL nextWindowIsExtra = NO;
@@ -1350,6 +1351,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     for (i = 0; i < [providers count]; i++) {
         NSDictionary *item = [providers objectAtIndex:i];
         [self addModelItem:[self providerMenuTitle:item] identifier:[item objectForKey:@"id"] toMenu:menu];
+        [[menu itemAtIndex:[menu numberOfItems]-1] setImage:TBProviderIcon([item objectForKey:@"id"])];
         [[menu itemAtIndex:[menu numberOfItems]-1] setKeyEquivalent:[NSString stringWithFormat:@"%d",(int)i+1]];
     }
 }
@@ -1367,6 +1369,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         NSString *pid = [item objectForKey:@"id"];
         [modelPopup addItemWithTitle:[self providerMenuTitle:item]];
         [[modelPopup lastItem] setRepresentedObject:pid];
+        [[modelPopup lastItem] setImage:TBProviderIcon(pid)];
         /* Local stays enabled so choosing it asks the server for models again. */
         [[modelPopup lastItem] setEnabled:([pid isEqualToString:@"local"] || [self providerNote:pid] == nil)];
     }
@@ -2403,7 +2406,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.4";
+        version = @"1.5";
     NSRunAlertPanel(@"About Tiger Build",
         @"Version %@\nLicensed under the MIT License.",
         @"OK", nil, nil, version);

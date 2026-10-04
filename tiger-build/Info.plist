@@ -17,13 +17,13 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Version 1.4, licensed under the MIT License.</string>
+	<string>Version 1.5, licensed under the MIT License.</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4</string>
+	<string>1.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4</string>
+	<string>1.5</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Licensed under the MIT License.</string>
 	<key>CFBundleDocumentTypes</key>

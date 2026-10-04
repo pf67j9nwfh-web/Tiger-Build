@@ -1,10 +1,15 @@
 # Changelog
 
+## 1.5
+- **Appearance** (⌥⌘K): iChat-style bubble colours, text colours, fonts and chat background (solid, gradient or picture), with Reset to Default; iChat's thought cloud shows while a reply is starting.
+- **Local models**: Ollama works as well as LM Studio. The relay reads each Ollama model's context length from the server instead of assuming 32k.
+- **Provider icons** beside each service in the provider popup and the Model menu.
+- The chat list shows a chat's full title when you hover over it.
+
 ## 1.4
 - **Attach files** by button, drag, Dock icon or paste: text, code, PDF, Word, Excel, PowerPoint, Pages, Numbers, Keynote, RTF, HTML and pictures (including HEIC and WebP). The relay converts what old Macs cannot read. Each attach is read one at a time, checked against the model's context, and explained the first time per service.
 - **Files from the model**: real .docx, .xlsx, .pdf or any file, with Save As. Pictures a tool views appear in the chat.
 - **Replies**: code blocks that name the language, colour about 40 languages and offer Save and Copy; tables, links, italics and headings; emoji shown as text on Macs that cannot draw them.
-- **Appearance** (⌥⌘K): iChat-style bubble colours, text colours, fonts and chat background (solid, gradient or picture), with Reset to Default; iChat's thought cloud shows while a reply is starting.
 - **Chats**: export and import one chat with its files; Edit From Here and Branch Chat From Here; Find in Chats; Custom Instructions; text size for the chat, list and message box; rolling backups of every workspace file; VoiceOver labels.
 - **Source control** in Commander 0.4.0: `repo_info`, `git_read`, `git_write`, `svn_read`, `svn_write`, with totals on the tool card. Read tools never ask first.
 - **Voice** (optional, off by default): speak replies, spoken commands, and Dictate, which records on the Mac and transcribes on the relay with OpenAI, Mistral or Google.

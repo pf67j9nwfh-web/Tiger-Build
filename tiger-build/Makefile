@@ -29,8 +29,8 @@ LIBS32 := -framework Cocoa -framework CoreServices -framework CoreAudio -framewo
 LIBS64 := -framework Cocoa -framework CoreServices -framework CoreAudio
 comma := ,
 LIBSX86 := -framework Cocoa -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TBTheme.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TBTheme.h TranscriptView.h
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TBTheme.m TBProviderIcons.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 

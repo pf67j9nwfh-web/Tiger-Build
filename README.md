@@ -180,7 +180,7 @@ Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`, pp
 
 **Chats**
 - **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander to one folder.
-- **Chat list.** Hover a chat to see its full title.
+- **Chat list.** Hover a chat to see its full title. Each service shows its own icon in the provider popup and the Model menu.
 - **Models.** The popups under the chat list pick service and model. A new chat starts with the last chat's model, tools and approvals, or a fixed model chosen in Preferences. Services with no key or no working model are dimmed with the reason.
 - **Stop and guidance.** Stop (⌘.) ends a reply at once, even mid-command. While a model uses tools, Send becomes **Guide**: a note typed then reaches the model between steps (Grok, ChatGPT, Claude, Gemini, Mistral).
 - **Edit and retry.** Retry resends your last message. Edit Last takes it back into the message box (Cancel Edit restores). Right-click any message for **Edit From Here** or **Branch Chat From Here**.
@@ -236,7 +236,7 @@ python3 "$HOME/Library/Application Support/Tiger Build Relay/app/relay/control.p
 
 - **Live model list.** At start and every six hours the relay asks each keyed service for its models, drops non-chat ones, and test-calls each with a tool. Only models that pass are offered; changing a key retests that service. This means this app will theorically always have
 the latest and greatest models available for you to use excluding an API updates that break compatability. The more powerful models tend to do a much better job or working within the confines of the old OS environments than the less powerful ones.
-- **Local LLM server.** None is assumed. Give its address as the relay computer sees it, for example `http://127.0.0.1:1234/v1` for LM Studio or similar on the relay computer.
+- **Local LLM server.** None is assumed. Give its address as the relay computer sees it: `http://127.0.0.1:1234` for LM Studio or `http://127.0.0.1:11434` for Ollama (`/v1` is added if left off). The relay reads each model's context length from the server. With Ollama, set its context length in Ollama's settings; the default can be small, and Ollama then drops the oldest part of a long chat without saying so.
 - **Custom MCP servers.** Add stdio servers (program path, arguments, environment) in the MCP Servers tab of either app; double-click to edit. They run on the relay computer, start disabled, and can be set to ask first. Enable only programs you trust. `relay/http_mcp.py` bridges Streamable HTTP servers.
 - **Example servers.** `mcp-examples/` has three dependency-free Python 3 servers: `mcp_calc.py`, `mcp_notes.py` and `mcp_sysinfo.py` (with `slow_task` and `always_fails` for testing Stop). Add one with your Python 3 as the program and the script's full path as the argument. The official servers work too, for example program `/path/to/npx`, arguments `-y|@modelcontextprotocol/server-filesystem|/some/folder`.
 - **Web search and pictures.** Search runs on the relay computer. It works with no key (DuckDuckGo, with Wikipedia as a fallback); a Brave or Tavily key broadens it, and a refused key falls back to the free search. Models can find pictures (Brave or Tavily, else Wikimedia Commons) and show them in the chat; the relay downloads them, and only from public addresses. Grok uses its own search while that switch is on.
@@ -283,10 +283,10 @@ ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-
 
 | Script | Makes |
 | --- | --- |
-| `scripts/build-pkg.sh` | `dist/TigerBuildRelay-1.4.pkg` (macOS) |
-| `scripts/build-deb.sh` | `dist/tiger-build-relay_1.4_all.deb` (Linux) |
+| `scripts/build-pkg.sh` | `dist/TigerBuildRelay-1.5.pkg` (macOS) |
+| `scripts/build-deb.sh` | `dist/tiger-build-relay_1.5_all.deb` (Linux) |
 | `scripts/build-windows.ps1` or `build-windows-zip.py` | `dist/tiger-build-relay-payload.zip` and `Install-TigerBuildRelay.cmd` (Windows) |
-| `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-1.4.pkg` (Tiger Build for the old Macs) |
+| `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-1.5.pkg` (Tiger Build for the old Macs) |
 | `scripts/build-relay-gui.sh` | the Mac relay app |
 
 The macOS package has a universal settings app. The Windows zip and Linux package are source-based and use the platform's Python (3.8+), Tk and OpenSSH. Run setup as your own user, not as administrator. The Windows `.cmd` unpacks the files; then run the setup command it shows. `/health` reports the version. What was tested, and on which Macs, is in [`docs/RELEASE-REVIEW.md`](docs/RELEASE-REVIEW.md).  The macOS relay application uses Swift UI for prettiness, the Linux and Windows versions have their GUI built from Python which is uglyier looking. (Linux and Windows relay support is primarily provided as a courteousy and aren't my primary focus)

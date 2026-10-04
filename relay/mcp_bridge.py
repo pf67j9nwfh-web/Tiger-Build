@@ -132,7 +132,7 @@ class McpClient(object):
         self.request("initialize", {
             "protocolVersion": "2025-06-18",
             "capabilities": {},
-            "clientInfo": {"name": "tigerbuild", "version": "1.4"},
+            "clientInfo": {"name": "tigerbuild", "version": "1.5"},
         }, timeout=45)
         self.notify("notifications/initialized", {})
 

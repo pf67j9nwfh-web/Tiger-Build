@@ -607,8 +607,8 @@ static NSString *splitBase(NSString *base, NSString **port)
     tab = [self preferencesTab:@"Local LLM Server" in:tabs];
     y = 284;
     field = [self preferencesRow:@"Local LLM server address" key:@"local_url" y:y secure:NO width:190
-        help:@"An OpenAI-compatible server such as LM Studio, as the relay computer sees it. "
-             @"For example http://127.0.0.1:1234/v1, or http://192.168.1.50:1234/v1 on another computer. Reset removes it."
+        help:@"LM Studio, Ollama or another OpenAI-compatible server, as the relay computer sees it. "
+             @"For example http://127.0.0.1:1234 (LM Studio), http://127.0.0.1:11434 (Ollama), or an address on another computer. Reset removes it."
         removable:@"Reset" inView:tab];
     [[field cell] setPlaceholderString:@"not set (e.g. " TB_LOCAL_EXAMPLE ")"];
     y -= 24;
@@ -618,7 +618,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     y -= 34;
     [self preferencesRow:@"Local API key (optional)" key:@"local_api_key" y:y secure:YES width:190
         help:@"Optional. Only needed if your local LLM server was set up to require a key. "
-             @"LM Studio does not require one unless you turn that on."
+             @"LM Studio and Ollama do not require one unless you turn that on."
         removable:@"Remove" inView:tab];
 
     /* ---- New chats ---- */
