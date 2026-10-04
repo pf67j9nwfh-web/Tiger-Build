@@ -5,6 +5,7 @@
 - **Administrator (sudo) mode** for Commander 0.5.0, off by default: tick it in Preferences, Commander and type the password once; it is kept in the Keychain and the model never sees it. Without the mode, commands containing `sudo` are refused.
 - **Emoji** as colour pictures (Twemoji, CC-BY 4.0) in chats and the chat list on Macs before 10.7, which have no emoji font.
 - The `.deb` also depends on systemd and ca-certificates and recommends the HEIC decoder and xdg-utils.
+- **Example MCP servers** are added on first setup, now with a weather one (wttr.in through `curl`); removing one sticks.
 - **Local models**: Ollama works as well as LM Studio. The relay reads each Ollama model's context length from the server instead of assuming 32k.
 - **Provider icons** beside each service in the provider popup and the Model menu.
 - The chat list shows a chat's full title when you hover over it.

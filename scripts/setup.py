@@ -378,6 +378,9 @@ def main():
     if os.path.isfile(old_control):
         stop_installed(old_control)
     app = copy_app(support)
+    import integrations
+    if integrations.install_examples(os.path.join(app, "mcp-examples"), sys.executable):
+        print("Added the example MCP servers (calculator, notebook, system info, weather). Switch them off in the relay settings.")
     control = os.path.join(app, "relay", "control.py")
     # First install turns autostart on. Later runs keep the user's choice.
     if not configured(support):

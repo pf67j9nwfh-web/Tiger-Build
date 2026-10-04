@@ -50,6 +50,8 @@ DEFAULT = {
     # Tool rounds one reply may use before the relay stops it and says so.
     "max_tool_steps": 40,
     "servers": [],
+    # Set once the example servers have been added, so one that is removed stays removed.
+    "examples_installed": False,
 }
 FLAGS = (
     "ppc_approval",
@@ -154,6 +156,7 @@ def validate(obj):
             "approval": approval,
         })
     out["servers"] = clean
+    out["examples_installed"] = obj.get("examples_installed") is True
     return out
 
 
@@ -166,6 +169,9 @@ def write(obj, preserve_key=False):
         if preserve_key and not obj.get("tavily_api_key") and not obj.get("clear_tavily_key"):
             obj = dict(obj)
             obj["tavily_api_key"] = current["tavily_api_key"]
+        if "examples_installed" not in obj:
+            obj = dict(obj)
+            obj["examples_installed"] = current["examples_installed"]
         out = validate(obj)
         temporary = path() + ".tmp"
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -173,6 +179,32 @@ def write(obj, preserve_key=False):
             json.dump(out, handle, indent=2)
         os.replace(temporary, path())
         return out
+
+
+EXAMPLE_SERVERS = (
+    ("calc", "Calculator", "mcp_calc.py", False),
+    ("notes", "Notebook", "mcp_notes.py", True),
+    ("sysinfo", "System info", "mcp_sysinfo.py", False),
+    ("weather", "Weather (wttr.in)", "mcp_weather.py", False),
+)
+
+
+def install_examples(folder, python):
+    """Add the example servers on the first setup. Later runs leave the list alone, so a server
+    the person removed or switched off stays that way. Returns whether anything was added."""
+    with LOCK:
+        config = read()
+        if config["examples_installed"]:
+            return False
+        have = {server["id"] for server in config["servers"]}
+        config["servers"] = list(config["servers"])
+        for name, title, script, approval in EXAMPLE_SERVERS:
+            if name not in have and os.path.isfile(os.path.join(folder, script)):
+                config["servers"].append({"id": name, "title": title, "command": python, "args": [os.path.join(folder, script)],
+                                          "env": {}, "enabled": True, "approval": approval})
+        config["examples_installed"] = True
+        write(config)
+        return True
 
 
 def public():

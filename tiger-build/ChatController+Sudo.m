@@ -186,10 +186,10 @@ static BOOL passwordAccepted(NSString *password)
 /* nil when the person cancels. */
 - (NSString *)askAdministratorPassword
 {
-    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 400, 170) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
-    NSTextField *label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 122, 360, 34)] autorelease];
-    NSSecureTextField *field = [[[NSSecureTextField alloc] initWithFrame:NSMakeRect(20, 90, 360, 22)] autorelease];
-    NSTextField *note = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 50, 360, 34)] autorelease];
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 400, 196) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
+    NSTextField *label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 146, 360, 34)] autorelease];
+    NSSecureTextField *field = [[[NSSecureTextField alloc] initWithFrame:NSMakeRect(20, 114, 360, 22)] autorelease];
+    NSTextField *note = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 54, 360, 52)] autorelease];
     NSButton *ok = [[[NSButton alloc] initWithFrame:NSMakeRect(300, 12, 80, 28)] autorelease];
     NSButton *cancel = [[[NSButton alloc] initWithFrame:NSMakeRect(210, 12, 80, 28)] autorelease];
     NSString *password = nil;
