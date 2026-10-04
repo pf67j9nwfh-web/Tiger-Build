@@ -1879,22 +1879,26 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)mouseLocation;
     if (row < 0 || row >= (NSInteger)[chats count])
         return nil;
-    return [[chats objectAtIndex:row] objectForKey:@"title"];
+    return TBDisplayText([[chats objectAtIndex:row] objectForKey:@"title"]);
 }
 
 - (id)tableView:(NSTableView *)aTable objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
     NSString *title;
     NSString *chatId;
+    NSAttributedString *pictured;
     (void)aTable;
     (void)column;
     if (row < 0 || row >= (int)[chats count])
         return @"";
     title = [[chats objectAtIndex:row] objectForKey:@"title"];
     chatId = [[chats objectAtIndex:row] objectForKey:@"id"];
+    if (!title)
+        title = @"";
     if ((busy || naming) && streamingId && [streamingId isEqualToString:chatId])
-        return [NSString stringWithFormat:@"%C  %@", (unichar)0x2022, title ? title : @""];
-    return title ? title : @"";
+        title = [NSString stringWithFormat:@"%C  %@", (unichar)0x2022, title];
+    pictured = TBEmojiTitle(title, [[column dataCell] font]);
+    return pictured ? (id)pictured : (id)TBDisplayText(title);
 }
 
 - (void)tableView:(NSTableView *)aTable setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row

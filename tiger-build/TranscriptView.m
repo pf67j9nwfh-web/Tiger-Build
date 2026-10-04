@@ -165,6 +165,18 @@ static NSString *plainWithEmoji(NSAttributedString *text)
     return out;
 }
 
+NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font)
+{
+    NSMutableParagraphStyle *style;
+    NSString *standIns = TBEmojiSubstitute(text);
+    if (!hasStandIn(standIns))
+        return nil;
+    style = [[[NSMutableParagraphStyle alloc] init] autorelease];
+    [style setLineBreakMode:NSLineBreakByTruncatingTail];
+    return withEmojiPictures([[[NSAttributedString alloc] initWithString:standIns
+        attributes:[NSDictionary dictionaryWithObjectsAndKeys:font, NSFontAttributeName, style, NSParagraphStyleAttributeName, nil]] autorelease]);
+}
+
 /* One of these sits on each message so the words can be highlighted and copied.
    A click on an activity card's triangle still expands it. */
 @interface TBSelectText : NSTextView

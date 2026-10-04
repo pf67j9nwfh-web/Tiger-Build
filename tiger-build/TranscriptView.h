@@ -38,3 +38,6 @@
 /* The sample in the Appearance panel: the backdrop with a bubble from you, one from the model and the typing cloud. */
 @interface TBThemePreview : NSView
 @end
+
+/* A chat title with its emoji as pictures, for the chat list; nil when it has none (or the system draws emoji itself). */
+NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font);

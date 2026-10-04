@@ -55,7 +55,7 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 - [Upgrading from Tiger Desk](#upgrading-from-tiger-desk)
 - [Why Do This?](#why-do-this)
 
-## How it fits together
+## How it works
 
 Tiger and the Leopards cannot open modern HTTPS connections, so Tiger Build never calls an AI service itself. **Tiger Build Relay** runs on a current Mac on the same network. It receives each chat over plain HTTP (protected by a token), calls the AI service, and, when the model wants a tool, runs ppc-commander on the Tiger Mac over SSH. The basic operation of this application can be seen in the diagram below:
 
@@ -66,7 +66,7 @@ Tiger and the Leopards cannot open modern HTTPS connections, so Tiger Build neve
  │                      │                   │                           │           │ (if configured)      │
  │ chats, workspaces    │                   │ keys, model checks, tools │           └──────────────────────┘
  └──────────────────────┘                   │                           │   HTTP    ┌──────────────────────┐
- ┌──────────────────────┐   SSH (ssh-rsa)   │                           │ ────────▶ │ local LLM server     │
+ ┌──────────────────────┐   SSH (ssh-rsa)   │                           │ ────────▶ │ Local LLM server     │
  │ ~/ppc-commander/     │ ◀──────────────── │ runs tools when asked     │           │ (if configured)      │
  └──────────────────────┘                   └───────────────────────────┘           └──────────────────────┘
 ```
@@ -77,7 +77,7 @@ Your chat history stays on the Tiger Build client. API keys stay on the relay co
 
 | Where | What |
 | --- | --- |
-| Client Mac | Mac OS X 10.4 to 10.6, PowerPC or Intel, with its built-in Python (2.3, 2.5 or 2.6) and Remote Login on (System Preferences → Sharing). To build the app yourself: Xcode 2.5 on Tiger, or Xcode 3.1/3.2 on Leopard and Snow Leopard. It's generated as a universal binary covers that `ppc`, `i386`, `ppc64` and `x86_64`; ppc64 is only supported on Leopard due to OS API limitations.  As a sidenote, there is very little software that ever took advantage of 64 bit on the G5s because of said API limitations. |
+| Client Mac | Mac OS X 10.4 to 10.6, PowerPC or Intel, with its built-in Python (2.3, 2.5 or 2.6) and Remote Login on (System Preferences → Sharing). To build the app yourself: Xcode 2.5 on Tiger, or Xcode 3.1/3.2 on Leopard and Snow Leopard. It's generated as a universal binary covers that `ppc`, `i386`, `ppc64` and `x86_64`; ppc64 is only supported on Leopard due to OS API limitations.  As a sidenote, there is very little software that ever took advantage of 64 bit on the G5s because of said API limitations.  Newer versions of Mac OS X (or OS X or macOS) are theorically supported on the client since this app does include 64 bit Intel support. It is strongly recommended that you install the Developer Tools disc and/or the appropriate version of Xcode for your client system even if you aren't compiling the Tiger Build client application yourself to let your agents take full advantage of your Mac's capabilities. |
 | Relay computer | A Mac, Windows PC, or Linux computer that meets the minimums in [Relay system requirements](#relay-system-requirements) |
 | Network | The Tiger Mac and the relay computer on the same network, and the Tiger Mac able to reach the relay directly |
 | Optional | API keys for xAI, OpenAI, Anthropic, Mistral, Muse, or Google (as few or as many as you want to configure), a Brave or Tavily key for better web search if desired, and/or a local OpenAI-compatible model server. |
@@ -194,7 +194,7 @@ Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`, pp
   - The first attach for each service explains the files go to that service. A file too big for the model's context is offered shortened. Stop cancels a read in progress.
   - Copies are kept in Application Support and the model is told where, so Commander can use them. Only the last six pictures are re-sent.
 - **Files from the model.** The model can hand over a file with a **Save As...** button. A name ending `.docx`, `.xlsx` or `.pdf` makes a real Word, Excel or PDF file. Pictures a tool looks at are shown in the chat.
-- **Emoji.** Macs before Lion have no emoji font, so Tiger Build draws each emoji as a colour picture from the Twemoji set (flags, skin tones and joined emoji too). Copying selected text copies the emoji themselves. Lion and later use the system's own.
+- **Emoji.** Macs before Lion have no emoji font, so Tiger Build draws each emoji as a colour picture from the Twemoji set (flags, skin tones and joined emoji too). The chat list shows them too, and copying selected text copies the emoji themselves. Lion and later use the system's own.
 - **Code blocks.** Dark panels name the language and colour about 40 languages, with **Save** and **Copy**. Replies also show bold, italics, `inline code`, headings, bullets, links and tables. Chat → Copy Last Code Block (⇧⌘C) copies without clicking.
 - **Thinking.** Returned reasoning shows in its own card and stays visible above the message box while the model runs (Claude, ChatGPT reasoning models, Grok, Gemini, Mistral Magistral, local reasoning models). Turn it off in Tools settings.
 - **Cost and context.** The line above the chat shows context use and an **estimated cost** (hover for the breakdown), from a public price list the relay fetches; local models show N/A. A full context is summarized (also Chat → Compact Chat Now), and a reply that hits the output limit ends with a note.
