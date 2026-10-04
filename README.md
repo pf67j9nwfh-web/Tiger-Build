@@ -293,7 +293,7 @@ ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-
 | `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-1.5.pkg` (Tiger Build for the old Macs) |
 | `scripts/build-relay-gui.sh` | the Mac relay app |
 
-The macOS package has a universal settings app. The Windows zip and Linux package are source-based and use the platform's Python (3.8+), Tk and OpenSSH. Run setup as your own user, not as administrator. The Windows `.cmd` unpacks the files; then run the setup command it shows. `/health` reports the version. What was tested, and on which Macs, is in [`docs/RELEASE-REVIEW.md`](docs/RELEASE-REVIEW.md).  The macOS relay application uses Swift UI for prettiness, the Linux and Windows versions have their GUI built from Python which is uglyier looking. (Linux and Windows relay support is primarily provided as a courteousy and aren't my primary focus)
+The macOS package has a universal settings app. The Windows zip and Linux package are source-based and use the platform's Python (3.8+), Tk and OpenSSH. Run setup as your own user, not as administrator. The Windows `.cmd` unpacks the files; then run the setup command it shows. `/health` reports the version.  The macOS relay application uses Swift UI for prettiness, the Linux and Windows versions have their GUI built from Python which is uglyier looking. (Linux and Windows relay support is primarily provided as a courteousy and aren't my primary focus)
 
 ## Why Do This?
 
