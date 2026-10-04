@@ -372,6 +372,22 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(Fake("10.9.9.10", "10.9.9.9")._x(), "10.9.9.10")       # a remote Mac cannot pretend
         self.assertEqual(Fake("127.0.0.1", None)._x(), "127.0.0.1")
 
+    def test_transcribe_route(self):
+        def post(body, token="tok"):
+            conn = self.http.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=20)
+            conn.request("POST", "/v1/transcribe", body, {"X-TigerBuild-Token": token, "Content-Type": "audio/wav"})
+            response = conn.getresponse()
+            return response.status, response.read(), response.getheader("X-Transcribed-By")
+        import transcribe
+        wav = b"RIFF" + b"\x24\x00\x00\x00" + b"WAVE" + b"\0" * 200
+        with patch.object(transcribe, "transcribe", lambda data, ctx, language="": ("hello world", "OpenAI")):
+            status, data, who = post(wav)
+        self.assertEqual((status, data, who), (200, b"hello world", "OpenAI"))
+        self.assertEqual(post(b"short")[0], 422)
+        self.assertEqual(post(wav, token="wrong")[0], 401)
+        with patch.object(transcribe, "transcribe", lambda data, ctx, language="": (_ for _ in ()).throw(transcribe.NoService("no key"))):
+            self.assertEqual(post(wav)[0], 424)
+
     def test_version_route(self):
         from version import VERSION
         status, data = self.call("GET", "/v1/version")

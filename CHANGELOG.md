@@ -9,7 +9,7 @@
 - Relay: prompt caching for Claude (about 90% cheaper on long attached chats), conversion limits, media pruning, version check, tunnel helper (`scripts/relay-tunnel.sh`), Windows picture conversion built in.
 - Source control: `repo_info`, `git_read`/`git_write`, `svn_read`/`svn_write` in Commander 0.4.0 (read-only tools never prompt; unsafe options refused).
 - Text size covers the chat list and message box; VoiceOver labels; Claude one-hour prompt cache for big prompts.
-- Optional voice mode (off by default): read replies aloud, auto-speak, five spoken commands, choose a voice.
+- Optional voice mode (off by default): read replies aloud, auto-speak, five spoken commands, choose a voice, and Dictate (record on the Mac, transcribe on the relay with OpenAI, Mistral or Google).
 - Tools ask first, by default, in chats that have attached files.
 - Tested on Tiger 10.4.11 PowerPC, Leopard 10.5.8 (i386, x86_64 and ppc under Rosetta) and Snow Leopard 10.6.8; relays on macOS, Ubuntu 26.04 ARM64 and Windows 11 ARM64. Not tested: ppc64 and Intel Tiger hardware.
 

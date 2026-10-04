@@ -1865,6 +1865,36 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, "not found\n")
 
+    def _transcribe(self):
+        """A recorded clip (WAV) in, its words out as plain text. See transcribe.py."""
+        import transcribe as speech
+        try:
+            size = int(self.headers.get("Content-Length") or "0")
+            if size < 100 or size > speech.MAX_BYTES:
+                raise ValueError("Recordings from a moment to about three minutes can be transcribed.")
+            self.connection.settimeout(120)
+            data = self.rfile.read(size)
+            if len(data) != size:
+                raise ValueError("The upload was cut short.")
+            text, service = speech.transcribe(data, ssl_context(), (self.headers.get("X-Language") or "")[:8])
+        except speech.NoService as exc:
+            self._send(424, str(exc) + "\n")
+            return
+        except ValueError as exc:
+            self._send(422, str(exc) + "\n")
+            return
+        except Exception as exc:
+            self._send(502, "Could not transcribe: %s\n" % exc)
+            return
+        payload = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("X-Transcribed-By", service)
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def _extract(self):
         """Turn an Office, iWork, HEIC or WebP file into text and JPEG pictures (see extract.py)."""
         import extract as converter
@@ -1904,6 +1934,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/v1/extract":
             self._extract()
+            return
+        if path == "/v1/transcribe":
+            self._transcribe()
             return
         if path in ("/v1/integrations", "/v1/config-import"):
             from integrations import write as write_integrations

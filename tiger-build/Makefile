@@ -25,11 +25,11 @@ CC64 ?= $(if $(wildcard /usr/bin/gcc-4.2),gcc-4.2,gcc)
 CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -O2
 CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -O2
 CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -O2 $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
-LIBS32 := -framework Cocoa -framework CoreServices -framework QTKit
-LIBS64 := -framework Cocoa -framework CoreServices
+LIBS32 := -framework Cocoa -framework CoreServices -framework CoreAudio -framework QTKit
+LIBS64 := -framework Cocoa -framework CoreServices -framework CoreAudio
 comma := ,
-LIBSX86 := -framework Cocoa -framework CoreServices $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Voice.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TranscriptView.m
+LIBSX86 := -framework Cocoa -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TranscriptView.m
 HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild

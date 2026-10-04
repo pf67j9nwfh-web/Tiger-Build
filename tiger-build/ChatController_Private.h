@@ -109,6 +109,18 @@
 - (IBAction)normalTextSize:(id)sender;
 @end
 
+@interface ChatController (Dictation)
+- (IBAction)toggleDictation:(id)sender;
+- (IBAction)toggleDictationSend:(id)sender;
+- (BOOL)isDictating;
+- (BOOL)cancelDictation;
+- (BOOL)dictationRunning;
+- (void)finishDictation:(BOOL)keep;
+- (void)beginDictation;
+- (void)updateDictationClock:(NSTimer *)timer;
+- (void)showRestoredProblem:(NSString *)text;
+@end
+
 @interface ChatController (Voice)
 - (IBAction)speakLast:(id)sender;
 - (IBAction)stopSpeaking:(id)sender;

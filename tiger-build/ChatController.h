@@ -23,6 +23,12 @@
     int attachGeneration;
     NSTextView *fieldEditor;
     id finder;
+    unsigned long dictationDevice;
+    unsigned long dictationRate;
+    double dictationStarted;
+    NSTimer *dictationTimer;
+    RelayRequest *dictationRequest;
+    NSString *dictationSaved;
     NSSpeechSynthesizer *voiceSynth;
     NSSpeechSynthesizer *voiceSample;
     NSSpeechRecognizer *voiceRecognizer;

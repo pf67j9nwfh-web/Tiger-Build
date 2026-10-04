@@ -1002,6 +1002,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
                 || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:)
                 || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:)
+                || [item action] == @selector(toggleDictation:) || [item action] == @selector(toggleDictationSend:)
                 || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
                 || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
                 || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
@@ -1140,12 +1141,14 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         {
             NSMenu *voiceMenu = [[[NSMenu alloc] initWithTitle:@"Voice"] autorelease];
             NSMenuItem *voiceSlot = [[[NSMenuItem alloc] initWithTitle:@"Voice" action:NULL keyEquivalent:@""] autorelease];
-            NSArray *titles = [NSArray arrayWithObjects:@"Speak Last Reply", @"Stop Speaking", @"Speak Replies Automatically", @"Voice Commands", @"Choose Voice...", nil];
-            SEL actions[5];
+            NSArray *titles = [NSArray arrayWithObjects:@"Speak Last Reply", @"Stop Speaking", @"Speak Replies Automatically", @"Voice Commands", @"Choose Voice...",
+                @"Dictate", @"Send Dictation Automatically", nil];
+            SEL actions[7];
             unsigned v;
             actions[0] = @selector(speakLast:); actions[1] = @selector(stopSpeaking:); actions[2] = @selector(toggleAutoSpeak:);
             actions[3] = @selector(toggleVoiceCommands:); actions[4] = @selector(chooseVoice:);
-            for (v = 0; v < 5; v++) {
+            actions[5] = @selector(toggleDictation:); actions[6] = @selector(toggleDictationSend:);
+            for (v = 0; v < 7; v++) {
                 NSMenuItem *entry = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:v] action:actions[v] keyEquivalent:@""] autorelease];
                 [entry setTarget:self];
                 [voiceMenu addItem:entry];
@@ -1275,7 +1278,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
             @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
-            @"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
+            @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
@@ -2174,7 +2177,15 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [item setState:(win && [win level] > NSNormalWindowLevel) ? NSOnState : NSOffState];
     }
     if ([item action] == @selector(stopRun:))
-        return (busy && !stopping) || [self attachmentsRunning];
+        return (busy && !stopping) || [self attachmentsRunning] || [self dictationRunning];
+    if ([item action] == @selector(toggleDictation:)) {
+        [item setTitle:[self isDictating] ? @"Stop Dictating" : @"Dictate"];
+        return !busy || [self isDictating];
+    }
+    if ([item action] == @selector(toggleDictationSend:)) {
+        [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBDictationSend"] ? NSOnState : NSOffState];
+        return YES;
+    }
     if ([item action] == @selector(toggleAutoSpeak:)) {
         [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBVoiceAutoSpeak"] ? NSOnState : NSOffState];
         return YES;

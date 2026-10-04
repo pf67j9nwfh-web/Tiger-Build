@@ -383,7 +383,8 @@ static NSString *newRunId(void)
     NSMutableDictionary *chat;
     (void)sender;
     if (!busy) {
-        [self cancelAttachments];
+        if (![self cancelDictation])
+            [self cancelAttachments];
         return;
     }
     stopping = YES;
@@ -559,7 +560,7 @@ static NSString *newRunId(void)
     BOOL guide = [self guidanceAvailable];
     if (!sendButton)
         return;
-    [stopButton setEnabled:(busy && !stopping) || [self attachmentsRunning]];
+    [stopButton setEnabled:(busy && !stopping) || [self attachmentsRunning] || [self dictationRunning]];
     if (!busy) {
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];
