@@ -2,6 +2,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <dlfcn.h>
 #import <stdint.h>
+#import <math.h>
 
 /* ---- libde265, found at run time ---- */
 
@@ -143,7 +144,43 @@ static inline uint8_t clamp8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8
 typedef struct {
     int rv, gu, gv, bu;   /* 16.16 */
     BOOL full;
+    BOOL p3;              /* Display P3 colours (iPhones), brought to sRGB */
 } Matrix;
+
+/* Display P3 to sRGB: both use the sRGB curve, so it is a matrix in linear light. Tables make it cheap on a slow Mac. */
+static unsigned short linearOf[256];
+static unsigned char encodedOf[4096];
+static BOOL tablesReady = NO;
+
+static void makeTables(void)
+{
+    int i;
+    if (tablesReady)
+        return;
+    for (i = 0; i < 256; i++) {
+        double c = i / 255.0;
+        double l = c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+        linearOf[i] = (unsigned short)(l * 4095 + 0.5);
+    }
+    for (i = 0; i < 4096; i++) {
+        double l = i / 4095.0;
+        double c = l <= 0.0031308 ? l * 12.92 : 1.055 * pow(l, 1 / 2.4) - 0.055;
+        int v = (int)(c * 255 + 0.5);
+        encodedOf[i] = v < 0 ? 0 : (v > 255 ? 255 : v);
+    }
+    tablesReady = YES;
+}
+
+static void fromP3(int *r, int *g, int *b)
+{
+    int lr = linearOf[*r], lg = linearOf[*g], lb = linearOf[*b];
+    int nr = (5017 * lr - 921 * lg + 2048) >> 12;                 /*  1.22494 -0.22494  0       */
+    int ng = (-172 * lr + 4268 * lg + 2048) >> 12;                /* -0.04206  1.04206  0       */
+    int nb = (-80 * lr - 322 * lg + 4499 * lb + 2048) >> 12;      /* -0.01964 -0.07864  1.09827 */
+    *r = encodedOf[nr < 0 ? 0 : (nr > 4095 ? 4095 : nr)];
+    *g = encodedOf[ng < 0 ? 0 : (ng > 4095 ? 4095 : ng)];
+    *b = encodedOf[nb < 0 ? 0 : (nb > 4095 ? 4095 : nb)];
+}
 
 /* matrix_coefficients from the file's colour box: 1 is BT.709, 5 and 6 are BT.601 (what iPhones use) */
 static Matrix matrixFor(int coefficients, BOOL full)
@@ -159,6 +196,7 @@ static Matrix matrixFor(int coefficients, BOOL full)
     m.gu = (int)(2 * (1 - kb) * kb / kg * 65536 + 0.5);
     m.gv = (int)(2 * (1 - kr) * kr / kg * 65536 + 0.5);
     m.full = full;
+    m.p3 = NO;
     return m;
 }
 
@@ -267,9 +305,14 @@ static NSString *decodeItem(Item *item, NSData *hvcC, const uint8_t *file, unsig
                 r = Y + ((matrix.rv * (Cr - 128) + 32768) >> 16);
                 g = Y - ((matrix.gu * (Cb - 128) + matrix.gv * (Cr - 128) + 32768) >> 16);
                 b = Y + ((matrix.bu * (Cb - 128) + 32768) >> 16);
-                out[0] = clamp8(r);
-                out[1] = clamp8(g);
-                out[2] = clamp8(b);
+                r = clamp8(r);
+                g = clamp8(g);
+                b = clamp8(b);
+                if (matrix.p3)
+                    fromP3(&r, &g, &b);
+                out[0] = r;
+                out[1] = g;
+                out[2] = b;
                 out += 3;
             }
         }
@@ -473,6 +516,7 @@ static NSData *jpegFromRGB(uint8_t *rgb, unsigned width, unsigned height, int ro
         int rotation = 0;
         BOOL mirror = NO;
         Matrix matrix = matrixFor(6, YES);
+        BOOL p3 = NO;
         unsigned width = 0, height = 0;
         uint8_t *canvas = NULL;
         NSEnumerator *each;
@@ -497,8 +541,21 @@ static NSData *jpegFromRGB(uint8_t *rgb, unsigned width, unsigned height, int ro
                 rotation = q[4] & 3;
             else if (n >= 5 && !memcmp(q, "imir", 4))
                 mirror = (q[4] & 1) ? YES : NO;
-            else if (n >= 15 && !memcmp(q, "colr", 4) && !memcmp(q + 4, "nclx", 4))
+            else if (n >= 15 && !memcmp(q, "colr", 4) && !memcmp(q + 4, "nclx", 4)) {
                 matrix = matrixFor(be16(q + 12), (q[14] & 0x80) != 0);
+                if (be16(q + 8) == 12)
+                    p3 = YES;
+            } else if (n > 12 && !memcmp(q, "colr", 4) && !memcmp(q + 4, "prof", 4)) {
+                /* an ICC profile: iPhones use Display P3 */
+                unsigned k;
+                for (k = 8; k + 10 < n && k < 600; k++)
+                    if (!memcmp(q + k, "Display P3", 10))
+                        p3 = YES;
+            }
+        }
+        if (p3) {
+            makeTables();
+            matrix.p3 = YES;
         }
         if (!width || !height || (unsigned long long)width * height > 100000000ULL) {
             *problem = @"The picture's size is not usable.";

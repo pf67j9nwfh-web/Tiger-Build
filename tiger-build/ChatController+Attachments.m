@@ -908,7 +908,7 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
 - (BOOL)relayConverts:(NSString *)path
 {
     NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
-        @"heic", @"heif", @"webp", @"avif", @"jpg", @"jpeg", nil];
+        @"heic", @"heif", @"webp", @"avif", @"gif", @"jpg", @"jpeg", nil];
     return [kinds containsObject:[[path pathExtension] lowercaseString]];
 }
 
@@ -1007,12 +1007,13 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
                 problem = why;
             }
         }
-        for (i = 0; [pictures isKindOfClass:[NSArray class]] && i < [pictures count] && i < 3; i++) {
+        for (i = 0; [pictures isKindOfClass:[NSArray class]] && i < [pictures count] && i < 4; i++) {
             NSData *jpeg = [pictures objectAtIndex:i];
             NSString *why = nil;
             NSString *temp = [self savedPathForName:name extension:@"jpg"];
             NSMutableDictionary *attachment = nil;
-            NSString *shownName = ([text length] > 0 || [pictures count] > 1) ? [name stringByAppendingString:@" (preview)"] : name;
+            NSString *shownName = ([note hasPrefix:@"An animated"] && [pictures count] > 1) ? [name stringByAppendingFormat:@" (frame %u)", i + 1]
+                : (([text length] > 0 || [pictures count] > 1) ? [name stringByAppendingString:@" (preview)"] : name);
             if ([jpeg isKindOfClass:[NSData class]] && [jpeg writeToFile:temp atomically:YES]) {
                 attachment = [self pictureAttachmentFromPath:temp name:shownName pdf:NO problem:&why];
                 [[NSFileManager defaultManager] removeFileAtPath:temp handler:nil];

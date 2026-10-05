@@ -5,6 +5,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <pthread.h>
 #import "webp/decode.h"
+#import "webp/demux.h"
 #import "TBHEIC.h"
 
 NSString *TBExtractError = @"TBExtractError";
@@ -293,11 +294,13 @@ static NSData *checkedXML(NSData *xml)
     BOOL inSI, inV, inT;
     int inIS;
     NSMutableString *item;
+    int limit, kept;                     /* stop after this many rows that hold something */
+    BOOL stopped;
 }
 + (NSArray *)sharedStrings:(NSData *)xml;
 + (NSArray *)sheetNames:(NSData *)xml; /* [{name, id}] */
 + (NSDictionary *)relationships:(NSData *)xml;
-+ (NSArray *)rowsOf:(NSData *)xml shared:(NSArray *)shared;
++ (NSArray *)rowsOf:(NSData *)xml shared:(NSArray *)shared limit:(int)limit stopped:(BOOL *)stopped;
 @end
 
 @implementation TBCells
@@ -321,7 +324,7 @@ static NSData *checkedXML(NSData *xml)
 + (NSArray *)sharedStrings:(NSData *)xml { return [self run:xml]->strings; }
 + (NSArray *)sheetNames:(NSData *)xml { return [self run:xml]->sheets; }
 + (NSDictionary *)relationships:(NSData *)xml { return [self run:xml]->targets; }
-+ (NSArray *)rowsOf:(NSData *)xml shared:(NSArray *)shared
++ (NSArray *)rowsOf:(NSData *)xml shared:(NSArray *)shared limit:(int)limit stopped:(BOOL *)stopped
 {
     TBCells *me = [[[TBCells alloc] init] autorelease];
     NSXMLParser *parser = [[[NSXMLParser alloc] initWithData:checkedXML(xml)] autorelease];
@@ -330,8 +333,10 @@ static NSData *checkedXML(NSData *xml)
     me->value = [NSMutableString string];
     me->inline_ = [NSMutableString string];
     me->item = [NSMutableString string];
+    me->limit = limit;
     [parser setDelegate:me];
     [parser parse];
+    *stopped = me->stopped;
     return me->rows;
 }
 
@@ -408,8 +413,18 @@ static int columnOf(NSString *ref)
         text = swap(swap(text, @"\t", @" "), @"\n", @" ");
         [cells addObject:text];
     } else if ([name isEqualToString:@"row"] && cells) {
+        unsigned c;
+        BOOL holds = NO;
+        for (c = 0; c < [cells count] && !holds; c++)
+            if ([[cells objectAtIndex:c] length])
+                holds = YES;
         [rows addObject:cells];
         cells = nil;
+        /* A big sheet is read only as far as will be shown: on an old Mac the rest takes many seconds. */
+        if (holds && limit > 0 && ++kept >= limit) {
+            stopped = YES;
+            [p abortParsing];
+        }
     }
 }
 
@@ -434,19 +449,26 @@ static BOOL isWebP(NSData *data)
 }
 
 /* The JPEG of a decoded RGBA picture, laid on white (a JPEG has no transparency). */
-static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int stride)
+static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int stride, int longest)
 {
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
     CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixels, (size_t)stride * height, NULL);
     CGImageRef image = CGImageCreate(width, height, 8, 32, stride, space, kCGImageAlphaLast, provider, NULL, false, kCGRenderingIntentDefault);
-    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space, kCGImageAlphaNoneSkipLast);
+    int big = width > height ? width : height;
+    double scale = big > longest ? (double)longest / big : 1.0;
+    int dw = (int)(width * scale + 0.5), dh = (int)(height * scale + 0.5);
+    CGContextRef context;
     NSMutableData *out = [NSMutableData data];
     NSData *result = nil;
+    if (dw < 1) dw = 1;
+    if (dh < 1) dh = 1;
+    context = CGBitmapContextCreate(NULL, dw, dh, 8, dw * 4, space, kCGImageAlphaNoneSkipLast);
     if (image && context) {
         CGImageRef flat;
         CGContextSetRGBFillColor(context, 1, 1, 1, 1);
-        CGContextFillRect(context, CGRectMake(0, 0, width, height));
-        CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+        CGContextFillRect(context, CGRectMake(0, 0, dw, dh));
+        CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+        CGContextDrawImage(context, CGRectMake(0, 0, dw, dh), image);
         flat = CGBitmapContextCreateImage(context);
         if (flat) {
             CGImageDestinationRef destination = CGImageDestinationCreateWithData((CFMutableDataRef)out, CFSTR("public.jpeg"), 1, NULL);
@@ -469,6 +491,65 @@ static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int st
     return result;
 }
 
+/* Up to four of n frames: the first, the last and two between. */
+static NSArray *pickFrames(int n)
+{
+    NSMutableArray *out = [NSMutableArray array];
+    int picks[4], i;
+    if (n <= 4) {
+        for (i = 0; i < n; i++)
+            [out addObject:[NSNumber numberWithInt:i]];
+        return out;
+    }
+    picks[0] = 0; picks[1] = n / 3; picks[2] = 2 * n / 3; picks[3] = n - 1;
+    for (i = 0; i < 4; i++)
+        [out addObject:[NSNumber numberWithInt:picks[i]]];
+    return out;
+}
+
+/* An animated WebP as JPEGs of up to four of its frames. *total is the number of frames. nil when it cannot be read. */
+static NSArray *jpegFramesFromAnimatedWebP(NSData *data, int longest, int *total)
+{
+    WebPAnimDecoderOptions options;
+    WebPAnimDecoder *decoder;
+    WebPData source;
+    WebPAnimInfo info;
+    NSMutableArray *out = [NSMutableArray array];
+    NSArray *wanted;
+    int frame = 0;
+    if (!WebPAnimDecoderOptionsInit(&options))
+        return nil;
+    options.color_mode = MODE_RGBA;
+    options.use_threads = 0;
+    source.bytes = [data bytes];
+    source.size = [data length];
+    decoder = WebPAnimDecoderNew(&source, &options);
+    if (!decoder)
+        return nil;
+    if (!WebPAnimDecoderGetInfo(decoder, &info) || info.frame_count < 1 || info.canvas_width > 16384 || info.canvas_height > 16384) {
+        WebPAnimDecoderDelete(decoder);
+        return nil;
+    }
+    *total = (int)info.frame_count;
+    wanted = pickFrames(*total);
+    while (WebPAnimDecoderHasMoreFrames(decoder) && [out count] < [wanted count]) {
+        uint8_t *pixels = NULL;
+        int timestamp = 0;
+        if (!WebPAnimDecoderGetNext(decoder, &pixels, &timestamp))
+            break;
+        if ([[wanted objectAtIndex:[out count]] intValue] == frame) {
+            NSData *jpeg = jpegFromRGBA(pixels, info.canvas_width, info.canvas_height, info.canvas_width * 4, longest);
+            if (jpeg)
+                [out addObject:jpeg];
+            else
+                break;
+        }
+        frame++;
+    }
+    WebPAnimDecoderDelete(decoder);
+    return [out count] ? out : nil;
+}
+
 /* A WebP picture as a JPEG no larger than `longest` pixels, scaled while it is decoded so a big one does not fill memory. */
 static NSData *jpegFromWebP(NSData *data, int longest)
 {
@@ -488,12 +569,12 @@ static NSData *jpegFromWebP(NSData *data, int longest)
     }
     config.output.colorspace = MODE_RGBA;
     if (WebPDecode([data bytes], [data length], &config) == VP8_STATUS_OK)
-        result = jpegFromRGBA(config.output.u.RGBA.rgba, config.output.width, config.output.height, config.output.u.RGBA.stride);
+        result = jpegFromRGBA(config.output.u.RGBA.rgba, config.output.width, config.output.height, config.output.u.RGBA.stride, longest);
     WebPFreeDecBuffer(&config.output);
     return result;
 }
 
-static NSData *jpegFrom(NSData *data, int longest)
+static NSData *jpegFromFrame(NSData *data, int longest, int index)
 {
     if (isWebP(data))
         return jpegFromWebP(data, longest);
@@ -502,7 +583,7 @@ static NSData *jpegFrom(NSData *data, int longest)
     if (source && CGImageSourceGetCount(source) > 0) {
         NSDictionary *options = [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:longest], (id)kCGImageSourceThumbnailMaxPixelSize,
             (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailFromImageAlways, (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailWithTransform, nil];
-        CGImageRef image = CGImageSourceCreateThumbnailAtIndex(source, 0, (CFDictionaryRef)options);
+        CGImageRef image = CGImageSourceCreateThumbnailAtIndex(source, index, (CFDictionaryRef)options);
         if (image) {
             NSMutableData *out = [NSMutableData data];
             CGImageDestinationRef destination = CGImageDestinationCreateWithData((CFMutableDataRef)out, CFSTR("public.jpeg"), 1, NULL);
@@ -519,6 +600,20 @@ static NSData *jpegFrom(NSData *data, int longest)
     if (source)
         CFRelease(source);
     return result;
+}
+
+static NSData *jpegFrom(NSData *data, int longest)
+{
+    return jpegFromFrame(data, longest, 0);
+}
+
+static int frameCountOf(NSData *data)
+{
+    CGImageSourceRef source = CGImageSourceCreateWithData((CFDataRef)data, NULL);
+    int n = source ? (int)CGImageSourceGetCount(source) : 0;
+    if (source)
+        CFRelease(source);
+    return n;
 }
 
 static int orientationOf(NSData *data)
@@ -984,10 +1079,15 @@ static NSString *xlsxText(TBZip *zip)
         NSString *part = [targets objectForKey:[sheet objectForKey:@"id"]];
         NSArray *rows;
         unsigned shown = 0, r;
+        BOOL stopped = NO;
         if (!part || ![zip has:part])
             continue;
         [out addObject:[NSString stringWithFormat:@"--- Sheet: %@ ---", [sheet objectForKey:@"name"]]];
-        rows = [TBCells rowsOf:[zip dataFor:part] shared:shared];
+        if (budget <= 0) {
+            [out addObject:@"[this sheet is not shown: the text limit was reached]"];
+            continue;
+        }
+        rows = [TBCells rowsOf:[zip dataFor:part] shared:shared limit:2000 stopped:&stopped];
         for (r = 0; r < [rows count] && shown < 2000 && budget > 0; r++) {
             NSMutableString *line = [NSMutableString stringWithString:[[rows objectAtIndex:r] componentsJoinedByString:@"\t"]];
             while ([line hasSuffix:@"\t"])
@@ -998,8 +1098,10 @@ static NSString *xlsxText(TBZip *zip)
                 budget -= [line length];
             }
         }
-        if ([rows count] > r)
-            [out addObject:[NSString stringWithFormat:@"[%u more rows not shown]", (unsigned)([rows count] - r)]];
+        if (stopped)
+            [out addObject:@"[more rows not shown]"];
+        else if (r < [rows count] && budget <= 0)
+            [out addObject:@"[more rows not shown: the text limit was reached]"];
     }
     return joinLines(out);
 }
@@ -1075,6 +1177,33 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
             fail(@"This picture could not be turned upright.");
         return [self reply:@"" images:[NSArray arrayWithObject:jpeg] note:@"Turned upright."];
     }
+    /* Animated GIF and WebP: up to four frames, so the model sees how it changes */
+    if ([ext isEqualToString:@"gif"] || isWebP(data)) {
+        NSMutableArray *frames = [NSMutableArray array];
+        int total = 0;
+        if (isWebP(data)) {
+            WebPBitstreamFeatures features;
+            if (WebPGetFeatures([data bytes], [data length], &features) == VP8_STATUS_OK && features.has_animation) {
+                NSArray *shots = jpegFramesFromAnimatedWebP(data, 1600, &total);
+                if (!shots)
+                    fail(@"This animated WebP picture could not be read.");
+                [frames addObjectsFromArray:shots];
+            }
+        } else {
+            total = frameCountOf(data);
+            if (total > 1) {
+                NSArray *wanted = pickFrames(total);
+                unsigned f;
+                for (f = 0; f < [wanted count]; f++) {
+                    NSData *jpeg = jpegFromFrame(data, 1600, [[wanted objectAtIndex:f] intValue]);
+                    if (jpeg)
+                        [frames addObject:jpeg];
+                }
+            }
+        }
+        if ([frames count] > 1 || total > 1)
+            return [self reply:@"" images:frames note:[NSString stringWithFormat:@"An animated %@ with %d frames; %u of them are shown, in order.", [ext uppercaseString], total, (unsigned)[frames count]]];
+    }
     if ([types(0) containsObject:ext]) {
         NSData *jpeg = jpegFrom(data, 2400);
         if (!jpeg && [TBHEIC looksLikeHEIF:data]) {
@@ -1089,8 +1218,12 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
         return [self reply:@"" images:[NSArray arrayWithObject:jpeg] note:[NSString stringWithFormat:@"Converted from %@ to JPEG.", [ext uppercaseString]]];
     }
     zip = [TBZip zipWithData:data];
-    if (!zip)
+    if (!zip) {
+        const unsigned char *head = [data bytes];
+        if ([data length] > 4 && head[0] == 'P' && head[1] == 'K')
+            fail(@"This file looks cut short, as if its copy or download did not finish. Copy it again.");
         fail(@"This file is not in a form the converter can read. Save it again, or export it as PDF or text.");
+    }
     if ([zip totalSize] > MAX_ALL)
         fail(@"This file unpacks to more than 400 MB, which the converter will not read.");
     if ([ext isEqualToString:@"docx"])

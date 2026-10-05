@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")"
 W=src/libwebp
 D=/Developer/SDKs
-FILES="$W/src/dec/*.c $W/src/dsp/*.c $W/src/utils/*.c"
+FILES="$W/src/dec/*.c $W/src/dsp/*.c $W/src/utils/*.c $W/src/demux/*.c"
 # An empty config.h: with HAVE_CONFIG_H set the library uses its plain C code everywhere, which is what the old Macs need.
 mkdir -p build/cfg/src/webp && : > build/cfg/src/webp/config.h
 slice() {  # name compiler flags...

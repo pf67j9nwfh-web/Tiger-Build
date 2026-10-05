@@ -12,7 +12,7 @@ rm -rf "$OUT"; mkdir -p "$OUT/webp" "$OUT/cfg/src/webp"
 TLS=../third_party/mbedtls
 WEBP=../third_party/libwebp/src/libwebp
 TLSFLAGS="-std=gnu99 -I$TLS/include -DMBEDTLS_USER_CONFIG_FILE=\"$(cd $TLS && pwd)/tb_config.h\""
-for f in $WEBP/src/dec/*.c $WEBP/src/dsp/*.c $WEBP/src/utils/*.c; do
+for f in $WEBP/src/dec/*.c $WEBP/src/dsp/*.c $WEBP/src/utils/*.c $WEBP/src/demux/*.c; do
   case $(basename $f) in *_sse2.c|*_sse41.c|*_neon.c|*_mips*.c|*_msa.c|*enc*|ssim.c|cost.c|quant_levels_utils.c|bit_writer_utils.c) continue;; esac
   clang -O1 -w -DHAVE_CONFIG_H -I"$OUT/cfg" -I$WEBP -I$WEBP/src -c $f -o "$OUT/webp/$(basename $f .c).o"
 done
