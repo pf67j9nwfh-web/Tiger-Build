@@ -139,7 +139,7 @@ int main(int argc, char **argv)
     }
 
     /* git and Subversion, when the Mac has them */
-    if ([run(@"which git") length] > 0) {
+    if ([run(@"command -v git") length] > 0) {
         NSString *repo = [dir stringByAppendingString:@"/repo"];
         run([NSString stringWithFormat:@"mkdir %@ && cd %@ && git init -q && git config user.email t@t && git config user.name t", repo, repo]);
         call(client, @"write_file", [NSDictionary dictionaryWithObjectsAndKeys:[repo stringByAppendingString:@"/a.txt"], @"path", @"one\n", @"content", nil]);
@@ -161,7 +161,7 @@ int main(int argc, char **argv)
         r = call(client, @"git_read", [NSDictionary dictionaryWithObjectsAndKeys:[NSArray arrayWithObjects:@"-c", @"core.pager=sh", @"log", nil], @"args", repo, @"path", nil]);
         expectThat(FAILED(r), @"a sub-command that is not on the list is refused");
     }
-    if ([run(@"which svnadmin") length] > 0) {
+    if ([run(@"command -v svnadmin") length] > 0) {
         NSString *repo = [dir stringByAppendingString:@"/svnrepo"], *wc = [dir stringByAppendingString:@"/wc"];
         run([NSString stringWithFormat:@"svnadmin create %@ && svn checkout -q file://%@ %@", repo, repo, wc]);
         call(client, @"write_file", [NSDictionary dictionaryWithObjectsAndKeys:[wc stringByAppendingString:@"/s.txt"], @"path", @"svn\n", @"content", nil]);
