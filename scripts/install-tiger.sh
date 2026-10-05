@@ -8,7 +8,7 @@
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SSH="$ROOT/ppc-commander/bin/ppc-ssh"
+SSH="${PPC_SSH:-$ROOT/ppc-commander/bin/ppc-ssh}"
 
 echo "Checking the key login..."
 "$SSH" 'echo ok' >/dev/null

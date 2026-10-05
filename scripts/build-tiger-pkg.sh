@@ -5,7 +5,7 @@
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SSH="$ROOT/ppc-commander/bin/ppc-ssh"
+SSH="${PPC_SSH:-$ROOT/ppc-commander/bin/ppc-ssh}"
 DIST="$ROOT/dist"
 VERSION="2.0"
 mkdir -p "$DIST"
