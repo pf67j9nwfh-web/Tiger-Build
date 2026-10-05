@@ -198,7 +198,7 @@ static NSString *search(NSString *query, TBRun *run)
         json = status >= 200 && status < 300 ? TBJSONParse(data, NULL) : nil;
         for (i = 0; i < [TBArray(TBDictionary(json, @"web"), @"results") count]; i++) {
             id item = [TBArray(TBDictionary(json, @"web"), @"results") objectAtIndex:i];
-            [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:TBString(item, @"title"), @"title", TBString(item, @"url"), @"url", TBString(item, @"description"), @"description", nil]];
+            [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:stripTags(TBString(item, @"title")), @"title", TBString(item, @"url"), @"url", stripTags(TBString(item, @"description")), @"description", nil]];
         }
     }
     if (status >= 200 && status < 300)

@@ -37,7 +37,7 @@ NSString *TBSafeMediaName(NSString *name)
 
 static NSString *randomName(void)
 {
-    return [NSString stringWithFormat:@"%08x%08x", (unsigned)random(), (unsigned)random()];
+    return [NSString stringWithFormat:@"%08x%08x", (unsigned)arc4random(), (unsigned)arc4random()];
 }
 
 NSString *TBSaveMedia(NSData *data, NSString *extension)

@@ -1816,12 +1816,24 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self setLaunchQuestion:[[NSUserDefaults standardUserDefaults] stringForKey:@"TBLaunchQuestion"]];
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBLaunchQuestion"];
     }
-    if (launchQuestion) {
-        /* A question given at launch gets a chat of its own, with the model new chats start with. */
-        [self newChat:nil];
-        [input setStringValue:launchQuestion];
-        [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];
+    if (launchQuestion)
+        [self performSelector:@selector(askLaunchQuestion) withObject:nil afterDelay:1.0];
+}
+
+/* A question given at launch gets a chat of its own, with the model new chats start with. It waits (up to 20 seconds) for the model
+   lists, so that model can be chosen. */
+- (void)askLaunchQuestion
+{
+    NSString *wanted = [[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildNewChatModel"];
+    BOOL needsLocal = [wanted hasPrefix:@"local|"];
+    if (launchWaits < 20 && (lastCatalog == 0 || (needsLocal && [localModels count] == 0))) {
+        launchWaits++;
+        [self performSelector:@selector(askLaunchQuestion) withObject:nil afterDelay:1.0];
+        return;
     }
+    [self newChat:nil];
+    [input setStringValue:launchQuestion];
+    [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app

@@ -53,7 +53,7 @@ static NSString *uploadService(NSString *url, NSString *key, NSArray *models, NS
     NSString *last = @"no answer";
     for (i = 0; i < [models count]; i++) {
         NSMutableArray *fields = [NSMutableArray arrayWithObjects:@"model", [models objectAtIndex:i], @"response_format", @"json", nil];
-        NSString *boundary = [NSString stringWithFormat:@"----tigerbuild%08x%08x", (unsigned)random(), (unsigned)random()];
+        NSString *boundary = [NSString stringWithFormat:@"----tigerbuild%08x%08x", (unsigned)arc4random(), (unsigned)arc4random()];
         int status;
         NSString *text;
         if ([language length]) {

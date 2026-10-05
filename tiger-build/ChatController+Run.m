@@ -21,7 +21,7 @@ static NSString *newRunId(void)
 {
     static unsigned counter = 0;
     counter++;
-    return [NSString stringWithFormat:@"r%08x%04x%08x", (unsigned)CFAbsoluteTimeGetCurrent(), counter & 0xffff, (unsigned)random()];
+    return [NSString stringWithFormat:@"r%08x%04x%08x", (unsigned)CFAbsoluteTimeGetCurrent(), counter & 0xffff, (unsigned)arc4random()];
 }
 
 @implementation ChatController (Run)

@@ -20,10 +20,10 @@ COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TB
 LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices $TLS/build/libmbedtls-host.a -lz"
 build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
-build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m $COMMON "$OUT"/webp/*.o
-build extras ../tests/engine/extrastest.m TBBuiltin.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m $COMMON "$OUT"/webp/*.o
+build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
+build extras ../tests/engine/extrastest.m TBBuiltin.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
 build prov ../tests/engine/provtest.m TBProviders.m $COMMON
-build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o
+build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o
 PORT=8795
 python3 "$HERE/mock_services.py" $PORT > /dev/null 2>&1 &
 MOCK=$!

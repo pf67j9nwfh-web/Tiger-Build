@@ -44,6 +44,7 @@
     NSString *commanderProblem;
     NSString *commanderCode;
     NSString *launchScreen;
+    int launchWaits;
     NSString *thinkingText;
     NSMutableArray *queuedGuidance;
     NSArray *editBackup;
