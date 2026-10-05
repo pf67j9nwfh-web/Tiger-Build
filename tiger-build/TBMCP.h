@@ -38,3 +38,23 @@ NSArray *TBMCPResultImages(id result);
 NSString *TBMCPToolSummary(NSString *name, NSDictionary *arguments);
 /* MCP tool descriptions as function tools ({name, description, parameters}). */
 NSArray *TBMCPFunctionTools(id listed);
+
+/* An MCP server reached over HTTP or HTTPS (Streamable HTTP: a POST per message, the answer as JSON or as an event stream).
+   The same calls as TBMCPClient. A token, if given, is sent as a bearer. OAuth and the old SSE transport are not supported. */
+@interface TBMCPHTTPClient : NSObject {
+    NSString *url;
+    NSString *token;
+    NSString *session;
+    int nextId;
+    volatile int closed;
+    id current;
+    NSString *failure;
+}
++ (TBMCPHTTPClient *)clientWithURL:(NSString *)url token:(NSString *)token;
+- (void)start;
+- (id)request:(NSString *)method params:(id)params timeout:(double)seconds;
+- (void)notify:(NSString *)method params:(id)params;
+- (void)close;
+- (void)cancel;
+- (NSString *)stderrText;
+@end

@@ -1,8 +1,6 @@
 #import "ChatController_Private.h"
 
-/* The Commander menu (ppc-commander running on this Mac as a standalone
-   service), the SSH link the relay uses, and keeping ppc-commander installed
-   and current. */
+/* The Commander menu (ppc-commander on this Mac) and keeping ppc-commander installed and current. */
 
 @implementation ChatController (Commander)
 
@@ -70,7 +68,7 @@
 - (void)commanderStop:(id)sender
 {
     if (NSRunAlertPanel(@"Stop Commander?", @"Active Commander tool sessions and their child processes will close. "
-        @"New tool sessions are blocked until you choose Start. This does not stop the relay or ordinary SSH.",
+        @"New tool sessions are blocked until you choose Start. This does not stop ordinary SSH.",
         @"Stop", @"Cancel", nil) != NSAlertDefaultReturn) return;
     [self commanderCommand:@"stop"];
     [self commanderStatusFetched:[self commanderCommand:@"status"]];
@@ -177,122 +175,6 @@ static int compareVersions(NSString *a, NSString *b)
         [fm changeFileAttributes:mode atPath:serviceDest];
     }
     NSLog(@"Tiger Build installed ppc-commander %@ (was %@)", freshVersion, haveVersion ? haveVersion : @"missing");
-}
-
-/* ---- the relay's SSH login to this Mac ---- */
-
-- (BOOL)installRelayKey:(NSString *)key
-{
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@".ssh"];
-    NSString *file = [dir stringByAppendingPathComponent:@"authorized_keys"];
-    NSString *existing = [NSString stringWithContentsOfFile:file];
-    NSString *line = [key stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    NSDictionary *private = [NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0700] forKey:NSFilePosixPermissions];
-    NSDictionary *fileMode = [NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0600] forKey:NSFilePosixPermissions];
-    NSString *updated;
-    if (![line hasPrefix:@"ssh-rsa "] || [line rangeOfString:@"\n"].location != NSNotFound)
-        return NO;
-    if (![fm fileExistsAtPath:dir])
-        [fm createDirectoryAtPath:dir attributes:private];
-    else
-        [fm changeFileAttributes:private atPath:dir];
-    if (existing && [existing rangeOfString:line].location != NSNotFound)
-        return YES;
-    if (!existing)
-        existing = @"";
-    if ([existing length] > 0 && ![existing hasSuffix:@"\n"])
-        existing = [existing stringByAppendingString:@"\n"];
-    updated = [existing stringByAppendingFormat:@"%@\n", line];
-    if (![updated writeToFile:file atomically:YES])
-        return NO;
-    [fm changeFileAttributes:fileMode atPath:file];
-    return YES;
-}
-
-- (void)connectCommanderSSH:(id)sender
-{
-    (void)sender;
-    if (NSRunAlertPanel(@"Connect Commander over SSH?",
-        @"The relay signs in to this Mac over SSH as \"%@\" to run Commander's tools. This adds its public key to ~/.ssh/authorized_keys "
-        @"and tells it this Mac's address and user name. Remote Login must be on (System Preferences, Sharing). No password is sent.",
-        @"Connect", @"Cancel", nil, NSUserName()) != NSAlertDefaultReturn)
-        return;
-    [RelayRequest send:@"GET" path:@"/v1/ssh/public-key" body:nil timeout:20 target:self
-        action:@selector(sshKeyArrived:) context:nil];
-}
-
-- (void)sshKeyArrived:(RelayRequest *)request
-{
-    NSString *body;
-    if (![request ok]) {
-        NSRunAlertPanel(@"Connect Commander", @"The relay could not give its SSH key. %@", @"OK", nil, nil,
-            [self relayProblemForRequest:request] ? [self relayProblemForRequest:request] : [request text]);
-        return;
-    }
-    if (![self installRelayKey:[request text]]) {
-        NSRunAlertPanel(@"Connect Commander", @"Could not add the relay's key to ~/.ssh/authorized_keys on this Mac.", @"OK", nil, nil);
-        return;
-    }
-    body = [NSString stringWithFormat:@"{\"user\":\"%@\",\"home\":\"%@\"}", TBJSONEscape(NSUserName()), TBJSONEscape(NSHomeDirectory())];
-    [RelayRequest send:@"POST" path:@"/v1/ssh/connect" body:body timeout:60 target:self
-        action:@selector(sshConnected:) context:nil];
-}
-
-- (void)sshConnected:(RelayRequest *)request
-{
-    NSMutableDictionary *values = [NSMutableDictionary dictionary];
-    NSArray *lines;
-    unsigned i;
-    if (![request ok]) {
-        NSString *why = [[request text] length] ? [request text] : [self relayProblemForRequest:request];
-        NSRunAlertPanel(@"Connect Commander", @"%@", @"OK", nil, nil, why ? why : @"The relay did not answer.");
-        return;
-    }
-    lines = [[request text] componentsSeparatedByString:@"\n"];
-    for (i = 0; i < [lines count]; i++) {
-        NSString *line = [lines objectAtIndex:i];
-        NSRange eq = [line rangeOfString:@"="];
-        if (eq.location != NSNotFound)
-            [values setObject:[line substringFromIndex:eq.location + 1] forKey:[line substringToIndex:eq.location]];
-    }
-    NSRunAlertPanel(@"Connect Commander", @"%@", @"OK", nil, nil,
-        [[values objectForKey:@"ok"] isEqualToString:@"1"] ? [values objectForKey:@"message"]
-            : [NSString stringWithFormat:@"The key is installed, but the relay could not sign in yet. %@", [values objectForKey:@"message"]]);
-    [self refreshToolCatalog];
-}
-
-/* Offered once per launch when the relay says it cannot sign in, and the
-   relay's Tiger Mac is this one (or none is set yet). */
-- (void)maybeOfferSSH
-{
-    if (offeredSSH || ![commanderCode length])
-        return;
-    if (![commanderCode isEqualToString:@"auth"] && ![commanderCode isEqualToString:@"unset"]
-        && ![commanderCode isEqualToString:@"unlinked"] && ![commanderCode isEqualToString:@"key_missing"])
-        return;
-    offeredSSH = YES;
-    [RelayRequest send:@"GET" path:@"/v1/ssh" body:nil timeout:12 target:self action:@selector(sshStateForOffer:) context:nil];
-}
-
-- (void)sshStateForOffer:(RelayRequest *)request
-{
-    NSString *host = @"";
-    NSArray *lines;
-    NSArray *mine = [[NSHost currentHost] addresses];
-    unsigned i;
-    if (![request ok])
-        return;
-    lines = [[request text] componentsSeparatedByString:@"\n"];
-    for (i = 0; i < [lines count]; i++) {
-        if ([[lines objectAtIndex:i] hasPrefix:@"host="])
-            host = [[lines objectAtIndex:i] substringFromIndex:5];
-    }
-    if ([host length] > 0 && ![mine containsObject:host])
-        return;
-    if (NSRunAlertPanel(@"Commander is not set up for this Mac", @"The relay cannot reach this Mac yet because SSH is not set up. "
-        @"Set it up now? This adds the relay's key to ~/.ssh/authorized_keys. Later: Configuration, Connect Commander over SSH.", @"Set Up", @"Not Now", nil) == NSAlertDefaultReturn)
-        [self connectCommanderSSH:nil];
 }
 
 @end

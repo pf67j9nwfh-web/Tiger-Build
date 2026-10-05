@@ -3,6 +3,9 @@
 #import "TBProviderIcons.h"
 #import "TBService.h"
 #import "TBPricing.h"
+#import "TBIntegrations.h"
+#import "TBEngine.h"
+#import "TBProviders.h"
 #import <CoreServices/CoreServices.h>
 
 static BOOL nextWindowIsExtra = NO;
@@ -17,7 +20,6 @@ static NSMutableArray *extraWindows = nil;
 #import <stdlib.h>
 
 @interface ChatController (Stream)
-- (void)handleStream:(CFReadStreamRef)stream event:(CFStreamEventType)type;
 - (void)closeStream;
 - (void)drainFrames;
 - (void)finishStream;
@@ -32,10 +34,7 @@ static NSMutableArray *extraWindows = nil;
 - (void)layoutPanes;
 - (void)updateContextReadout;
 - (BOOL)startCompactionIfNeeded;
-- (NSString *)versionNote;
 - (BOOL)confirmCloudAttach;
-- (void)refreshRelayVersion;
-- (BOOL)relayTooOldForPictures:(NSDictionary *)chat;
 - (void)beginChatStream;
 - (void)autonameChat:(NSMutableDictionary *)chat;
 - (void)attachMedia:(NSString *)line toChat:(NSMutableDictionary *)chat;
@@ -114,11 +113,6 @@ static NSMutableArray *allControllers = nil;
 
 @end
 
-static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void *info)
-{
-    [(ChatController *)info handleStream:stream event:type];
-}
-
 @interface MetalContent : NSView {
     ChatController *controller;
 }
@@ -181,7 +175,6 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     if (!self)
         return nil;
     frameBuffer = [[NSMutableData alloc] init];
-    errorBody = [[NSMutableData alloc] init];
     localModels = [[NSMutableArray alloc] init];
     prefsFields = [[NSMutableDictionary alloc] init];
     contextPending = [[NSMutableDictionary alloc] init];
@@ -228,7 +221,6 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
         [voiceRecognizer release];
     }
     [attachProblems release];
-    [relayVersion release];
     [thinkingField release];
     [runId release];
     [store release];
@@ -252,7 +244,6 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     [chats release];
     [workspaceSettings release];
     [frameBuffer release];
-    [errorBody release];
     [streamingId release];
     [launchQuestion release];
     [localModels release];
@@ -270,7 +261,7 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
 
 - (NSString *)supportDir
 {
-    return [RelayRequest supportDir];
+    return [EngineRequest supportDir];
 }
 
 - (NSString *)storePath
@@ -521,11 +512,6 @@ static void streamCallback(CFReadStreamRef stream, CFStreamEventType type, void 
     suppressSelection = NO;
     if (show)
         [self showChatAtIndex:row];
-}
-
-- (NSString *)serverBase
-{
-    return [RelayRequest serverBase];
 }
 
 - (void)buildWindow
@@ -1010,7 +996,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             BOOL shifted = [key isEqualToString:[key uppercaseString]] && ![[key lowercaseString] isEqualToString:[key uppercaseString]];
             unsigned mask = NSCommandKeyMask | (shifted ? NSShiftKeyMask : 0);
             if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
-                || [item action] == @selector(connectCommanderSSH:) || [item action] == @selector(showWorkspaceSettings:)
+                || [item action] == @selector(showWorkspaceSettings:)
                 || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:)
                 || [item action] == @selector(toggleDictation:) || [item action] == @selector(toggleDictationSend:)
                 || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
@@ -1074,12 +1060,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         SEL actions[6];
         unsigned i;
         menu = [[[NSMenu alloc] initWithTitle:@"Configuration"] autorelease];
-        titles = [NSArray arrayWithObjects:@"MCP Servers and Agent Tools...", @"Export All Settings...", @"Import All Settings...",
-            @"Connect Commander over SSH...", nil];
+        titles = [NSArray arrayWithObjects:@"MCP Servers and Agent Tools...", @"Export All Settings...", @"Import All Settings...", nil];
         actions[0] = @selector(showIntegrations:); actions[1] = @selector(exportAllSettings:); actions[2] = @selector(importAllSettings:);
-        actions[3] = @selector(connectCommanderSSH:);
-        for (i = 0; i < 4; i++) {
-            if (i == 3) [menu addItem:[NSMenuItem separatorItem]];
+        for (i = 0; i < 3; i++) {
             item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
             [item setTarget:self]; [menu addItem:item];
         }
@@ -1087,13 +1070,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [slot setSubmenu:menu]; [appMenu addItem:slot];
         [appMenu addItem:[NSMenuItem separatorItem]];
         menu = [[[NSMenu alloc] initWithTitle:@"History"] autorelease];
-        titles = [NSArray arrayWithObjects:@"Export All History...", @"Import History...",
-            @"Export All History to Relay Host...", @"Import History from Relay Host...", @"Clear All History...", nil];
+        titles = [NSArray arrayWithObjects:@"Export All History...", @"Import History...", @"Clear All History...", nil];
         actions[0] = @selector(exportHistory:); actions[1] = @selector(importHistory:);
-        actions[2] = @selector(exportHistoryToRelay:); actions[3] = @selector(importHistoryFromRelay:);
-        actions[4] = @selector(clearAllHistory:);
-        for (i = 0; i < 5; i++) {
-            if (i == 4) [menu addItem:[NSMenuItem separatorItem]];
+        actions[2] = @selector(clearAllHistory:);
+        for (i = 0; i < 3; i++) {
+            if (i == 2) [menu addItem:[NSMenuItem separatorItem]];
             item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
             [item setTarget:self]; [menu addItem:item];
         }
@@ -1289,10 +1270,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         NSDictionary *shortcuts=[NSDictionary dictionaryWithObjectsAndKeys:
             @"n",@"newChat:",@"N",@"newWorkspace:",@"]",@"workspaceNext:",@"l",@"focusComposer:",
             @"j",@"jumpToLatest:",@"K",@"copyAnswer:",@"+",@"expandActivities:",@"-",@"collapseActivities:",
-            @"e",@"exportHistory:",@"i",@"importHistory:",@"E",@"exportHistoryToRelay:",@"I",@"importHistoryFromRelay:",
+            @"e",@"exportHistory:",@"i",@"importHistory:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
             @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
-            @"b",@"showAbout:",@"c",@"connectCommanderSSH:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
+            @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
             applyMenuShortcuts([[bar itemAtIndex:g] submenu], shortcuts);
@@ -1387,26 +1368,17 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 
 - (void)refreshCatalog
 {
-    [RelayRequest send:@"GET" path:@"/v1/models" body:nil timeout:15
+    [EngineRequest send:@"GET" path:@"/v1/models" body:nil timeout:15
         target:self action:@selector(catalogArrived:) context:nil];
 }
 
-- (NSString *)relayProblemForRequest:(RelayRequest *)request
+- (NSString *)relayProblemForRequest:(EngineRequest *)request
 {
-    NSString *base = [self serverBase];
-    if ([base length] == 0)
-        return @"No relay is set. Choose Preferences and enter the relay address.";
     if ([request ok])
         return nil;
-    if ([request status] == 401)
-        return @"The relay rejected the token. Check the relay token in Preferences.";
-    if ([request status] == 403)
-        return [NSString stringWithFormat:@"The relay at %@ does not accept this Mac's address. "
-            @"Add it to ALLOWED_CLIENTS in the relay's config.sh.", base];
-    if ([request status] == 0 || [request timedOut])
-        return [NSString stringWithFormat:@"Cannot reach the relay at %@. Check that it is running "
-            @"and that Preferences has the right address and port.", base];
-    return [NSString stringWithFormat:@"The relay at %@ answered with HTTP %d.", base, [request status]];
+    if ([request timedOut])
+        return @"Tiger Build did not get an answer in time.";
+    return [NSString stringWithFormat:@"Tiger Build could not read its models (%d).", [request status]];
 }
 
 /* Height the live thinking line needs, up to three lines; 0 when idle. */
@@ -1457,11 +1429,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [relayStatusField setTextColor:[NSColor colorWithCalibratedRed:0.72 green:0.08 blue:0.05 alpha:1]];
     if (!text && [[ModelCatalog shared] checkingCount] > 0) {
         [relayStatusField setStringValue:[NSString stringWithFormat:
-            @"The relay is still testing %d models. More may appear.", [[ModelCatalog shared] checkingCount]]];
-        [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
-    }
-    if (!text && [[relayStatusField stringValue] length] == 0 && [self versionNote]) {
-        [relayStatusField setStringValue:[self versionNote]];
+            @"Still checking %d models. More may appear.", [[ModelCatalog shared] checkingCount]]];
         [relayStatusField setTextColor:[NSColor colorWithCalibratedWhite:0.3 alpha:1]];
     }
     /* A Commander problem (SSH cannot sign in, the Mac is unreachable...) is
@@ -1473,61 +1441,6 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [relayStatusField setTextColor:[NSColor colorWithCalibratedRed:0.72 green:0.35 blue:0.0 alpha:1]];
     }
     [self relayStatusChanged];
-}
-
-/* The relay's version, so a relay older than this app is not asked for what it cannot do. */
-- (void)refreshRelayVersion
-{
-    [RelayRequest send:@"GET" path:@"/v1/version" body:nil timeout:10 target:self action:@selector(relayVersionArrived:) context:nil];
-}
-
-/* "1.4" against "1.4.1": whether version a is older than b. */
-static BOOL versionOlder(NSString *a, NSString *b)
-{
-    NSArray *x = [a componentsSeparatedByString:@"."];
-    NSArray *y = [b componentsSeparatedByString:@"."];
-    unsigned i;
-    for (i = 0; i < 3; i++) {
-        int p = i < [x count] ? [[x objectAtIndex:i] intValue] : 0;
-        int q = i < [y count] ? [[y objectAtIndex:i] intValue] : 0;
-        if (p != q)
-            return p < q;
-    }
-    return NO;
-}
-
-- (void)relayVersionArrived:(RelayRequest *)request
-{
-    NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    [relayVersion release];
-    if ([request ok] && [text length] > 0 && [text length] < 20)
-        relayVersion = [text copy];
-    else if ([request status] == 404)
-        relayVersion = [@"1.3" copy];
-    else
-        relayVersion = nil;
-    [self setRelayProblem:nil];
-}
-
-/* A gentle note when the app and the relay are different releases. */
-- (NSString *)versionNote
-{
-    NSString *mine = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    if (!relayVersion || !mine)
-        return nil;
-    if (versionOlder(mine, relayVersion))
-        return [NSString stringWithFormat:@"The relay is version %@ and this Tiger Build is %@. A newer Tiger Build is available: install TigerBuild-%@.pkg.", relayVersion, mine, relayVersion];
-    if (versionOlder(relayVersion, mine))
-        return [NSString stringWithFormat:@"This Tiger Build is %@ but the relay is %@. Update the relay to use everything in this version.", mine, relayVersion];
-    return nil;
-}
-
-/* A relay older than 1.4 drops attached pictures without a word. */
-- (BOOL)relayTooOldForPictures:(NSDictionary *)chat
-{
-    if (!relayVersion || !versionOlder(relayVersion, @"1.4"))
-        return NO;
-    return [[self imageAttachmentsForChat:chat] count] > 0;
 }
 
 - (void)relayTick:(NSTimer *)timer
@@ -1542,13 +1455,11 @@ static BOOL versionOlder(NSString *a, NSString *b)
         [self refreshCatalog];
     if (relayReachable)
         [self refreshToolCatalog];
-    if (relayReachable && !relayVersion)
-        [self refreshRelayVersion];
     if (relayReachable && [[self providerForChat:current] isEqualToString:@"local"] && [localModels count] == 0)
         [self refreshLocalModels];
 }
 
-- (void)catalogArrived:(RelayRequest *)request
+- (void)catalogArrived:(EngineRequest *)request
 {
     NSString *text;
     NSMenu *menu;
@@ -1854,13 +1765,15 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self ensureCommanderInstalled];
     [self startSudoBroker];
     [TBPricing start];
+    [TBIntegrations installExamples];
     [self refreshCommanderStatus];
     [self refreshCatalog];
     [self refreshToolCatalog];
     [self refreshLocalModels];
     relayTimer = [[NSTimer scheduledTimerWithTimeInterval:30 target:self
         selector:@selector(relayTick:) userInfo:nil repeats:YES] retain];
-    if ([[self serverBase] length] == 0 || [[RelayRequest token] length] == 0)
+    if (![TBSettings hasKeyForProvider:@"grok"] && ![TBSettings hasKeyForProvider:@"chatgpt"] && ![TBSettings hasKeyForProvider:@"claude"] && ![TBSettings hasKeyForProvider:@"mistral"]
+        && ![TBSettings hasKeyForProvider:@"muse"] && ![TBSettings hasKeyForProvider:@"gemini"] && ![[TBProviders localBase] length])
         [self performSelector:@selector(showPreferences:) withObject:nil afterDelay:0.5];
     if (launchQuestion) {
         [input setStringValue:launchQuestion];
@@ -2422,9 +2335,9 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     (void)sender;
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"1.5";
+        version = @"2.0";
     NSRunAlertPanel(@"About Tiger Build",
-        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.",
+        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.\nSecure connections: Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0).",
         @"OK", nil, nil, version);
 }
 
@@ -2470,7 +2383,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [fileMessage setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
         [[chat objectForKey:@"messages"] addObject:fileMessage];
         info = [NSDictionary dictionaryWithObjectsAndKeys:kind, @"kind", name, @"name", fileMessage, @"message", chat, @"chat", nil];
-        [RelayRequest send:@"GET" path:[@"/v1/media/" stringByAppendingString:name] body:nil timeout:60
+        [EngineRequest send:@"GET" path:[@"/v1/media/" stringByAppendingString:name] body:nil timeout:60
             target:self action:@selector(mediaArrived:) context:info];
         return;
     }
@@ -2494,12 +2407,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
              forKey:@"pendingMedia"];
     info = [NSDictionary dictionaryWithObjectsAndKeys:
         kind, @"kind", name, @"name", open, @"message", chat, @"chat", nil];
-    [RelayRequest send:@"GET" path:[@"/v1/media/" stringByAppendingString:name] body:nil
+    [EngineRequest send:@"GET" path:[@"/v1/media/" stringByAppendingString:name] body:nil
         timeout:([kind isEqualToString:@"video"] ? 180 : 90)
         target:self action:@selector(mediaArrived:) context:info];
 }
 
-- (void)mediaArrived:(RelayRequest *)request
+- (void)mediaArrived:(EngineRequest *)request
 {
     NSDictionary *info = [request context];
     NSMutableDictionary *message = [info objectForKey:@"message"];
@@ -2520,7 +2433,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             [message setObject:path forKey:@"file"];
             [message setObject:[NSString stringWithFormat:@"%@ (%@)", TBDisplayFileName(path), TBHumanSize([[request data] length])] forKey:@"text"];
         } else {
-            [message setObject:[NSString stringWithFormat:@"%@ could not be downloaded from the relay.", TBDisplayFileName(path)] forKey:@"text"];
+            [message setObject:[NSString stringWithFormat:@"%@ could not be read.", TBDisplayFileName(path)] forKey:@"text"];
         }
     } else if ([request ok] && [[request data] length] > 0 && [[request data] writeToFile:path atomically:YES]) {
         if ([[info objectForKey:@"kind"] isEqualToString:@"image"])
@@ -2632,14 +2545,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return 0;
     [contextPending setObject:[NSNumber numberWithBool:YES] forKey:key];
     info = [NSDictionary dictionaryWithObjectsAndKeys:current, @"chat", model, @"model", key, @"key", nil];
-    [RelayRequest send:@"GET"
+    [EngineRequest send:@"GET"
         path:[NSString stringWithFormat:@"/v1/context?provider=%@&model=%@",
             [self urlEncode:provider], [self urlEncode:model]]
         body:nil timeout:10 target:self action:@selector(contextArrived:) context:info];
     return 0;
 }
 
-- (void)contextArrived:(RelayRequest *)request
+- (void)contextArrived:(EngineRequest *)request
 {
     NSDictionary *info = [request context];
     NSMutableDictionary *chat = [info objectForKey:@"chat"];
@@ -2656,11 +2569,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (void)refreshLocalModels
 {
-    [RelayRequest send:@"GET" path:@"/v1/local-models" body:nil timeout:12
+    [EngineRequest send:@"GET" path:@"/v1/local-models" body:nil timeout:12
         target:self action:@selector(localModelsArrived:) context:nil];
 }
 
-- (void)localModelsArrived:(RelayRequest *)request
+- (void)localModelsArrived:(EngineRequest *)request
 {
     NSArray *lines;
     unsigned i;
@@ -2756,12 +2669,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [body appendFormat:@"\"}],\"tools\":false,\"provider\":\"%@\",\"model\":\"%@\"}",
         TBJSONEscape([self providerForChat:chat]), TBJSONEscape([self modelForChat:chat])];
     info = [NSDictionary dictionaryWithObjectsAndKeys:chat, @"chat", older, @"older", nil];
-    sideRequest = [RelayRequest send:@"POST" path:@"/v1/summarize" body:body timeout:120
+    sideRequest = [EngineRequest send:@"POST" path:@"/v1/summarize" body:body timeout:120
         target:self action:@selector(compactionArrived:) context:info];
     return YES;
 }
 
-- (void)compactionArrived:(RelayRequest *)request
+- (void)compactionArrived:(EngineRequest *)request
 {
     NSDictionary *info = [request context];
     if (stopping || !busy)
@@ -2890,11 +2803,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     suppressSelection = YES;
     [table reloadData];
     suppressSelection = NO;
-    [RelayRequest send:@"POST" path:@"/v1/title" body:body timeout:40
+    [EngineRequest send:@"POST" path:@"/v1/title" body:body timeout:40
         target:self action:@selector(titleArrived:) context:chat];
 }
 
-- (void)titleArrived:(RelayRequest *)request
+- (void)titleArrived:(EngineRequest *)request
 {
     NSMutableDictionary *chat = [request context];
     NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -3025,11 +2938,6 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         NSBeep();
         return;
     }
-    if ([self relayTooOldForPictures:current]) {
-        [self setRelayProblem:[NSString stringWithFormat:@"The relay is version %@, which does not pass attached pictures to the model. Update it to 1.4 (or remove the pictures from this chat).", relayVersion]];
-        NSBeep();
-        return;
-    }
     [self stopSpeaking:nil];
     [self forgetEdit];
     [input setStringValue:@""];
@@ -3093,61 +3001,28 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 - (void)beginChatStream
 {
     NSMutableDictionary *chat = [self chatWithId:streamingId];
-    CFHTTPMessageRef message;
-    CFReadStreamRef stream;
-    CFStreamClientContext context = { 0, self, NULL, NULL, NULL };
     NSData *payload;
     if (!chat) {
         [self setBusy:NO];
         return;
     }
     [frameBuffer setLength:0];
-    [errorBody setLength:0];
-    httpStatus = 0;
     [self closeStream];
     [self newRunId];
     lastFrame = CFAbsoluteTimeGetCurrent();
     sideRequest = nil;
     payload = [[self requestBodyForChat:chat] dataUsingEncoding:NSUTF8StringEncoding];
     if ([payload length] > 38 * 1024 * 1024) {
-        [self addStatus:[NSString stringWithFormat:@"This chat with its attached files is %.0f MB, more than the relay accepts (38 MB). Remove or shorten some attachments, or start a new chat.",
+        [self addStatus:[NSString stringWithFormat:@"This chat with its attached files is %.0f MB, more than a chat can carry (38 MB). Remove or shorten some attachments, or start a new chat.",
             [payload length] / 1048576.0] toChat:chat];
         [self finishWithoutStream:chat];
         return;
     }
-    if ([TBService active]) {
-        localTurn = [[TBLocalTurn startWithBody:payload delegate:self] retain];
-        bodyStream = (void *)localTurn;
-        return;
-    }
-    message = [RelayRequest copyMessage:@"POST" path:@"/v1/chat" body:payload];
-    if (!message) {
-        [self addStatus:@"Set the relay address and token in Preferences first." toChat:chat];
-        [self finishWithoutStream:chat];
-        return;
-    }
-    CFHTTPMessageSetHeaderFieldValue(message, CFSTR("X-TigerBuild-Protocol"), CFSTR("frames"));
-    stream = CFReadStreamCreateForHTTPRequest(NULL, message);
-    CFRelease(message);
-    if (!stream || !CFReadStreamSetClient(stream,
-            kCFStreamEventHasBytesAvailable | kCFStreamEventEndEncountered | kCFStreamEventErrorOccurred,
-            streamCallback, &context)) {
-        if (stream)
-            CFRelease(stream);
-        [self addStatus:@"Could not start the chat connection." toChat:chat];
-        [self finishWithoutStream:chat];
-        return;
-    }
-    CFReadStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), kCFRunLoopCommonModes);
-    bodyStream = stream;
-    if (!CFReadStreamOpen(stream)) {
-        [self closeStream];
-        [self addStatus:@"Could not open the chat connection." toChat:chat];
-        [self finishWithoutStream:chat];
-    }
+    localTurn = [[TBLocalTurn startWithBody:payload delegate:self] retain];
+    bodyStream = (void *)localTurn;
 }
 
-/* The engine's frames arrive on the main thread, in the same wire format a relay used. */
+/* The engine's frames arrive on the main thread. */
 - (void)localTurn:(TBLocalTurn *)turn bytes:(NSData *)bytes
 {
     if (turn != localTurn)
@@ -3178,105 +3053,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (void)closeStream
 {
-    CFReadStreamRef stream = (CFReadStreamRef)bodyStream;
-    if (!stream)
+    if (!localTurn)
         return;
-    if (localTurn) {
-        [localTurn cancel];
-        [localTurn release];
-        localTurn = nil;
-        bodyStream = NULL;
-        return;
-    }
-    CFReadStreamSetClient(stream, 0, NULL, NULL);
-    CFReadStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), kCFRunLoopCommonModes);
-    CFReadStreamClose(stream);
-    CFRelease(stream);
+    [localTurn cancel];
+    [localTurn release];
+    localTurn = nil;
     bodyStream = NULL;
-}
-
-- (void)noteResponseStatus:(CFReadStreamRef)stream
-{
-    CFHTTPMessageRef response;
-    if (httpStatus != 0)
-        return;
-    response = (CFHTTPMessageRef)CFReadStreamCopyProperty(stream, kCFStreamPropertyHTTPResponseHeader);
-    if (!response)
-        return;
-    httpStatus = CFHTTPMessageGetResponseStatusCode(response);
-    CFRelease(response);
-}
-
-- (void)handleStream:(CFReadStreamRef)stream event:(CFStreamEventType)type
-{
-    if (type == kCFStreamEventHasBytesAvailable) {
-        UInt8 buf[4096];
-        [self noteResponseStatus:stream];
-        while (CFReadStreamHasBytesAvailable(stream)) {
-            CFIndex count = CFReadStreamRead(stream, buf, sizeof(buf));
-            if (count <= 0)
-                break;
-            if (httpStatus >= 400)
-                [errorBody appendBytes:buf length:count];
-            else
-                [frameBuffer appendBytes:buf length:count];
-        }
-        if (httpStatus < 400 && streamDepth == 0) {
-            streamDepth = 1;
-            [self drainFrames];
-            streamDepth = 0;
-            if (streamEndDeferred) {
-                streamEndDeferred = 0;
-                [self finishStream];
-            }
-        }
-        return;
-    }
-    if (type == kCFStreamEventEndEncountered) {
-        [self noteResponseStatus:stream];
-        if (streamDepth) {
-            UInt8 buf[4096];
-            while (CFReadStreamHasBytesAvailable(stream)) {
-                CFIndex count = CFReadStreamRead(stream, buf, sizeof(buf));
-                if (count <= 0)
-                    break;
-                if (httpStatus >= 400)
-                    [errorBody appendBytes:buf length:count];
-                else
-                    [frameBuffer appendBytes:buf length:count];
-            }
-            streamEndDeferred = 1;
-            return;
-        }
-        if (httpStatus >= 400) {
-            NSString *text = [[NSString alloc] initWithData:errorBody encoding:NSUTF8StringEncoding];
-            if (!text || [text length] == 0) {
-                [text release];
-                text = [[NSString alloc] initWithFormat:@"The chat service returned HTTP %d.", httpStatus];
-            if (httpStatus == 401 || httpStatus == 403)
-                [self setRelayProblem:(httpStatus == 401
-                    ? @"The relay rejected the token. Check the relay token in Preferences."
-                    : @"The relay does not accept this Mac's address. Add it to ALLOWED_CLIENTS in the relay's config.sh.")];
-            }
-            [self addStatus:text toChat:[self chatWithId:streamingId]];
-            [text release];
-        } else {
-            [self drainFrames];
-        }
-        [self finishStream];
-        return;
-    }
-    if (type == kCFStreamEventErrorOccurred) {
-        if (streamDepth) {
-            streamEndDeferred = 1;
-            return;
-        }
-        [self addStatus:[NSString stringWithFormat:@"The chat connection to the relay at %@ failed.",
-            [self serverBase]] toChat:[self chatWithId:streamingId]];
-        [self setRelayProblem:[NSString stringWithFormat:@"Cannot reach the relay at %@. Check that it is "
-            @"running and that Preferences has the right address and port.", [self serverBase]]];
-        [self finishStream];
-    }
 }
 
 - (void)finishStream

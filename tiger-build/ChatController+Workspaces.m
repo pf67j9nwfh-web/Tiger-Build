@@ -47,7 +47,7 @@
     NSArray *names=[self workspaceNames];unsigned i;
     for(i=0;i<[names count];i++) [workspacePopup addItemWithTitle:[names objectAtIndex:i]];
     [workspacePopup selectItemWithTitle:[self workspaceName]];
-    [workspacePopup setToolTip:@"Each project has its own chats. API keys and relay tools are shared."];
+    [workspacePopup setToolTip:@"Each project has its own chats. API keys and tools are shared."];
 }
 - (void)switchWorkspace:(NSString *)name
 {
@@ -75,7 +75,7 @@
     if([self anyWindowBusy]){NSBeep();return;}
     NSString *name=[self workspaceName];
     if(NSRunAlertPanel(@"Delete this workspace?",@"This deletes the workspace \"%@\" and all %d chats in it from this Mac. "
-        @"Exports and history already copied to the relay are not deleted.",@"Delete",@"Cancel",nil,name,(int)[chats count])!=NSAlertDefaultReturn)return;
+        @"Exports you made are not deleted.",@"Delete",@"Cancel",nil,name,(int)[chats count])!=NSAlertDefaultReturn)return;
     [self forgetEdit];
     [TBStore flushAll];
     [TBStore forgetAll];

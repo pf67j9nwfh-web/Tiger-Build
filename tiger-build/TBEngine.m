@@ -72,7 +72,7 @@ static NSString *kService = @"Tiger Build API keys";
 + (NSArray *)secretNames
 {
     return [NSArray arrayWithObjects:@"xai_api_key", @"openai_api_key", @"anthropic_api_key", @"mistral_api_key", @"muse_api_key",
-        @"gemini_api_key", @"local_api_key", @"search_api_key", @"tavily_api_key", nil];
+        @"gemini_api_key", @"local_api_key", @"search_api_key", @"tavily_api_key", @"mcp_servers", nil];
 }
 
 + (BOOL)isSecret:(NSString *)name

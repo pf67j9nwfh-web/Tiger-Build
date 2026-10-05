@@ -1,18 +1,16 @@
 #import <Foundation/Foundation.h>
 #import "TBSession.h"
 
-/* What the relay used to be, inside the app. It answers the same requests Tiger Build always made (a path, a body) and streams a
-   chat turn as the same frames, so the window code did not have to change. */
+/* The engine behind the window. It answers requests made as a path and a body (models, settings, tools, conversion, dictation) and
+   streams a chat turn as frames. */
 
 @interface TBService : NSObject
-/* NO only while someone is comparing against a relay (the preference TBUseRelay). */
-+ (BOOL)active;
 + (NSString *)version;
 /* Runs one request. Returns {status, body (NSData), type}. Call it on a worker thread: some answers wait for the network. */
 + (NSDictionary *)handle:(NSString *)method path:(NSString *)path body:(NSData *)body file:(NSData *)file name:(NSString *)name;
 @end
 
-/* A chat turn running on its own thread. Frames reach the delegate on the main thread as -localTurn:bytes: (the relay's wire
+/* A chat turn running on its own thread. Frames reach the delegate on the main thread as -localTurn:bytes: (wire
    format: "<kind> <length>\n<text>"), and -localTurnEnded: after the last. */
 @interface TBLocalTurn : NSObject {
     TBRun *run;

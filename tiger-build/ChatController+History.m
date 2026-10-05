@@ -85,7 +85,7 @@
     if ([self anyWindowBusy]) { NSBeep(); return; }
     if (NSRunAlertPanel(@"Clear all history and workspaces?", @"This deletes every chat in every workspace (%d) on this Mac, "
         @"and the workspaces themselves. A new empty Default workspace is made. "
-        @"Exports and history already copied to the relay are not deleted.", @"Clear All", @"Cancel", nil,
+        @"Exports you made are not deleted.", @"Clear All", @"Cancel", nil,
         (int)[[self workspaceNamesOnDisk] count])
         != NSAlertDefaultReturn) return;
     [self forgetEdit];
@@ -118,43 +118,6 @@
     data = [self historyDataIncludingFiles];
     if (!data || ![data writeToFile:[panel filename] atomically:YES])
         NSRunAlertPanel(@"History", @"Could not export the history.", @"OK", nil, nil);
-}
-
-- (void)exportHistoryToRelay:(id)sender
-{
-    NSString *xml;
-    (void)sender;
-    if (busy) return;
-    if (NSRunAlertPanel(@"Copy history to relay host?", @"The chats of every workspace will be copied to the relay Mac. "
-        @"This replaces its previous history snapshot. Media files are not copied, only their references.",
-        @"Copy", @"Cancel", nil) != NSAlertDefaultReturn) return;
-    xml = [[[NSString alloc] initWithData:[self historyData] encoding:NSUTF8StringEncoding] autorelease];
-    [RelayRequest send:@"POST" path:@"/v1/history" body:xml timeout:40 target:self
-        action:@selector(historyUploaded:) context:nil];
-}
-
-- (void)historyUploaded:(RelayRequest *)request
-{
-    NSRunAlertPanel(@"History", @"%@", @"OK", nil, nil,
-        [request ok] ? @"History copied to the relay host." : [request text]);
-}
-
-- (void)importHistoryFromRelay:(id)sender
-{
-    (void)sender;
-    if (busy) return;
-    [RelayRequest send:@"GET" path:@"/v1/history" body:nil timeout:40 target:self
-        action:@selector(historyDownloaded:) context:nil];
-}
-
-- (void)historyDownloaded:(RelayRequest *)request
-{
-    if (![request ok]) {
-        NSRunAlertPanel(@"History", @"%@", @"OK", nil, nil,
-            [[request text] length] ? [request text] : @"Cannot reach the relay host.");
-        return;
-    }
-    [self importHistoryData:[request data]];
 }
 
 - (void)importHistory:(id)sender

@@ -24,6 +24,7 @@
     NSString *offline;
     NSArray *commanderTools;
     NSString *grokKey;
+    id extras;
 }
 + (NSDictionary *)cleanOptions:(id)incoming;
 + (BOOL)supportsImages:(NSString *)provider model:(NSString *)model;

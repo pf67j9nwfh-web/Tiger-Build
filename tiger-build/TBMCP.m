@@ -333,3 +333,131 @@ NSArray *TBMCPFunctionTools(id listed)
     }
     return tools;
 }
+
+/* ---- MCP over HTTP ---- */
+
+#import "TBHTTP.h"
+
+@implementation TBMCPHTTPClient
+
++ (TBMCPHTTPClient *)clientWithURL:(NSString *)u token:(NSString *)t
+{
+    TBMCPHTTPClient *c = [[[TBMCPHTTPClient alloc] init] autorelease];
+    c->url = [u copy];
+    c->token = [t copy];
+    c->nextId = 1;
+    return c;
+}
+
+- (void)dealloc
+{
+    [url release];
+    [token release];
+    [session release];
+    [failure release];
+    [super dealloc];
+}
+
+- (NSString *)stderrText { return failure ? failure : @""; }
+
+- (void)cancel
+{
+    closed = 1;
+    [(TBHTTP *)current cancel];
+}
+
+- (void)close
+{
+    closed = 1;
+    [(TBHTTP *)current cancel];
+}
+
+/* One message out. Returns the reply with this id, or nil for a notification. */
+- (id)post:(NSDictionary *)message wantId:(id)wanted timeout:(double)seconds
+{
+    TBHTTP *http = [TBHTTP request:@"POST" url:url];
+    int result;
+    NSString *type;
+    [http setHeader:@"Content-Type" value:@"application/json"];
+    [http setHeader:@"Accept" value:@"application/json, text/event-stream"];
+    [http setHeader:@"MCP-Protocol-Version" value:@"2025-06-18"];
+    if (session)
+        [http setHeader:@"Mcp-Session-Id" value:session];
+    if ([token length])
+        [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:token]];
+    [http setBody:TBJSONData(message)];
+    [http setIdleTimeout:seconds > 5 ? (int)seconds : 5];
+    current = http;
+    result = [http perform];
+    current = nil;
+    if (closed)
+        TBFail(@"The MCP server connection was closed.");
+    if (result != TBNET_OK) {
+        [failure release];
+        failure = [[http error] copy];
+        TBFail(@"%@", [http error]);
+    }
+    if ([[http responseHeader:@"Mcp-Session-Id"] length]) {
+        [session release];
+        session = [[http responseHeader:@"Mcp-Session-Id"] copy];
+    }
+    if ([http status] < 200 || [http status] >= 300) {
+        NSString *body = [http text];
+        TBFail(@"HTTP %d%@", [http status], [body length] ? [@": " stringByAppendingString:[body length] > 200 ? [body substringToIndex:200] : body] : @"");
+    }
+    if (!wanted)
+        return nil;
+    type = [http responseHeader:@"Content-Type"];
+    if ([[type lowercaseString] hasPrefix:@"text/event-stream"]) {
+        TBSSE *sse = [[[TBSSE alloc] init] autorelease];
+        NSArray *events = [sse feed:[http data]];
+        unsigned i;
+        for (i = 0; i < [events count]; i++) {
+            id json = TBJSONParseString([[events objectAtIndex:i] objectForKey:@"data"], NULL);
+            if ([json isKindOfClass:[NSDictionary class]] && [[json objectForKey:@"id"] isEqual:wanted])
+                return json;
+        }
+        TBFail(@"Remote MCP ended without a response.");
+    }
+    {
+        id json = TBJSONParse([http data], NULL);
+        if (![json isKindOfClass:[NSDictionary class]])
+            TBFail(@"The MCP server sent a reply that is not JSON.");
+        return json;
+    }
+}
+
+- (id)request:(NSString *)method params:(id)params timeout:(double)seconds
+{
+    NSNumber *ident = [NSNumber numberWithInt:nextId++];
+    NSDictionary *reply = [self post:[NSDictionary dictionaryWithObjectsAndKeys:@"2.0", @"jsonrpc", ident, @"id", method, @"method", params ? params : [NSDictionary dictionary], @"params", nil]
+        wantId:ident timeout:seconds];
+    id err = [reply objectForKey:@"error"];
+    if (err) {
+        NSString *m = [err isKindOfClass:[NSDictionary class]] ? [err objectForKey:@"message"] : [err description];
+        TBFail(@"%@", m ? m : @"The MCP server returned an error.");
+    }
+    return [reply objectForKey:@"result"] ? [reply objectForKey:@"result"] : [NSDictionary dictionary];
+}
+
+- (void)notify:(NSString *)method params:(id)params
+{
+    [self post:[NSDictionary dictionaryWithObjectsAndKeys:@"2.0", @"jsonrpc", method, @"method", params ? params : [NSDictionary dictionary], @"params", nil] wantId:nil timeout:30];
+}
+
+- (void)start
+{
+    NSString *lower = [url lowercaseString];
+    NSURL *parsed = [NSURL URLWithString:url];
+    NSString *host = [[parsed host] lowercaseString];
+    if (!parsed || ![host length])
+        TBFail(@"Specify a valid Streamable HTTP MCP URL.");
+    if ([lower hasPrefix:@"http://"] && !([host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"] || [host isEqualToString:@"::1"] || [host hasSuffix:@".local"] || [host hasSuffix:@".lan"] || [host hasSuffix:@".home"]
+        || [host hasPrefix:@"192.168."] || [host hasPrefix:@"10."] || [[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowPlainMCP"]))
+        TBFail(@"MCP servers outside your own network must use HTTPS.");
+    [self request:@"initialize" params:[NSDictionary dictionaryWithObjectsAndKeys:@"2025-06-18", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
+        [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.0", @"version", nil], @"clientInfo", nil] timeout:45];
+    [self notify:@"notifications/initialized" params:[NSDictionary dictionary]];
+}
+
+@end

@@ -951,11 +951,11 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
     [self refreshTranscriptIfCurrent:[job objectForKey:@"chat"]];
     info = [NSMutableDictionary dictionaryWithDictionary:job];
     [info setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
-    attachRequest = [RelayRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
+    attachRequest = [EngineRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
     return YES;
 }
 
-- (void)conversionArrived:(RelayRequest *)request
+- (void)conversionArrived:(EngineRequest *)request
 {
     NSDictionary *info = [request context];
     if ([[info objectForKey:@"generation"] intValue] != attachGeneration)

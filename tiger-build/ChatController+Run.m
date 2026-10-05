@@ -294,10 +294,10 @@ static NSString *newRunId(void)
 
 - (void)refreshToolCatalog
 {
-    [RelayRequest send:@"GET" path:@"/v1/tools" body:nil timeout:12 target:self action:@selector(toolCatalogArrived:) context:nil];
+    [EngineRequest send:@"GET" path:@"/v1/tools" body:nil timeout:12 target:self action:@selector(toolCatalogArrived:) context:nil];
 }
 
-- (void)toolCatalogArrived:(RelayRequest *)request
+- (void)toolCatalogArrived:(EngineRequest *)request
 {
     NSString *error = nil;
     NSDictionary *data;
@@ -321,7 +321,6 @@ static NSString *newRunId(void)
     commanderCode = [[data objectForKey:@"commander_code"] copy];
     [self rebuildToolsMenu];
     [self commanderProblemChanged];
-    [self maybeOfferSSH];
 }
 
 /* ---- usage, cost and context ---- */
@@ -390,7 +389,7 @@ static NSString *newRunId(void)
         sideRequest = nil;
     }
     if (runId) {
-        [RelayRequest send:@"POST" path:@"/v1/run"
+        [EngineRequest send:@"POST" path:@"/v1/run"
             body:[NSString stringWithFormat:@"{\"id\":\"%@\",\"action\":\"stop\"}", TBJSONEscape(runId)]
             timeout:8 target:self action:@selector(runCommandDone:) context:nil];
     }
@@ -413,7 +412,7 @@ static NSString *newRunId(void)
         [self finishWithoutStream:chat];
 }
 
-- (void)runCommandDone:(RelayRequest *)request
+- (void)runCommandDone:(EngineRequest *)request
 {
     (void)request;
 }
@@ -436,12 +435,12 @@ static NSString *newRunId(void)
         queuedGuidance = [[NSMutableArray alloc] init];
     [queuedGuidance addObject:text];
     [self addStatus:[NSString stringWithFormat:@"%@ queued: %@", TBGuidanceMark, text] toChat:chat];
-    [RelayRequest send:@"POST" path:@"/v1/run"
+    [EngineRequest send:@"POST" path:@"/v1/run"
         body:[NSString stringWithFormat:@"{\"id\":\"%@\",\"action\":\"guide\",\"text\":\"%@\"}", TBJSONEscape(runId), TBJSONEscape(text)]
         timeout:10 target:self action:@selector(guidanceSent:) context:text];
 }
 
-- (void)guidanceSent:(RelayRequest *)request
+- (void)guidanceSent:(EngineRequest *)request
 {
     NSString *text = [request context];
     if ([request ok] || !text)
@@ -517,7 +516,7 @@ static NSString *newRunId(void)
         [self saveStore];
     } else
         decision = @"deny";
-    [RelayRequest send:@"POST" path:@"/v1/run"
+    [EngineRequest send:@"POST" path:@"/v1/run"
         body:[NSString stringWithFormat:@"{\"id\":\"%@\",\"action\":\"approve\",\"call\":\"%@\",\"decision\":\"%@\"}",
             TBJSONEscape(runId), TBJSONEscape([event objectForKey:@"id"]), decision]
         timeout:10 target:self action:@selector(runCommandDone:) context:nil];

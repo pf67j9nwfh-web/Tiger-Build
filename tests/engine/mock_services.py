@@ -109,11 +109,42 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
-        request = json.loads(self.rfile.read(length) or b"{}")
+        raw = self.rfile.read(length) or b"{}"
+        try:
+            request = json.loads(raw)
+        except ValueError:
+            request = {"multipart": raw.decode("latin-1")[:400]}
         SEEN.append({"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": request})
         path = self.path.split("?")[0]
         count = self.attempts[path] = self.attempts.get(path, 0) + 1
-        if path in ("/openai", "/local/v1/chat/completions"):
+        if path in ("/mcp", "/mcp-sse"):
+            method, ident = request.get("method"), request.get("id")
+            if ident is None:
+                self.send_response(202); self.send_header("Content-Length", "0"); self.end_headers(); return
+            if method == "initialize":
+                result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "mock", "version": "1"}}
+            elif method == "tools/list":
+                result = {"tools": [{"name": "echo", "description": "Echo text", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}]}
+            elif method == "tools/call":
+                result = {"content": [{"type": "text", "text": "echo: " + request["params"]["arguments"].get("text", "") + " token=" + (self.headers.get("Authorization") or "none") + " session=" + (self.headers.get("Mcp-Session-Id") or "none")}]}
+            else:
+                result = {}
+            message = json.dumps({"jsonrpc": "2.0", "id": ident, "result": result})
+            if path == "/mcp-sse":
+                data = ("event: message\ndata: " + message + "\n\n").encode()
+                ctype = "text/event-stream"
+            else:
+                data = message.encode(); ctype = "application/json"
+            self.send_response(200); self.send_header("Content-Type", ctype); self.send_header("Mcp-Session-Id", "sess-1")
+            self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
+        if path == "/audio-openai":
+            if "gpt-4o-mini-transcribe" in request.get("multipart", "") and count == 1:
+                self.send_json(404, {"error": {"message": "model not found"}})
+            else:
+                self.send_json(200, {"text": " hello from the mock "})
+        elif path == "/audio-gemini":
+            self.send_json(200, {"candidates": [{"content": {"parts": [{"text": "gemini words"}]}}]})
+        elif path in ("/openai", "/local/v1/chat/completions"):
             self.send_chunked(200, sse(openai_chunks(bool(request.get("tools")))))
         elif path == "/openai-retry":
             if count == 1:

@@ -1,4 +1,8 @@
 #import "TBSession.h"
+#import "TBIntegrations.h"
+#import "TBSSH.h"
+#import "TBExtras.h"
+#import "TBOutputs.h"
 #import "TBJSON.h"
 #import "TBHTTP.h"
 #import "TBPricing.h"
@@ -365,6 +369,7 @@ static NSArray *withoutPictures(NSArray *messages)
     [side release];
     [commanderTools release];
     [grokKey release];
+    [extras release];
     [super dealloc];
 }
 
@@ -400,6 +405,8 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (NSString *)machine
 {
+    if ([TBSSH enabled])
+        return [NSString stringWithFormat:@"the Mac at %@", [TBSSH host]];
     return [TBString(client, @"machine") length] ? TBString(client, @"machine") : @"a Mac";
 }
 
@@ -410,11 +417,15 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (NSString *)account
 {
+    if ([TBSSH enabled])
+        return [TBSSH user];
     return NSUserName();
 }
 
 - (NSString *)home
 {
+    if ([TBSSH enabled])
+        return [TBSSH home];
     return NSHomeDirectory();
 }
 
@@ -493,6 +504,8 @@ static NSArray *withoutPictures(NSArray *messages)
         return @"media";
     if ([name isEqualToString:kConsultTool])
         return @"consult";
+    if ([extras ownerOf:name])
+        return [extras ownerOf:name];
     return @"commander";
 }
 
@@ -507,6 +520,8 @@ static NSArray *withoutPictures(NSArray *messages)
         return [value boolValue];
     if ([key isEqualToString:@"commander"])
         return [TBSettings flag:@"ppc_approval"];
+    if ([key hasPrefix:@"mcp_"])
+        return [TBIntegrations serverApprovalForKey:key];
     return NO;
 }
 
@@ -853,13 +868,27 @@ static NSString *commanderPython(void)
 - (TBMCPClient *)startCommanderWithRoot:(NSString *)root
 {
     NSMutableArray *args = [NSMutableArray arrayWithObjects:@"LANG=C", @"LC_ALL=C", nil];
+    NSString *program = @"/usr/bin/env";
     TBMCPClient *started;
-    if (![[NSFileManager defaultManager] fileExistsAtPath:commanderPath()])
-        TBFail(@"Commander is not installed on this Mac. Quit and reopen Tiger Build to install it.");
-    if ([root length])
-        [args addObject:[@"TB_WORKSPACE_ROOT=" stringByAppendingString:root]];
-    [args addObjectsFromArray:[NSArray arrayWithObjects:commanderPython(), @"-u", commanderPath(), nil]];
-    started = [TBMCPClient clientWithPath:@"/usr/bin/env" arguments:args environment:nil label:@"Commander"];
+    if ([TBSSH enabled]) {
+        /* Commander on another Mac: the same program, started over SSH. */
+        NSString *problem = nil, *remote;
+        NSArray *ssh;
+        remote = [NSString stringWithFormat:@"exec /usr/bin/env LANG=C LC_ALL=C %@/usr/bin/python -u \"$HOME/ppc-commander/ppc_commander.py\"",
+            [root length] ? [NSString stringWithFormat:@"TB_WORKSPACE_ROOT='%@' ", [[root componentsSeparatedByString:@"'"] componentsJoinedByString:@"'\\''"]] : @""];
+        ssh = [TBSSH commandArgumentsRunning:remote problem:&problem];
+        if (!ssh)
+            TBFail(@"%@", problem);
+        program = @"/usr/bin/ssh";
+        args = [NSMutableArray arrayWithArray:ssh];
+    } else {
+        if (![[NSFileManager defaultManager] fileExistsAtPath:commanderPath()])
+            TBFail(@"Commander is not installed on this Mac. Quit and reopen Tiger Build to install it.");
+        if ([root length])
+            [args addObject:[@"TB_WORKSPACE_ROOT=" stringByAppendingString:root]];
+        [args addObjectsFromArray:[NSArray arrayWithObjects:commanderPython(), @"-u", commanderPath(), nil]];
+    }
+    started = [TBMCPClient clientWithPath:program arguments:args environment:nil label:@"Commander"];
     [run attach:started];
     @try {
         [started start];
@@ -936,7 +965,21 @@ static NSString *commanderPython(void)
             [toolCache removeObjectForKey:@"entry"];
         }
     }
-    return [NSDictionary dictionaryWithObjectsAndKeys:output, @"output", [NSNumber numberWithBool:failed], @"failed", images, @"images", nil];
+    {
+        NSMutableDictionary *answer = [NSMutableDictionary dictionaryWithObjectsAndKeys:output, @"output", [NSNumber numberWithBool:failed], @"failed", images, @"images", nil];
+        /* Show the picture the model looked at in the chat too. */
+        if ([images count] && !failed) {
+            @try {
+                NSDictionary *first = [images objectAtIndex:0];
+                NSData *bytes = TBBase64Decode(TBString(first, @"data"));
+                NSString *mime = TBString(first, @"mime");
+                if (bytes)
+                    [answer setObject:[@"image " stringByAppendingString:TBSaveMedia(bytes, [mime isEqualToString:@"image/png"] ? @"png" : ([mime isEqualToString:@"image/gif"] ? @"gif" : @"jpg"))] forKey:@"media"];
+            } @catch (NSException *ignored) {
+            }
+        }
+        return answer;
+    }
 }
 
 - (NSDictionary *)runOneCall:(NSDictionary *)call provider:(NSString *)provider

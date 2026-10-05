@@ -1,4 +1,6 @@
 #import "TBSession.h"
+#import "TBExtras.h"
+#import "TBMedia.h"
 #import "TBJSON.h"
 #import "TBHTTP.h"
 
@@ -16,6 +18,7 @@ static NSString *const kConsultTool = @"consult_model";
 - (NSArray *)takeGuidanceNotes;
 - (int)maxSteps;
 - (NSSet *)skipKeys;
+- (NSString *)mediaRoot;
 @end
 
 /* xAI's Responses stream: text and reasoning as frames, then the finished response. */
@@ -421,31 +424,48 @@ static NSString *eventErrorMessage(NSDictionary *event)
         if (consult)
             [tools addObject:consult];
     }
+    if (!extras)
+        extras = [[TBExtras alloc] initWithRun:run];
+    [tools addObjectsFromArray:[extras definitionsForProvider:provider skip:skip]];
     return tools;
 }
 
 - (void)closeExtras
 {
+    [extras close];
+    [extras release];
+    extras = nil;
 }
 
 - (BOOL)extraHandles:(NSString *)name
 {
-    return NO;
+    return [extras handles:name];
 }
 
 - (NSDictionary *)runExtraCall:(NSString *)name arguments:(NSDictionary *)args
 {
-    return [NSDictionary dictionaryWithObjectsAndKeys:@"error: that tool is not available.", @"output", [NSNumber numberWithBool:YES], @"failed", nil];
+    return [extras call:name arguments:args];
 }
 
 - (NSArray *)mediaToolsForProvider:(NSString *)provider
 {
-    return [NSArray array];
+    return [TBMedia toolsForProvider:provider];
 }
 
 - (NSDictionary *)runMediaCall:(NSString *)name arguments:(NSDictionary *)args provider:(NSString *)provider
 {
-    return [NSDictionary dictionaryWithObjectsAndKeys:@"error: making pictures and videos is not available yet.", @"output", [NSNumber numberWithBool:YES], @"failed", nil];
+    @try {
+        NSDictionary *info = [TBMedia create:name prompt:TBString(args, @"prompt") provider:provider run:run];
+        NSString *kind = TBString(info, @"kind"), *file = TBString(info, @"filename");
+        NSString *path = [NSString stringWithFormat:@"%@/%@", [self mediaRoot], file];
+        return [NSDictionary dictionaryWithObjectsAndKeys:[NSString stringWithFormat:@"Saved the %@ on this Mac at %@.", kind, path], @"output", [NSNumber numberWithBool:NO], @"failed",
+            [NSString stringWithFormat:@"%@ %@", kind, file], @"media", nil];
+    } @catch (NSException *exception) {
+        if ([[exception name] isEqualToString:TBStoppedException])
+            @throw;
+        return [NSDictionary dictionaryWithObjectsAndKeys:[@"error: " stringByAppendingString:[exception reason]], @"output", [NSNumber numberWithBool:YES], @"failed", nil];
+    }
+    return nil;
 }
 
 @end

@@ -1,5 +1,6 @@
 #import "TBExtract.h"
 #import "TBEngine.h"
+#import "TBCompat.h"
 #import <zlib.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <pthread.h>
@@ -216,7 +217,7 @@ static NSData *checkedXML(NSData *xml)
 
 /* The text of paragraphs: every <p> (or the elements named) gives one string. Text inside only the text elements
    named (w:t), or all of it when none are named. */
-@interface TBParas : NSObject
+@interface TBParas : NSObject TB_PROTOCOLS(NSXMLParserDelegate)
 {
     NSSet *paraNames, *textNames;
     BOOL breaks;
@@ -281,7 +282,7 @@ static NSData *checkedXML(NSData *xml)
 @end
 
 /* shared strings, workbook sheets, relationships and cells of a spreadsheet */
-@interface TBCells : NSObject
+@interface TBCells : NSObject TB_PROTOCOLS(NSXMLParserDelegate)
 {
     NSMutableArray *strings, *sheets, *rows, *cells;
     NSMutableDictionary *targets;

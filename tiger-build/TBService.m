@@ -5,6 +5,9 @@
 #import "TBPricing.h"
 #import "TBHTTP.h"
 #import "TBExtract.h"
+#import "TBSpeech.h"
+#import "TBIntegrations.h"
+#import "TBOutputs.h"
 
 static NSDictionary *reply(int status, NSData *body, NSString *type)
 {
@@ -81,11 +84,6 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
 
 @implementation TBService
 
-+ (BOOL)active
-{
-    return ![[NSUserDefaults standardUserDefaults] boolForKey:@"TBUseRelay"];
-}
-
 + (NSString *)version
 {
     NSString *v = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
@@ -147,6 +145,11 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
         @"gemini_api_key", @"local_api_key", @"local_url", nil];
     NSArray *clear = TBTruth(incoming, @"clear_all") ? known : TBArray(incoming, @"clear");
     unsigned i;
+    if (TBTruth(incoming, @"clear_all")) {
+        NSArray *more = [NSArray arrayWithObjects:@"search_api_key", @"tavily_api_key", @"mcp_servers", nil];
+        for (i = 0; i < [more count]; i++)
+            [TBSettings clearName:[more objectAtIndex:i]];
+    }
     for (i = 0; i < [clear count]; i++) {
         if (![known containsObject:[clear objectAtIndex:i]])
             TBFail(@"Unknown setting %@.", [clear objectAtIndex:i]);
@@ -185,6 +188,7 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"search", @"id", @"Web search", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
     if ([TBSettings flag:@"consult_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"consult", @"id", @"Ask other models", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
+    [rows addObjectsFromArray:[TBIntegrations catalogue]];
     return [NSPropertyListSerialization dataFromPropertyList:[NSDictionary dictionaryWithObjectsAndKeys:rows, @"tools", problem, @"commander_problem", @"", @"commander_code", nil]
                                                       format:NSPropertyListXMLFormat_v1_0 errorDescription:&error];
 }
@@ -256,6 +260,47 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
                 return textReply(500, [NSString stringWithFormat:@"Could not convert the file: %@\n", [exception reason]]);
             }
             return reply(200, [NSPropertyListSerialization dataFromPropertyList:result format:NSPropertyListXMLFormat_v1_0 errorDescription:&error], @"application/x-plist");
+        }
+        if ([path isEqualToString:@"/v1/transcribe"]) {
+            int status = 200;
+            NSString *problem = nil;
+            NSString *words;
+            if ([file length] < 100 || [file length] > 30 * 1024 * 1024)
+                return textReply(422, @"Recordings from a moment to about three minutes can be transcribed.\n");
+            words = [TBSpeech transcribe:file language:@"" status:&status problem:&problem];
+            return words ? textReply(200, words) : textReply(status, [problem stringByAppendingString:@"\n"]);
+        }
+        if ([path isEqualToString:@"/v1/integrations"] || [path isEqualToString:@"/v1/config-export"] || [path isEqualToString:@"/v1/config-import"]) {
+            NSString *error = nil;
+            NSDictionary *plist;
+            if ([method isEqualToString:@"GET"]) {
+                plist = [path isEqualToString:@"/v1/integrations"] ? [TBIntegrations publicConfig] : [TBIntegrations exportConfig];
+                return reply(200, [NSPropertyListSerialization dataFromPropertyList:plist format:NSPropertyListXMLFormat_v1_0 errorDescription:&error], @"application/x-plist");
+            }
+            if ([body length] < 1 || [body length] > 2 * 1024 * 1024)
+                return textReply(400, @"Configuration limit is 2 MB.\n");
+            plist = [NSPropertyListSerialization propertyListFromData:body mutabilityOption:NSPropertyListImmutable format:NULL errorDescription:&error];
+            if (error)
+                [error release];
+            if (![plist isKindOfClass:[NSDictionary class]])
+                return textReply(400, @"Invalid configuration plist.\n");
+            if ([path isEqualToString:@"/v1/integrations"])
+                [TBIntegrations update:plist];
+            else
+                [TBIntegrations restore:plist];
+            return textReply(200, @"Configuration saved. Imported custom MCP servers stay disabled until enabled.\n");
+        }
+        if ([path hasPrefix:@"/v1/media/"]) {
+            NSString *file = TBSafeMediaName([path substringFromIndex:10]);
+            NSData *bytes = file ? [NSData dataWithContentsOfFile:[TBMediaFolder() stringByAppendingPathComponent:file]] : nil;
+            NSString *type = @"application/octet-stream";
+            if (!bytes)
+                return textReply(404, @"not found\n");
+            if ([file hasSuffix:@".png"]) type = @"image/png";
+            else if ([file hasSuffix:@".gif"]) type = @"image/gif";
+            else if ([file hasSuffix:@".mp4"]) type = @"video/mp4";
+            else if ([file hasSuffix:@".jpg"] || [file hasSuffix:@".jpeg"]) type = @"image/jpeg";
+            return reply(200, bytes, type);
         }
         if ([path isEqualToString:@"/v1/run"]) {
             id incoming = TBJSONParse(body, NULL);

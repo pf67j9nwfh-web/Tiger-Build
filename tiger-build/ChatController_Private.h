@@ -1,5 +1,5 @@
 #import "ChatController.h"
-#import "RelayClient.h"
+#import "EngineRequest.h"
 #import "TBSupport.h"
 
 /* Methods the ChatController source files call on each other. They are
@@ -16,15 +16,13 @@
 - (void)setRelayProblem:(NSString *)text;
 - (float)relayStatusHeightForWidth:(float)width;
 - (void)relayStatusChanged;
-- (NSString *)relayProblemForRequest:(RelayRequest *)request;
+- (NSString *)relayProblemForRequest:(EngineRequest *)request;
 - (NSMutableDictionary *)blankChat;
 - (void)reloadTableSelect:(int)row show:(BOOL)show;
 - (NSData *)historyData;
 - (void)importHistoryData:(NSData *)data;
 - (void)clearAllHistory:(id)sender;
 - (void)exportHistory:(id)sender;
-- (void)exportHistoryToRelay:(id)sender;
-- (void)importHistoryFromRelay:(id)sender;
 - (void)importHistory:(id)sender;
 - (void)reportUnconfigured;
 - (void)commanderStart:(id)sender;
@@ -48,7 +46,6 @@
 - (void)collapseActivities:(id)sender;
 - (void)deleteWorkspace:(id)sender;
 - (void)showWorkspaceSettings:(id)sender;
-- (void)connectCommanderSSH:(id)sender;
 - (void)compactNow:(id)sender;
 - (void)setWorkspaceChoice:(NSString *)name;
 - (void)announceStoreChange;
@@ -74,7 +71,6 @@
 - (NSString *)providerNote:(NSString *)provider;
 - (NSArray *)workspaceNamesOnDisk;
 - (void)ensureCommanderInstalled;
-- (void)maybeOfferSSH;
 - (void)refreshCommanderStatus;
 @end
 

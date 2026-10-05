@@ -1,6 +1,6 @@
 #import "ChatController_Private.h"
 
-/* The tools window: the relay's switches for Commander and the built-in tools,
+/* The tools window: the switches for Commander and the built-in tools,
    web search keys, and the list of custom MCP servers. It is tabbed so every
    control fits a 1024x768 screen. */
 
@@ -140,10 +140,10 @@
         [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=40;
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
         NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
-        [steps setToolTip:@"A reply may use this many tool steps (1 to 200) before the relay stops it and says so. Say continue to go on."];
+        [steps setToolTip:@"A reply may use this many tool steps (1 to 200) before Tiger Build stops it and says so. Say continue to go on."];
         [tab addSubview:steps];[fields setObject:steps forKey:@"max_tool_steps"];y-=30;
         [self integrationLabel:@"Each chat can switch these on or off from the Tools button, and choose which ones must ask first. "
-            @"The switches here are the relay's: they apply to every Mac that uses it." frame:NSMakeRect(16,y-20,524,44) view:tab];
+            @"The switches here apply to all your chats." frame:NSMakeRect(16,y-20,524,44) view:tab];
         tab=[self integrationTab:@"Web Search" in:tabs];
         y=284;
         [self integrationLabel:@"Search service" frame:NSMakeRect(16,y+2,170,18) view:tab];
@@ -164,7 +164,7 @@
         [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];
 
         tab=[self integrationTab:@"MCP Servers" in:tabs];
-        [self integrationLabel:@"Custom stdio servers run on the relay Mac, not on the chat's Mac. Only add programs you trust; new ones start switched off."
+        [self integrationLabel:@"Custom servers are programs that run on this Mac, or http:// and https:// addresses. Only add ones you trust; new ones start switched off."
             frame:NSMakeRect(16,288,524,32) view:tab];
         NSScrollView *scroll=[[[NSScrollView alloc] initWithFrame:NSMakeRect(16,52,524,230)] autorelease];
         [scroll setHasVerticalScroller:YES];[scroll setBorderType:NSBezelBorder];
@@ -199,9 +199,9 @@
     [[fields objectForKey:@"save"] setEnabled:NO];
     [self integrationStatus:@"Loading..."];
     [panel makeKeyAndOrderFront:nil];
-    [RelayRequest send:@"GET" path:@"/v1/integrations" body:nil timeout:15 target:self action:@selector(integrationsArrived:) context:nil];
+    [EngineRequest send:@"GET" path:@"/v1/integrations" body:nil timeout:15 target:self action:@selector(integrationsArrived:) context:nil];
 }
-- (void)integrationsArrived:(RelayRequest *)request
+- (void)integrationsArrived:(EngineRequest *)request
 {
     NSMutableDictionary *fields=[self integrationFields];
     if(![request ok]) {[self integrationStatus:[self relayProblemForRequest:request]];return;}
@@ -247,7 +247,7 @@
         NSTextField *f=[[[NSTextField alloc] initWithFrame:NSMakeRect(140,y,364,24)] autorelease];[view addSubview:f];[fieldList addObject:f];
     }
     [[fieldList objectAtIndex:0] setToolTip:@"Letters, digits and underscore, up to 20 characters. Used to name its tools."];
-    [[fieldList objectAtIndex:2] setToolTip:@"Absolute path of the program on the relay Mac."];
+    [[fieldList objectAtIndex:2] setToolTip:@"Absolute path of a program on this Mac, or an http:// or https:// address of a Streamable HTTP server (a token goes in Environment as MCP_AUTH_TOKEN=...)."];
     [[fieldList objectAtIndex:3] setToolTip:@"Separate arguments with | (pipe). No shell expansion. Example: /path/server.py|--stdio"];
     [self integrationLabel:@"Environment" frame:NSMakeRect(16,168,120,18) view:view];
     NSScrollView *envScroll=[[[NSScrollView alloc] initWithFrame:NSMakeRect(140,100,364,86)] autorelease];
@@ -259,7 +259,7 @@
     [envScroll setDocumentView:env];[view addSubview:envScroll];
     [self integrationLabel:@"One NAME=value per line" frame:NSMakeRect(16,122,120,34) view:view];
     NSButton *on=[[[NSButton alloc] initWithFrame:NSMakeRect(140,72,364,22)] autorelease];
-    [on setButtonType:NSSwitchButton];[on setTitle:@"Switched on (its tools run on the relay Mac)"];[view addSubview:on];
+    [on setButtonType:NSSwitchButton];[on setTitle:@"Switched on"];[view addSubview:on];
     NSButton *ask=[[[NSButton alloc] initWithFrame:NSMakeRect(140,48,364,22)] autorelease];
     [ask setButtonType:NSSwitchButton];[ask setTitle:@"Ask before running its tools"];[view addSubview:ask];
     if(server) {
@@ -282,8 +282,8 @@
     if(result!=1)return nil;
     NSString *name=[[[fieldList objectAtIndex:0] stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSString *command=[[[fieldList objectAtIndex:2] stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if(![name length]||[name length]>20||![command hasPrefix:@"/"]) {
-        NSRunAlertPanel(@"MCP Server",@"Enter an ID (letters, digits or underscore, up to 20 characters) and the absolute path of the program on the relay Mac.",@"OK",nil,nil);
+    if(![name length]||[name length]>20||!([command hasPrefix:@"/"]||[[command lowercaseString] hasPrefix:@"http://"]||[[command lowercaseString] hasPrefix:@"https://"]||[command hasPrefix:@"builtin:"])) {
+        NSRunAlertPanel(@"MCP Server",@"Enter an ID (letters, digits or underscore, up to 20 characters) and the absolute path of a program on this Mac, or an http:// or https:// address.",@"OK",nil,nil);
         return nil;
     }
     NSString *args=[[fieldList objectAtIndex:3] stringValue];
@@ -337,7 +337,7 @@
     NSTableView *list=[fields objectForKey:@"table"];
     int row=[list selectedRow];
     if(row<0||row>=(int)[[source servers] count]){NSBeep();return;}
-    if(NSRunAlertPanel(@"Remove this server?",@"\"%@\" is removed from the relay's list when you Save.",@"Remove",@"Cancel",nil,[[[source servers] objectAtIndex:row] objectForKey:@"id"])!=NSAlertDefaultReturn)return;
+    if(NSRunAlertPanel(@"Remove this server?",@"\"%@\" is removed from the list when you Save.",@"Remove",@"Cancel",nil,[[[source servers] objectAtIndex:row] objectForKey:@"id"])!=NSAlertDefaultReturn)return;
     [[source servers] removeObjectAtIndex:row];
     [list reloadData];
     [self integrationStatus:@"Removed. Save to apply."];
@@ -360,14 +360,14 @@
     BOOL anyOn=NO;
     NSArray *servers=[(TBServerSource *)[[self integrationFields] objectForKey:@"source"] servers];
     unsigned i;
-    for(i=0;i<[servers count];i++)if([[[servers objectAtIndex:i] objectForKey:@"enabled"] boolValue])anyOn=YES;
-    if(anyOn&&NSRunAlertPanel(@"Enable relay tools?",@"Custom MCP executables run on the relay Mac with its user's permissions. "
-        @"Enable only servers you trust. This configuration applies to every client of the relay.",@"Save",@"Cancel",nil)!=NSAlertDefaultReturn)return;
+    for(i=0;i<[servers count];i++)if([[[servers objectAtIndex:i] objectForKey:@"enabled"] boolValue]&&![[[servers objectAtIndex:i] objectForKey:@"command"] hasPrefix:@"builtin:"])anyOn=YES;
+    if(anyOn&&NSRunAlertPanel(@"Enable custom servers?",@"Custom MCP servers run with your permissions, or receive what the model sends them. "
+        @"Enable only servers you trust.",@"Save",@"Cancel",nil)!=NSAlertDefaultReturn)return;
     NSString *error=nil;NSData *data=[NSPropertyListSerialization dataFromPropertyList:[self integrationFormData] format:NSPropertyListXMLFormat_v1_0 errorDescription:&error];
     if(error)[error release];NSString *text=[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
-    [RelayRequest send:@"POST" path:@"/v1/integrations" body:text timeout:20 target:self action:@selector(integrationsSaved:) context:nil];
+    [EngineRequest send:@"POST" path:@"/v1/integrations" body:text timeout:20 target:self action:@selector(integrationsSaved:) context:nil];
 }
-- (void)integrationsSaved:(RelayRequest *)request
+- (void)integrationsSaved:(EngineRequest *)request
 {
     [self integrationStatus:[request ok]?@"Saved. New chat turns use the updated tools.":[request text]];
     if([request ok]){[[[self integrationFields] objectForKey:@"tavily_api_key"] setStringValue:@""];[[[self integrationFields] objectForKey:@"clear_tavily_key"] setState:NSOffState];[[[self integrationFields] objectForKey:@"search_api_key"] setStringValue:@""];[[[self integrationFields] objectForKey:@"clear_search_key"] setState:NSOffState];[self refreshToolCatalog];}
@@ -376,18 +376,18 @@
 - (void)exportAllSettings:(id)sender
 {
     (void)sender;
-    if(NSRunAlertPanel(@"Export all settings?",@"This backup includes API keys, the relay token, custom MCP settings and environment secrets in plaintext. "
-        @"Keep it private. Chat history and SSH private-key files are not included.",@"Export",@"Cancel",nil)!=NSAlertDefaultReturn)return;
-    [RelayRequest send:@"GET" path:@"/v1/config-export" body:nil timeout:20 target:self action:@selector(settingsBackupArrived:) context:nil];
+    if(NSRunAlertPanel(@"Export all settings?",@"This backup includes API keys, custom MCP settings and their environment secrets in plaintext. "
+        @"Keep it private. Chat history and SSH keys are not included.",@"Export",@"Cancel",nil)!=NSAlertDefaultReturn)return;
+    [EngineRequest send:@"GET" path:@"/v1/config-export" body:nil timeout:20 target:self action:@selector(settingsBackupArrived:) context:nil];
 }
-- (void)settingsBackupArrived:(RelayRequest *)request
+- (void)settingsBackupArrived:(EngineRequest *)request
 {
     if(![request ok]){NSRunAlertPanel(@"Settings backup",@"%@",@"OK",nil,nil,[self relayProblemForRequest:request]);return;}
     NSSavePanel *panel=[NSSavePanel savePanel];[panel setRequiredFileType:@"plist"];
     if([panel runModalForDirectory:nil file:@"TigerBuild-all-settings.plist"]!=NSOKButton)return;
     NSString *domain=[[NSBundle mainBundle] bundleIdentifier];
     NSDictionary *defaults=[[NSUserDefaults standardUserDefaults] persistentDomainForName:domain];
-    NSDictionary *client=[NSDictionary dictionaryWithObjectsAndKeys:[RelayRequest serverBase],@"server",[RelayRequest token],@"token",
+    NSDictionary *client=[NSDictionary dictionaryWithObjectsAndKeys:
         defaults?defaults:[NSDictionary dictionary],@"preferences",[self commanderCommand:@"status"],@"commander",nil];
     NSDictionary *backup=[NSDictionary dictionaryWithObjectsAndKeys:@"TigerBuild-config",@"format",[NSNumber numberWithInt:1],@"version",
         client,@"client",[request data],@"relay",nil];
@@ -406,11 +406,11 @@
     NSDictionary *backup=[NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListMutableContainers format:NULL errorDescription:&error];
     if(error)[error release];
     if([backup isKindOfClass:[NSDictionary class]]&&([[backup objectForKey:@"format"] isEqualToString:@"TigerDesk-config"]||[[backup objectForKey:@"format"] isEqualToString:@"TigerBuildRelay-config"])) {
-        if(NSRunAlertPanel(@"Import relay settings?",@"This restores API keys and tools on the current relay. "
-            @"Client settings and the relay's active connection stay unchanged. Imported custom MCPs remain disabled.",
+        if(NSRunAlertPanel(@"Import settings?",@"This restores API keys and tools from an earlier relay backup. "
+            @"Your other preferences stay unchanged. Imported custom MCPs remain disabled.",
             @"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
         NSString *text=[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
-        [RelayRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(relayOnlySettingsImported:) context:nil];
+        [EngineRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(relayOnlySettingsImported:) context:nil];
         return;
     }
     if(![backup isKindOfClass:[NSDictionary class]]||![[backup objectForKey:@"format"] isEqualToString:@"TigerBuild-config"]
@@ -418,21 +418,20 @@
         NSRunAlertPanel(@"Settings",@"Not a supported Tiger Build settings backup.",@"OK",nil,nil);return;
     }
     NSDictionary *client=[backup objectForKey:@"client"];
-    if(![client isKindOfClass:[NSDictionary class]]||![[client objectForKey:@"server"] isKindOfClass:[NSString class]]
-        ||![[client objectForKey:@"token"] isKindOfClass:[NSString class]]||![[client objectForKey:@"preferences"] isKindOfClass:[NSDictionary class]]) {
+    if(![client isKindOfClass:[NSDictionary class]]||![[client objectForKey:@"preferences"] isKindOfClass:[NSDictionary class]]) {
         NSRunAlertPanel(@"Settings",@"Malformed client configuration.",@"OK",nil,nil);return;
     }
-    if(NSRunAlertPanel(@"Replace settings?",@"This replaces your preferences, Commander login settings and the relay's API and tool settings. MCP servers are imported disabled. "
-        @"The relay's network and SSH settings and your chats are unchanged. Export current settings first.",@"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
+    if(NSRunAlertPanel(@"Replace settings?",@"This replaces your preferences, API keys and tool settings. MCP servers are imported disabled. "
+        @"Your chats are unchanged. Export current settings first.",@"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
     NSString *text=[[[NSString alloc] initWithData:[backup objectForKey:@"relay"] encoding:NSUTF8StringEncoding] autorelease];
-    [RelayRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(settingsBackupImported:) context:backup];
+    [EngineRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(settingsBackupImported:) context:backup];
 }
-- (void)relayOnlySettingsImported:(RelayRequest *)request
+- (void)relayOnlySettingsImported:(EngineRequest *)request
 {
-    NSRunAlertPanel(@"Settings",@"%@",@"OK",nil,nil,[request ok]?@"Relay settings imported. Custom servers remain disabled.":[request text]);
+    NSRunAlertPanel(@"Settings",@"%@",@"OK",nil,nil,[request ok]?@"Settings imported. Custom servers remain disabled.":[request text]);
     if([request ok]){[self refreshCatalog];[self refreshLocalModels];}
 }
-- (void)settingsBackupImported:(RelayRequest *)request
+- (void)settingsBackupImported:(EngineRequest *)request
 {
     if(![request ok]){NSRunAlertPanel(@"Settings",@"%@",@"OK",nil,nil,[request text]);return;}
     [self applyClientBackup:[request context]];
@@ -443,7 +442,6 @@
 - (void)applyClientBackup:(NSDictionary *)backup
 {
     NSDictionary *client=[backup objectForKey:@"client"];
-    [RelayRequest saveServerBase:[client objectForKey:@"server"] token:[client objectForKey:@"token"]];
     [[NSUserDefaults standardUserDefaults] setPersistentDomain:[client objectForKey:@"preferences"] forName:[[NSBundle mainBundle] bundleIdentifier]];
     NSDictionary *commander=[client objectForKey:@"commander"];
     if([commander isKindOfClass:[NSDictionary class]]) {
