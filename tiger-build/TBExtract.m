@@ -739,6 +739,11 @@ static NSData *jpegFromWebP(NSData *data, int longest)
     return result;
 }
 
+NSData *TBJPEGFromWebP(NSData *data, int longest)
+{
+    return jpegFromWebP(data, longest);
+}
+
 static NSData *jpegFromFrame(NSData *data, int longest, int index)
 {
     if (isWebP(data))

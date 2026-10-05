@@ -21,6 +21,12 @@ int main(int argc, char **argv)
     NSDictionary *r;
     [docx writeToFile:[folder stringByAppendingPathComponent:@"t.docx"] atomically:NO];
     expectThat([clean isEqualToString:@"My_Report.docx"], @"name is cleaned");
+    {
+        /* a WebP that a service sends as a "png" is kept as a JPEG, which every system can show */
+        const unsigned char tiny[] = {0x52,0x49,0x46,0x46,0x1a,0,0,0,0x57,0x45,0x42,0x50,0x56,0x50,0x38,0x4c,0x0d,0,0,0,0x2f,0,0,0,0x10,0x07,0x10,0x11,0x11,0x88,0x88,0xfe,0x07,0,0};
+        NSString *name = TBSaveMedia([NSData dataWithBytes:tiny length:sizeof tiny], @"png");
+        expectThat([name hasSuffix:@".jpg"] || [name hasSuffix:@".png"], @"a WebP sent as a picture is stored");
+    }
     r = [TBExtract extractName:@"t.docx" data:docx];
     expectThat([[r objectForKey:@"text"] rangeOfString:@"Some bold and code & <stuff>."].location != NSNotFound, @"docx text round trip");
     expectThat([[r objectForKey:@"text"] rangeOfString:@"Apple"].location != NSNotFound && [[r objectForKey:@"text"] rangeOfString:@"Title"].location == 0, @"docx table and heading");

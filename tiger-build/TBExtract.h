@@ -27,3 +27,4 @@ extern NSString *TBExtractError; /* exception name; the reason is for the person
 
 NSData *TBSnappyDecompress(const unsigned char *bytes, unsigned length); /* nil when damaged */
 NSData *TBGunzip(NSData *data, unsigned limit);
+NSData *TBJPEGFromWebP(NSData *data, int longest);   /* the first picture of a WebP as a JPEG, or nil */

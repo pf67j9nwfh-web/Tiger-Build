@@ -1,4 +1,5 @@
 #import "TBOutputs.h"
+#import "TBExtract.h"
 #import "TBEngine.h"
 #import <zlib.h>
 
@@ -42,7 +43,16 @@ static NSString *randomName(void)
 
 NSString *TBSaveMedia(NSData *data, NSString *extension)
 {
-    NSString *name = [NSString stringWithFormat:@"%@.%@", randomName(), extension];
+    NSString *name;
+    /* some services (Muse) send WebP, which these systems cannot show: keep a JPEG instead */
+    if ([data length] > 12 && !memcmp([data bytes], "RIFF", 4) && !memcmp((const char *)[data bytes] + 8, "WEBP", 4)) {
+        NSData *jpeg = TBJPEGFromWebP(data, 2400);
+        if (jpeg) {
+            data = jpeg;
+            extension = @"jpg";
+        }
+    }
+    name = [NSString stringWithFormat:@"%@.%@", randomName(), extension];
     if (![data writeToFile:[TBMediaFolder() stringByAppendingPathComponent:name] atomically:NO])
         TBFail(@"The file could not be stored.");
     return name;
