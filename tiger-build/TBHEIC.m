@@ -361,7 +361,7 @@ static Item *findAlpha(NSDictionary *items, TBBox *iref, const uint8_t *d, unsig
                     const uint8_t *z = [pr bytes];
                     unsigned m;
                     for (m = 4; m + 5 <= [pr length]; m++)
-                        if (!memcmp(z + m, "alpha", 5))
+                        if (!memcmp(z + m, "alpha", 5) || (m + 6 <= [pr length] && !memcmp(z + m, "auxid:1", 6)))
                             alpha = YES;
                 }
                 else if ([pr length] > 4 && !memcmp([pr bytes], "av1C", 4))
@@ -480,12 +480,77 @@ static inline int sampleOf(const aom_image_t *img, int plane, unsigned row, unsi
     return (img->fmt & AOM_IMG_FMT_HIGHBITDEPTH) ? ((const uint16_t *)line)[col] >> shift : line[col];
 }
 
+/* High dynamic range (PQ or HLG) to the screen's range: the signal to light, wide gamut to sRGB's, a soft shoulder, then sRGB's curve.
+   Tables keep it cheap on a slow Mac. */
+static float pqLight[256];
+static BOOL pqReady = NO;
+
+static void makeToneTables(int transfer)
+{
+    int i;
+    if (pqReady)
+        return;
+    makeTables();
+    for (i = 0; i < 256; i++) {
+        double e = i / 255.0, y;
+        if (transfer == 16) {
+            double m1 = 0.1593017578125, m2 = 78.84375, c1 = 0.8359375, c2 = 18.8515625, c3 = 18.6875, p = pow(e, 1 / m2), num = p - c1;
+            y = num > 0 ? pow(num / (c2 - c3 * p), 1 / m1) * 10000.0 / 203.0 : 0;      /* 1.0 is paper white (203 nits) */
+        } else
+            y = (e <= 0.5 ? e * e / 3 : (exp((e - 0.5599107) / 0.17883277) + 0.28466892) / 12) * 3.0;    /* HLG scene light, a little over white */
+        pqLight[i] = (float)y;
+    }
+    pqReady = YES;
+}
+
+static float shoulderLinear(float x)
+{
+    float white = 4.9f;
+    return x * (1 + x / (white * white)) / (1 + x);
+}
+
+static int encodeLight(float x)
+{
+    int v;
+    if (x < 0)
+        x = 0;
+    v = (int)(x * 4095 + 0.5f);
+    return encodedOf[v > 4095 ? 4095 : v];
+}
+
+/* the brightest channel is brought into range and the others follow, so colours keep their hue instead of clipping */
+static void hdrToSDR(int *r, int *g, int *b, BOOL bt2020)
+{
+    float lr = pqLight[*r], lg = pqLight[*g], lb = pqLight[*b], nr = lr, ng = lg, nb = lb, peak, scale;
+    if (bt2020) {
+        nr = 1.6605f * lr - 0.5876f * lg - 0.0728f * lb;
+        ng = -0.1246f * lr + 1.1329f * lg - 0.0083f * lb;
+        nb = -0.0182f * lr - 0.1006f * lg + 1.1187f * lb;
+    }
+    if (nr < 0) nr = 0;
+    if (ng < 0) ng = 0;
+    if (nb < 0) nb = 0;
+    peak = nr > ng ? (nr > nb ? nr : nb) : (ng > nb ? ng : nb);
+    scale = peak > 0.0001f ? shoulderLinear(peak) / peak : 1;
+    *r = encodeLight(nr * scale);
+    *g = encodeLight(ng * scale);
+    *b = encodeLight(nb * scale);
+}
+
 /* Draws the picture (and its alpha picture, over white) onto the canvas at (x, y). colr says whether the file's colour box gave the matrix. */
-static NSString *paintAV1(const aom_image_t *img, const aom_image_t *alpha, uint8_t *canvas, unsigned cw, unsigned ch, unsigned x, unsigned y, Matrix matrix, BOOL colr)
+static NSString *paintAV1(const aom_image_t *img, const aom_image_t *alpha, uint8_t *canvas, unsigned cw, unsigned ch, unsigned x, unsigned y, Matrix matrix, BOOL colr, int transfer, int primaries)
 {
     unsigned w = img->d_w, h = img->d_h, row, col;
     int bits = img->bit_depth, shift = bits - 8, cx = img->x_chroma_shift, cy = img->y_chroma_shift, mono = img->monochrome, identity = 0;
     int ashift = alpha ? (int)alpha->bit_depth - 8 : 0;
+    BOOL hdr;
+    if (transfer < 0)
+        transfer = img->tc;
+    if (primaries < 0)
+        primaries = img->cp;
+    hdr = transfer == 16 || transfer == 18;
+    if (hdr)
+        makeToneTables(transfer);
     if (bits < 8 || bits > 16)
         return @"This kind of AVIF picture is not supported.";
     if (!colr) {
@@ -528,7 +593,9 @@ static NSString *paintAV1(const aom_image_t *img, const aom_image_t *alpha, uint
             r = clamp8(r);
             g = clamp8(g);
             b = clamp8(b);
-            if (matrix.p3)
+            if (hdr)
+                hdrToSDR(&r, &g, &b, primaries == 9);
+            else if (matrix.p3)
                 fromP3(&r, &g, &b);
             if (alpha && row < alpha->d_h && col < alpha->d_w) {
                 int a = sampleOf(alpha, 0, row, col, ashift);
@@ -548,7 +615,7 @@ static NSString *paintAV1(const aom_image_t *img, const aom_image_t *alpha, uint
 }
 
 /* the AV1 picture (and alpha) of one item, painted onto the canvas */
-static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData *alphaC, const uint8_t *file, unsigned long long fileLength, uint8_t *canvas, unsigned cw, unsigned ch, unsigned x, unsigned y, Matrix matrix, BOOL colr)
+static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData *alphaC, const uint8_t *file, unsigned long long fileLength, uint8_t *canvas, unsigned cw, unsigned ch, unsigned x, unsigned y, Matrix matrix, BOOL colr, int transfer, int primaries)
 {
     aom_codec_ctx_t codec, alphaCodec;
     aom_image_t *img = NULL, *alphaImg = NULL;
@@ -558,7 +625,7 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
         return why;
     if (alphaItem && alphaC && !decodeAV1(alphaItem, alphaC, file, fileLength, &alphaCodec, &alphaImg))
         haveAlpha = YES;
-    why = paintAV1(img, haveAlpha ? alphaImg : NULL, canvas, cw, ch, x, y, matrix, colr);
+    why = paintAV1(img, haveAlpha ? alphaImg : NULL, canvas, cw, ch, x, y, matrix, colr, transfer, primaries);
     aom_codec_destroy(&codec);
     if (haveAlpha)
         aom_codec_destroy(&alphaCodec);
@@ -695,6 +762,8 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
         NSMutableArray *ops = [NSMutableArray array];
         Matrix matrix = matrixFor(6, YES);
         BOOL p3 = NO, colr = NO;
+        int transferCode = -1, primariesCode = -1;
+        unsigned cropN[8] = {0}, haveCrop = 0;
         Item *alphaItem = NULL;
         unsigned width = 0, height = 0;
         uint8_t *canvas = NULL;
@@ -716,9 +785,16 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
                 [ops addObject:[NSNumber numberWithInt:1000 + (q[4] & 3)]];
             else if (n >= 5 && !memcmp(q, "imir", 4))
                 [ops addObject:[NSNumber numberWithInt:2000 + (q[4] & 1)]];
-            else if (n >= 15 && !memcmp(q, "colr", 4) && !memcmp(q + 4, "nclx", 4)) {
+            else if (n >= 36 && !memcmp(q, "clap", 4)) {
+                unsigned k;
+                for (k = 0; k < 8; k++)
+                    cropN[k] = be32(q + 4 + k * 4);
+                haveCrop = 1;
+            } else if (n >= 15 && !memcmp(q, "colr", 4) && !memcmp(q + 4, "nclx", 4)) {
                 matrix = matrixFor(be16(q + 12), (q[14] & 0x80) != 0);
                 colr = YES;
+                primariesCode = be16(q + 8);
+                transferCode = be16(q + 10);
                 if (be16(q + 8) == 12)
                     p3 = YES;
             } else if (n > 12 && !memcmp(q, "colr", 4) && !memcmp(q + 4, "prof", 4)) {
@@ -748,7 +824,7 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
                 *problem = @"This kind of AVIF picture is not supported.";
                 goto done;
             }
-            why = decodeAV1Item(primaryItem, av1C, alphaItem, alphaC, d, total, canvas, width, height, 0, 0, matrix, colr);
+            why = decodeAV1Item(primaryItem, av1C, alphaItem, alphaC, d, total, canvas, width, height, 0, 0, matrix, colr, transferCode, primariesCode);
             if (why) {
                 *problem = why;
                 goto done;
@@ -864,7 +940,7 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
                 if ((tile % cols) * tw >= width || (tile / cols) * th >= height)
                     continue;
                 if (av1Tile)
-                    why = decodeAV1Item(t, tileAV1, NULL, nil, d, total, canvas, width, height, (tile % cols) * tw, (tile / cols) * th, matrix, colr);
+                    why = decodeAV1Item(t, tileAV1, NULL, nil, d, total, canvas, width, height, (tile % cols) * tw, (tile / cols) * th, matrix, colr, transferCode, primariesCode);
                 else
                     why = decodeItem(t, hvcC, d, total, canvas, width, height, (tile % cols) * tw, (tile / cols) * th, matrix);
                 if (why) {
@@ -875,6 +951,23 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
         } else {
             *problem = [NSString stringWithFormat:@"This kind of HEIC picture (%s) is not supported.", primaryItem->type];
             goto done;
+        }
+        if (haveCrop && cropN[1] && cropN[3] && cropN[5] && cropN[7]) {
+            /* the clean aperture: a centred window, moved by its offsets (fractions) */
+            double cw = (double)cropN[0] / cropN[1], chh = (double)cropN[2] / cropN[3];
+            double left = (width - cw) / 2 + (double)(int)cropN[4] / cropN[5], top = (height - chh) / 2 + (double)(int)cropN[6] / cropN[7];
+            int x0 = (int)(left + 0.5), y0 = (int)(top + 0.5), w2 = (int)(cw + 0.5), h2 = (int)(chh + 0.5), row;
+            if (x0 >= 0 && y0 >= 0 && w2 > 0 && h2 > 0 && x0 + w2 <= (int)width && y0 + h2 <= (int)height && (w2 != (int)width || h2 != (int)height)) {
+                uint8_t *cropped = malloc((size_t)w2 * h2 * 3);
+                if (cropped) {
+                    for (row = 0; row < h2; row++)
+                        memcpy(cropped + (size_t)row * w2 * 3, canvas + ((size_t)(y0 + row) * width + x0) * 3, (size_t)w2 * 3);
+                    free(canvas);
+                    canvas = cropped;
+                    width = w2;
+                    height = h2;
+                }
+            }
         }
         result = jpegFromRGB(canvas, width, height, ops, longest);
         if (!result)
