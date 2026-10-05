@@ -336,7 +336,7 @@ static NSString *sudoPassword(void)
     struct sockaddr_un addr;
     char buffer[2048];
     ssize_t got, total = 0;
-    struct timeval tv = {10, 0};
+    struct timeval tv = {90, 0};
     NSString *line;
     if (access([path fileSystemRepresentation], F_OK) != 0)
         CMFail(@"%@", notRunning);

@@ -66,6 +66,7 @@ endif
 	rm -rf $(APP)/Contents/Resources/ppc-commander; $(MAKE) -C ../commander TB=$(CURDIR) && cp ../commander/ppc-commander $(APP)/Contents/Resources/ppc-commander
 	mkdir -p $(APP)/Contents/Frameworks && lipo -create $(DE265)/lib/libde265-32.dylib $(if $(findstring ppc64,$(ARCHS64)),$(DE265)/lib/libde265-64ppc.dylib) $(if $(findstring x86_64,$(ARCHS64)),$(DE265)/lib/libde265-64x86.dylib) -output $(APP)/Contents/Frameworks/libde265.dylib
 	cp $(DE265)/LICENSE $(APP)/Contents/Resources/libde265-LICENSE.txt
+	cp $(AOM)/LICENSE $(APP)/Contents/Resources/libaom-LICENSE.txt && cp $(AOM)/PATENTS $(APP)/Contents/Resources/libaom-PATENTS.txt
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
 convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m
