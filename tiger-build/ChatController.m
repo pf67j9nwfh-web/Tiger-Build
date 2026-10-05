@@ -986,6 +986,17 @@ static NSMutableArray *allControllers = nil;
     return NSWidth([sender bounds]) - [sender dividerThickness] - 280;
 }
 
+/* The sidebar keeps its width when the window or the split view is resized; only dragging the divider changes it. The default
+   proportional resize made the sidebar a little wider with each layout, and that width was then saved. */
+- (void)splitView:(NSSplitView *)sender resizeSubviewsWithOldSize:(NSSize)oldSize
+{
+    NSRect bounds = [sender bounds];
+    float thickness = [sender dividerThickness], side = [self clampedSidebar:sidebarWidth];
+    (void)oldSize;
+    [sidePane setFrame:NSMakeRect(0, 0, side, NSHeight(bounds))];
+    [chatPane setFrame:NSMakeRect(side + thickness, 0, NSWidth(bounds) - side - thickness, NSHeight(bounds))];
+}
+
 - (void)splitViewDidResizeSubviews:(NSNotification *)note
 {
     float width;
@@ -1075,6 +1086,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItem:preferences];
     [preferences release];
+    {
+        NSMenuItem *look = [[[NSMenuItem alloc] initWithTitle:@"Appearance..." action:@selector(showAppearance:) keyEquivalent:@""] autorelease];
+        [look setTarget:self];
+        [appMenu addItem:look];
+    }
     [appMenu addItem:[NSMenuItem separatorItem]];
     {
         NSMenuItem *hide = [[[NSMenuItem alloc] initWithTitle:@"Hide Tiger Build" action:@selector(hide:) keyEquivalent:@"h"] autorelease];
@@ -1234,9 +1250,6 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
                 [item setTarget:self]; [menu addItem:item];
             }
-            [menu addItem:[NSMenuItem separatorItem]];
-            item = [[[NSMenuItem alloc] initWithTitle:@"Appearance..." action:@selector(showAppearance:) keyEquivalent:@""] autorelease];
-            [item setTarget:self]; [menu addItem:item];
             slot = [[[NSMenuItem alloc] initWithTitle:@"View" action:NULL keyEquivalent:@""] autorelease];
             [slot setSubmenu:menu]; [chat addItem:slot];
         }

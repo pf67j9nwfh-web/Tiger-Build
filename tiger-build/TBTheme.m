@@ -34,6 +34,7 @@ NSString *const TBThemeMenuFont = @"TBThemeMenuFont";
 NSString *const TBThemeMenuText = @"TBThemeMenuText";
 NSString *const TBThemeWindow = @"TBThemeWindow";
 NSString *const TBThemeWindowColor = @"TBThemeWindowColor";
+NSString *const TBThemeWindowColor2 = @"TBThemeWindowColor2";
 
 /* The original look, as the numbers fillBubble used to hold. */
 static const float defaultSent[4][3] = {
@@ -57,7 +58,7 @@ static NSImage *source = nil;
         TBThemeSentSize, TBThemeGotSize, TBThemeBackground, TBThemeBackColor, TBThemeBackColor2, TBThemePicture,
         TBThemeToolFont, TBThemeToolSize, TBThemeToolText, TBThemeToolBox, TBThemeStatusFont, TBThemeStatusSize, TBThemeStatusText, TBThemeStatusEffect, TBThemeStatusGlow,
         TBThemeSideFont, TBThemeSideSize, TBThemeSideText, TBThemeSideBack, TBThemeLabelFont, TBThemeLabelText, TBThemeButtonFont, TBThemeButtonText,
-        TBThemeMenuFont, TBThemeMenuText, TBThemeWindow, TBThemeWindowColor, nil];
+        TBThemeMenuFont, TBThemeMenuText, TBThemeWindow, TBThemeWindowColor, TBThemeWindowColor2, nil];
 }
 
 + (void)reload
@@ -285,6 +286,14 @@ static NSFont *familyFont(id family, float size, BOOL monospaceFallback)
         NSColor *c = [self colorForKey:TBThemeWindowColor];
         [(c ? c : [NSColor colorWithCalibratedWhite:0.85f alpha:1]) set];
         NSRectFill(dirty);
+    } else if ([style isEqualToString:@"gradient"]) {
+        NSColor *top = [self colorForKey:TBThemeWindowColor], *bottom = [self colorForKey:TBThemeWindowColor2];
+        NSView *view = [NSView focusView];
+        [NSGraphicsContext saveGraphicsState];
+        NSRectClip(dirty);
+        [self fillGradient:view ? [view bounds] : dirty from:top ? top : [NSColor colorWithCalibratedWhite:0.96f alpha:1]
+            to:bottom ? bottom : [NSColor colorWithCalibratedWhite:0.74f alpha:1]];
+        [NSGraphicsContext restoreGraphicsState];
     } else if ([style isEqualToString:@"stripes"]) {
         if (!stripes) {
             NSImage *tile = [[NSImage alloc] initWithSize:NSMakeSize(4, 4)];

@@ -94,4 +94,4 @@ REMOTE
 rm -rf "$DIST/TigerBuild-$VERSION.pkg"
 "$SSH" 'tar -C "$HOME" -cf - TigerBuild-2.0.pkg' | tar -C "$DIST" -xf -
 echo "Wrote $DIST/TigerBuild-$VERSION.pkg"
-#"$SSH" 'open "$HOME/Desktop/Tiger Build.app"'
+"$SSH" 'open "$HOME/Desktop/Tiger Build.app"'

@@ -473,9 +473,9 @@ static NSString *trimmedValue(NSTextField *field)
     [tab addSubview:button];
     [prefsFields setObject:button forKey:@"remote.check"];
     y -= 22;
-    [self preferencesNote:@"Leave it off to use Commander only from Tiger Build on this Mac; then no sharing service needs to be on."
-        frame:NSMakeRect(34, y - 12, 502, 30) inView:tab];
-    y -= 62;
+    [self preferencesNote:@"Turning this on allows other computers on the network to start Commander on this Mac, so this Mac can be controlled by other copies of Tiger Build or by other programs that speak MCP over SSH. Note: Remote Login must be on in System Preferences, Sharing, and the other computer's public SSH key must be in this account's ~/.ssh/authorized_keys (Tiger Build signs in with a key, never a password)."
+        frame:NSMakeRect(34, y - 50, 502, 66) inView:tab];
+    y -= 96;
     button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 400, 20)] autorelease];
     [button setButtonType:NSSwitchButton];
     [button setTitle:@"Let agents run administrator (sudo) commands on this Mac"];

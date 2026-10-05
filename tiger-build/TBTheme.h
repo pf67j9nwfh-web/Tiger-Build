@@ -77,3 +77,4 @@ extern NSString *const TBThemeMenuFont;
 extern NSString *const TBThemeMenuText;
 extern NSString *const TBThemeWindow;
 extern NSString *const TBThemeWindowColor;
+extern NSString *const TBThemeWindowColor2;   /* the bottom of the "gradient" window look */

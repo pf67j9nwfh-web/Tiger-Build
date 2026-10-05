@@ -243,14 +243,16 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
     [self colorRow:@"Menu text:" x:10 y:18 key:TBThemeMenuText fallback:[NSColor blackColor]];
     {
         NSPopUpButton *window;
-        [self label:@"Window:" frame:NSMakeRect(240, 22, 60, 17) right:YES bold:NO];
-        window = [self popup:NSMakeRect(304, 18, 110, 22) tip:@"The look of the window behind the chat list and controls" action:@selector(windowStyleChanged:)];
+        [self label:@"Window:" frame:NSMakeRect(186, 22, 60, 17) right:YES bold:NO];
+        window = [self popup:NSMakeRect(250, 18, 112, 22) tip:@"The look of the window behind the chat list and controls" action:@selector(windowStyleChanged:)];
         [window addItemWithTitle:@"Brushed Metal"];
         [window addItemWithTitle:@"Plain Gray"];
         [window addItemWithTitle:@"Pinstripes"];
+        [window addItemWithTitle:@"Gradient"];
         [window addItemWithTitle:@"Solid Color"];
         [controls setObject:window forKey:@"windowStyle"];
-        [controls setObject:[self well:NSMakeRect(420, 16, 44, 24) tip:@"Color of the window" action:@selector(windowColorChanged:)] forKey:@"windowColor"];
+        [controls setObject:[self well:NSMakeRect(368, 16, 44, 24) tip:@"Window color, or the top of the gradient" action:@selector(windowColorChanged:)] forKey:@"windowColor"];
+        [controls setObject:[self well:NSMakeRect(416, 16, 44, 24) tip:@"Bottom of the gradient" action:@selector(windowColorChanged:)] forKey:@"windowColor2"];
     }
 
     reset = [[[NSButton alloc] initWithFrame:NSMakeRect(20, 10, 150, 28)] autorelease];
@@ -338,9 +340,13 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
         NSString *window = [[NSUserDefaults standardUserDefaults] stringForKey:TBThemeWindow];
         NSColor *wc = [TBTheme colorForKey:TBThemeWindowColor];
         [[controls objectForKey:@"statusEffect"] selectItemAtIndex:[effect isEqualToString:@"shadow"] ? 1 : ([effect isEqualToString:@"glow"] ? 2 : 0)];
-        [[controls objectForKey:@"windowStyle"] selectItemAtIndex:[window isEqualToString:@"gray"] ? 1 : ([window isEqualToString:@"stripes"] ? 2 : ([window isEqualToString:@"solid"] ? 3 : 0))];
-        [[controls objectForKey:@"windowColor"] setColor:wc ? wc : [NSColor colorWithCalibratedWhite:0.85f alpha:1]];
-        [[controls objectForKey:@"windowColor"] setEnabled:[window isEqualToString:@"solid"]];
+        NSColor *wc2 = [TBTheme colorForKey:TBThemeWindowColor2];
+        BOOL gradient = [window isEqualToString:@"gradient"];
+        [[controls objectForKey:@"windowStyle"] selectItemAtIndex:[window isEqualToString:@"gray"] ? 1 : ([window isEqualToString:@"stripes"] ? 2 : (gradient ? 3 : ([window isEqualToString:@"solid"] ? 4 : 0)))];
+        [[controls objectForKey:@"windowColor"] setColor:wc ? wc : (gradient ? [NSColor colorWithCalibratedWhite:0.96f alpha:1] : [NSColor colorWithCalibratedWhite:0.85f alpha:1])];
+        [[controls objectForKey:@"windowColor2"] setColor:wc2 ? wc2 : [NSColor colorWithCalibratedWhite:0.74f alpha:1]];
+        [[controls objectForKey:@"windowColor"] setEnabled:gradient || [window isEqualToString:@"solid"]];
+        [[controls objectForKey:@"windowColor2"] setEnabled:gradient];
     }
 }
 
@@ -487,14 +493,16 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
 - (void)windowStyleChanged:(id)sender
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *names[4] = {nil, @"gray", @"stripes", @"solid"};
+    NSString *names[5] = {nil, @"gray", @"stripes", @"gradient", @"solid"};
     int n = [sender indexOfSelectedItem];
     if (n == 0)
         [defaults removeObjectForKey:TBThemeWindow];
     else
         [defaults setObject:names[n] forKey:TBThemeWindow];
-    if (n == 3)
+    if (n >= 3) {
         [TBTheme setColor:[[controls objectForKey:@"windowColor"] color] forKey:TBThemeWindowColor];
+        [TBTheme setColor:[[controls objectForKey:@"windowColor2"] color] forKey:TBThemeWindowColor2];
+    }
     [defaults synchronize];
     [TBTheme changed:NO];
     [self refresh];
@@ -502,7 +510,8 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
 
 - (void)windowColorChanged:(id)sender
 {
-    [TBTheme setColor:[(NSColorWell *)sender color] forKey:TBThemeWindowColor];
+    [TBTheme setColor:[[controls objectForKey:@"windowColor"] color] forKey:TBThemeWindowColor];
+    [TBTheme setColor:[[controls objectForKey:@"windowColor2"] color] forKey:TBThemeWindowColor2];
     [TBTheme changed:NO];
 }
 
