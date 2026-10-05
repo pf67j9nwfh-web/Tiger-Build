@@ -21,6 +21,19 @@ static NSString *keyPath(void) { return [folder() stringByAppendingPathComponent
 static NSString *knownPath(void) { return [folder() stringByAppendingPathComponent:@"known_hosts"]; }
 static NSString *pendingPath(void) { return [folder() stringByAppendingPathComponent:@"pending_host"]; }
 
+/* ssh splits an -o value at spaces, and "Application Support" has one: the host list is reached through a link whose path has none */
+static NSString *knownLink(void)
+{
+    NSString *link = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Caches/TigerBuild-known_hosts"];
+    NSFileManager *m = [NSFileManager defaultManager];
+    NSString *current = [m pathContentOfSymbolicLinkAtPath:link];
+    if (![current isEqualToString:knownPath()]) {
+        [m removeFileAtPath:link handler:nil];
+        [m createSymbolicLinkAtPath:link pathContent:knownPath()];
+    }
+    return link;
+}
+
 /* a program run to the end, with its output; nil if it could not start. Gives up after `seconds`. */
 static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
 {
@@ -165,7 +178,7 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
         return nil;
     }
     args = [NSMutableArray arrayWithObjects:@"-T", @"-i", keyPath(), @"-o", @"IdentitiesOnly=yes", @"-o", @"BatchMode=yes", @"-o", @"PreferredAuthentications=publickey",
-        @"-o", @"StrictHostKeyChecking=yes", @"-o", [@"UserKnownHostsFile=" stringByAppendingString:knownPath()], @"-o", @"ConnectTimeout=12",
+        @"-o", @"StrictHostKeyChecking=yes", @"-o", [@"UserKnownHostsFile=" stringByAppendingString:knownLink()], @"-o", @"ConnectTimeout=12",
         @"-o", @"ServerAliveInterval=20", @"-o", @"ServerAliveCountMax=6", target, nil];
     if ([remoteCommand length])
         [args addObject:remoteCommand];

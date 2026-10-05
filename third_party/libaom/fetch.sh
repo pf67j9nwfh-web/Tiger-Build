@@ -21,7 +21,7 @@ cp build/config/aom_config.h build/config/aom_config.c build/config/aom_dsp_rtcd
 # the generated headers were made on a little-endian Mac; the PowerPC slices are big-endian
 sed -i '' 's/^#define CONFIG_BIG_ENDIAN 0/#ifdef __BIG_ENDIAN__\n#define CONFIG_BIG_ENDIAN 1\n#else\n#define CONFIG_BIG_ENDIAN 0\n#endif/' config/aom_config.h
 rm -rf build include && mkdir -p include/aom
-cp src/libaom/aom/aom.h src/libaom/aom/aom_codec.h src/libaom/aom/aom_decoder.h src/libaom/aom/aom_image.h src/libaom/aom/aom_integer.h src/libaom/aom/aomdx.h include/aom/
+cp src/libaom/aom/aom.h src/libaom/aom/aom_codec.h src/libaom/aom/aom_decoder.h src/libaom/aom/aom_image.h src/libaom/aom/aom_integer.h src/libaom/aom/aom_frame_buffer.h src/libaom/aom/aomdx.h include/aom/
 cp src/libaom/LICENSE LICENSE
 cp src/libaom/PATENTS PATENTS
 echo "libaom $VERSION is in third_party/libaom/src/libaom; its generated config is in third_party/libaom/config"

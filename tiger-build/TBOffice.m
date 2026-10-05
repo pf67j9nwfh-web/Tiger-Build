@@ -3,6 +3,9 @@
 #import "TBEngine.h"
 
 #define MAX_TEXT 300000
+#ifndef NSUTF16LittleEndianStringEncoding
+#define NSUTF16LittleEndianStringEncoding ((NSStringEncoding)0x94000100)
+#endif
 #define ENDOFCHAIN 0xFFFFFFFEu
 
 static void fail(NSString *format, ...)
@@ -340,8 +343,8 @@ static NSString *docText(TBCompound *cfb)
     {
         NSString *body = raw;
         if (ccpFtn && ccpText < [raw length]) {
-            NSString *main = [raw substringToIndex:ccpText], *foot = [raw substringFromIndex:ccpText];
-            return [NSString stringWithFormat:@"%@\n\n[Footnotes]\n%@", wordClean(main), wordClean(foot)];
+            NSString *body0 = [raw substringToIndex:ccpText], *foot = [raw substringFromIndex:ccpText];
+            return [NSString stringWithFormat:@"%@\n\n[Footnotes]\n%@", wordClean(body0), wordClean(foot)];
         }
         return wordClean(body);
     }

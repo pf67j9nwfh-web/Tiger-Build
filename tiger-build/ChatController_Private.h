@@ -113,15 +113,15 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 @interface ChatController (Sudo)
 - (void)startSudoBroker;
 - (void)refreshSudoStatus;
-- (void)applyInterfaceTheme;
-- (void)applyPopupTheme:(NSPopUpButton *)popup;
-- (void)interfaceThemeChanged:(NSNotification *)note;
 - (IBAction)toggleSudoMode:(id)sender;
 - (IBAction)setAdministratorPassword:(id)sender;
 @end
 
 @interface ChatController (Appearance)
 - (IBAction)showAppearance:(id)sender;
+- (void)applyInterfaceTheme;
+- (void)applyPopupTheme:(NSPopUpButton *)popup;
+- (void)interfaceThemeChanged:(NSNotification *)note;
 @end
 
 @interface ChatController (Dictation)
@@ -185,3 +185,4 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 - (IBAction)toggleTools:(id)sender;
 - (void)returnTextToField:(NSString *)text;
 @end
+

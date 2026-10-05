@@ -96,7 +96,7 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
     for (i = 0; i < [families count]; i++)
         [*font addItemWithTitle:[families objectAtIndex:i]];
     [self label:@"Size:" frame:NSMakeRect(336, y + 4, 36, 17) right:YES bold:NO];
-    *size = [self popup:NSMakeRect(376, y, 64, 22) tip:@"Text size" action:sizeAction];
+    *size = [self popup:NSMakeRect(376, y, 80, 22) tip:@"Text size" action:sizeAction];
     for (i = 10; i <= 28; i++)
         [*size addItemWithTitle:[NSString stringWithFormat:@"%u", i]];
 }
@@ -139,7 +139,7 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
         [font addItemWithTitle:[families objectAtIndex:i]];
     [self bind:font key:familyKey kind:@"family" fallback:nil];
     if (sizeKey) {
-        NSPopUpButton *size = [self popup:NSMakeRect(376, y, 64, 22) tip:@"Text size" action:@selector(genericSizeChanged:)];
+        NSPopUpButton *size = [self popup:NSMakeRect(376, y, 80, 22) tip:@"Text size" action:@selector(genericSizeChanged:)];
         [self label:@"Size:" frame:NSMakeRect(336, y + 4, 36, 17) right:YES bold:NO];
         [size addItemWithTitle:@"Default"];
         for (i = 8; i <= 30; i++)
@@ -542,7 +542,6 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
     if (!popup)
         return;
     [popup setFont:font];
-    [[popup menu] setFont:font];
     items = [[popup menu] itemArray];
     for (i = 0; i < [items count]; i++) {
         NSMenuItem *item = [items objectAtIndex:i];

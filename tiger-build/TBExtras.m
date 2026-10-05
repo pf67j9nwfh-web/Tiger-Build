@@ -396,11 +396,12 @@ static NSString *imageSearch(NSString *query, TBRun *run)
         } @catch (NSException *exception) {
             if ([[exception name] isEqualToString:TBStoppedException])
                 @throw;
+            NSString *tail = [client respondsToSelector:@selector(stderrText)] ? TBTrim([client stderrText]) : @"";
             if (client) {
                 [run detach:client];
                 [client close];
             }
-            [errors addObject:[NSString stringWithFormat:@"%@: %@", sid, [exception reason]]];
+            [errors addObject:[NSString stringWithFormat:@"%@: %@%@", sid, [exception reason], [tail length] ? [@" " stringByAppendingString:tail] : @""]];
         }
     }
     [offered removeAllObjects];
