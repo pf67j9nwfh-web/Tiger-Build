@@ -482,9 +482,10 @@ static NSString *xmlText(const unsigned char *p, unsigned long n)
             else if (!strcmp(code, "quot")) rep = "\"";
             else if (!strcmp(code, "apos")) rep = "'";
             else if (code[0] == '#') {
-                c = (unichar)(code[1] == 'x' || code[1] == 'X' ? strtol(code + 2, NULL, 16) : strtol(code + 1, NULL, 10));
-                if (c == 0 || c > 0xffff)
+                long number = code[1] == 'x' || code[1] == 'X' ? strtol(code + 2, NULL, 16) : strtol(code + 1, NULL, 10);
+                if (number <= 0 || number > 0xffff)
                     continue;
+                c = (unichar)number;
             } else
                 continue;
             if (!out)
