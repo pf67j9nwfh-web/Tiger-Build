@@ -217,13 +217,13 @@ int main(int argc, char **argv)
         && [[[[[[seen objectAtIndex:1] objectForKey:@"body"] objectForKey:@"input"] objectAtIndex:0] objectForKey:@"call_id"] isEqualToString:@"fc_9"], @"grok loop: the tool result goes back with the response id");
     expectThat([[[[[[seen objectAtIndex:0] objectForKey:@"body"] objectForKey:@"tools"] lastObject] objectForKey:@"type"] isEqualToString:@"web_search"], @"grok loop: native search offered");
 
-    /* Commander that cannot be started: no tools, said so */
+    /* Commander that cannot be started: no Commander tools, said so */
     fetch(@"/reset");
     [d setObject:@"/nonexistent/ppc_commander.py" forKey:@"TBCommanderPath"];
     [TBSession forgetCommanderTools];
     f = turn(@"claude", @"claude-sonnet-5", nil, nil, NULL);
     seen = fetch(@"/seen");
-    expectThat([[f joined:@"s"] rangeOfString:@"Tiger Mac tools are offline"].location != NSNotFound && [[[[seen objectAtIndex:0] objectForKey:@"body"] objectForKey:@"tools"] count] == 0, @"offline: said so, and no tools offered");
+    expectThat([[f joined:@"s"] rangeOfString:@"Commander is offline"].location != NSNotFound && [[[[[seen objectAtIndex:0] objectForKey:@"body"] objectForKey:@"tools"] description] rangeOfString:@"start_process"].location == NSNotFound, @"offline: said so, and no Commander tools offered");
     [pool release];
     fprintf(stderr, failures ? "%d failed\n" : "all passed\n", failures);
     return failures ? 1 : 0;

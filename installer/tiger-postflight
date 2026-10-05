@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs on Mac OS X 10.4 after Tiger Build.app is copied into place.
-# Puts ppc-commander where the relay expects it: ~/ppc-commander/ppc_commander.py
+# Puts ppc-commander where Tiger Build expects it: ~/ppc-commander/ppc_commander.py
 
 SRC=""
 for candidate in \
@@ -72,9 +72,5 @@ for dir in "$users_root"/*; do
   esac
   install_user "$dir" "$name"
 done
-
-if [ -x /usr/sbin/systemsetup ]; then
-  /usr/sbin/systemsetup -setremotelogin on >/dev/null 2>&1 || true
-fi
 
 exit 0

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0
+- **No relay.** Tiger Build now talks to the AI services itself, over TLS 1.3 and 1.2 from a built-in Mbed TLS 3.6 (patched for gcc 4.0 and the old SDKs, with the Mozilla certificate list). Tested on PowerPC and Intel, Tiger to Snow Leopard. Handshakes take about 0.1 to 0.25 s on a G4 or G3.
+- Everything the relay did is in the app: providers (Grok, ChatGPT, Claude, Gemini, Mistral, Muse, local), the tool loop with Stop, guidance, approvals, compaction and consulting other models, cost estimates, file conversion (Word, Excel, PowerPoint, OpenDocument, Pages, Numbers, Keynote, WebP and other pictures; HEIC and AVIF are not yet), dictation, picture and video making, files from the model (`.docx`, `.xlsx`, `.pdf`), web and picture search, and the agent toolbox.
+- **Keys are kept in the Keychain**; there is no relay token or address any more.
+- **MCP servers**: programs on the Mac, or `http://` and `https://` Streamable HTTP servers. The four example servers are built in and need no Python.
+- **Commander** still runs on the Mac you chat from, and can optionally run on another Mac over SSH (Preferences, Commander), with a trusted-host fingerprint.
+- Removed: the relay, its Mac, Windows and Linux apps and installers, "history on the relay", and the SSH link the relay used. The installer no longer turns on Remote Login.
+- Importing a 1.x settings backup brings the keys across.
+
 ## 1.5
 - **Appearance** (⌥⌘K): iChat-style bubble colours, text colours, fonts and chat background (solid, gradient or picture), with Reset to Default; iChat's thought cloud shows while a reply is starting.
 - **Administrator (sudo) mode** for Commander 0.5.0, off by default: tick it in Preferences, Commander and type the password once; it is kept in the Keychain and the model never sees it. Without the mode, commands containing `sudo` are refused.

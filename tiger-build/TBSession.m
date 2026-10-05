@@ -777,7 +777,7 @@ static BOOL truthyValue(id v)
     if ([media count]) {
         [tools addObjectsFromArray:media];
         [system appendFormat:@" If the person asks for a picture, call generate_image. If they ask for a video or animation, call generate_video. "
-            "Do not say a file was created unless that tool saved one. Saved pictures and videos are files in %@ on the Tiger Mac. "
+            "Do not say a file was created unless that tool saved one. Saved pictures and videos are files in %@ on the Mac. "
             "If the person asks to put one somewhere else, copy that file with the shell. Do not invent a path.", [self mediaRoot]];
     }
     for (i = 0; i < [tools count]; i++) {
@@ -790,11 +790,11 @@ static BOOL truthyValue(id v)
         if ([n isEqualToString:kConsultTool]) hasConsult = YES;
     }
     if (!useTools) {
-        [system appendString:@" ppc-commander is turned off for this chat. Do not claim you can read files or run commands on the Tiger Mac. If asked to, say those tools are off for this chat."];
+        [system appendString:@" ppc-commander is turned off for this chat. Do not claim you can read files or run commands on the Mac. If asked to, say those tools are off for this chat."];
     } else if ([skip containsObject:@"commander"] || ![TBSettings flag:@"ppc_enabled"]) {
-        [system appendString:@" Commander is switched off for this chat. Do not claim you can read files or run commands on the Tiger Mac."];
+        [system appendString:@" Commander is switched off for this chat. Do not claim you can read files or run commands on the Mac."];
     } else if (!hasStart) {
-        [system appendString:@" The Tiger Mac tools are offline right now. If asked to touch that computer, say you cannot reach it."];
+        [system appendString:@" Commander is offline right now. If asked to touch the computer, say you cannot reach it."];
         if ([offline length])
             [self emit:@"s" text:offline];
     } else {
@@ -923,7 +923,7 @@ static NSString *commanderPython(void)
         } @catch (NSException *exception) {
             if ([[exception name] isEqualToString:TBStoppedException])
                 @throw;
-            problem = [NSString stringWithFormat:@"Tiger Mac tools are offline. %@", [exception reason]];
+            problem = [NSString stringWithFormat:@"Commander is offline. %@", [exception reason]];
         }
         [run detach:probe];
         [probe close];

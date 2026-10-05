@@ -4,6 +4,7 @@
 #import <zlib.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <pthread.h>
+#import "webp/decode.h"
 
 NSString *TBExtractError = @"TBExtractError";
 
@@ -425,8 +426,76 @@ static int columnOf(NSString *ref)
 
 /* ---- pictures ---- */
 
+static BOOL isWebP(NSData *data)
+{
+    const unsigned char *b = [data bytes];
+    return [data length] > 16 && !memcmp(b, "RIFF", 4) && !memcmp(b + 8, "WEBP", 4);
+}
+
+/* The JPEG of a decoded RGBA picture, laid on white (a JPEG has no transparency). */
+static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int stride)
+{
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixels, (size_t)stride * height, NULL);
+    CGImageRef image = CGImageCreate(width, height, 8, 32, stride, space, kCGImageAlphaLast, provider, NULL, false, kCGRenderingIntentDefault);
+    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space, kCGImageAlphaNoneSkipLast);
+    NSMutableData *out = [NSMutableData data];
+    NSData *result = nil;
+    if (image && context) {
+        CGImageRef flat;
+        CGContextSetRGBFillColor(context, 1, 1, 1, 1);
+        CGContextFillRect(context, CGRectMake(0, 0, width, height));
+        CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+        flat = CGBitmapContextCreateImage(context);
+        if (flat) {
+            CGImageDestinationRef destination = CGImageDestinationCreateWithData((CFMutableDataRef)out, CFSTR("public.jpeg"), 1, NULL);
+            if (destination) {
+                NSDictionary *quality = [NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.85f] forKey:(id)kCGImageDestinationLossyCompressionQuality];
+                CGImageDestinationAddImage(destination, flat, (CFDictionaryRef)quality);
+                if (CGImageDestinationFinalize(destination) && [out length])
+                    result = out;
+                CFRelease(destination);
+            }
+            CGImageRelease(flat);
+        }
+    }
+    if (image)
+        CGImageRelease(image);
+    if (context)
+        CGContextRelease(context);
+    CGDataProviderRelease(provider);
+    CGColorSpaceRelease(space);
+    return result;
+}
+
+/* A WebP picture as a JPEG no larger than `longest` pixels, scaled while it is decoded so a big one does not fill memory. */
+static NSData *jpegFromWebP(NSData *data, int longest)
+{
+    WebPDecoderConfig config;
+    NSData *result = nil;
+    if (!WebPInitDecoderConfig(&config) || WebPGetFeatures([data bytes], [data length], &config.input) != VP8_STATUS_OK)
+        return nil;
+    if (config.input.width > 16384 || config.input.height > 16384 || config.input.width < 1 || config.input.height < 1)
+        return nil;
+    if (config.input.width > longest || config.input.height > longest) {
+        double scale = (double)longest / (config.input.width > config.input.height ? config.input.width : config.input.height);
+        config.options.use_scaling = 1;
+        config.options.scaled_width = (int)(config.input.width * scale + 0.5);
+        config.options.scaled_height = (int)(config.input.height * scale + 0.5);
+        if (config.options.scaled_width < 1) config.options.scaled_width = 1;
+        if (config.options.scaled_height < 1) config.options.scaled_height = 1;
+    }
+    config.output.colorspace = MODE_RGBA;
+    if (WebPDecode([data bytes], [data length], &config) == VP8_STATUS_OK)
+        result = jpegFromRGBA(config.output.u.RGBA.rgba, config.output.width, config.output.height, config.output.u.RGBA.stride);
+    WebPFreeDecBuffer(&config.output);
+    return result;
+}
+
 static NSData *jpegFrom(NSData *data, int longest)
 {
+    if (isWebP(data))
+        return jpegFromWebP(data, longest);
     CGImageSourceRef source = CGImageSourceCreateWithData((CFDataRef)data, NULL);
     NSData *result = nil;
     if (source && CGImageSourceGetCount(source) > 0) {

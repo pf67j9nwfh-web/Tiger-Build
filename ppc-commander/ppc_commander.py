@@ -6,7 +6,7 @@
 # json, subprocess, hashlib, or 0o octal literals.
 #
 # The copy that actually runs lives on the Tiger Mac at
-# ~/ppc-commander/ppc_commander.py. Edit this file on the relay Mac
+# ~/ppc-commander/ppc_commander.py. Edit this file in the checkout
 # and upload it again. Stdio is the MCP stream: logs go to stderr only.
 
 import difflib
@@ -751,8 +751,8 @@ def protected_paths():
     ]
 
 
-# A workspace can restrict Commander to one directory. The relay passes the directory
-# in TB_WORKSPACE_ROOT when it starts this program over SSH, so the model, which
+# A workspace can restrict Commander to one directory. Tiger Build passes the directory
+# in TB_WORKSPACE_ROOT when it starts this program, so the model, which
 # can only call tools, cannot change it. File tools are held to it exactly.
 # Shell commands are held to it as well as a plain command line can be: the
 # working folder is the root, and any path the command names must be inside it

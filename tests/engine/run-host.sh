@@ -1,0 +1,39 @@
+#!/bin/sh
+# Builds the engine tests with the host compiler and runs them against mock_services.py and fake_commander.py.
+# Run on a current Mac: sh tests/engine/run-host.sh. Needs third_party/mbedtls/build/libmbedtls-host.a (third_party/mbedtls/build-host.sh)
+# and the libwebp sources (third_party/libwebp/fetch.sh).
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$HERE/../.."
+cd "$ROOT/tiger-build"
+OUT="${TMPDIR:-/tmp}/tb-engine-tests"
+rm -rf "$OUT"; mkdir -p "$OUT/webp" "$OUT/cfg/src/webp"
+: > "$OUT/cfg/src/webp/config.h"
+TLS=../third_party/mbedtls
+WEBP=../third_party/libwebp/src/libwebp
+TLSFLAGS="-std=gnu99 -I$TLS/include -DMBEDTLS_USER_CONFIG_FILE=\"$(cd $TLS && pwd)/tb_config.h\""
+for f in $WEBP/src/dec/*.c $WEBP/src/dsp/*.c $WEBP/src/utils/*.c; do
+  case $(basename $f) in *_sse2.c|*_sse41.c|*_neon.c|*_mips*.c|*_msa.c|*enc*|ssim.c|cost.c|quant_levels_utils.c|bit_writer_utils.c) continue;; esac
+  clang -O1 -w -DHAVE_CONFIG_H -I"$OUT/cfg" -I$WEBP -I$WEBP/src -c $f -o "$OUT/webp/$(basename $f .c).o"
+done
+COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m"
+LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices $TLS/build/libmbedtls-host.a -lz"
+build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -o "$OUT/$name" "$@" $LIBS; }
+build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
+build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m $COMMON "$OUT"/webp/*.o
+build extras ../tests/engine/extrastest.m TBBuiltin.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m $COMMON "$OUT"/webp/*.o
+build prov ../tests/engine/provtest.m TBProviders.m $COMMON
+build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o
+PORT=8795
+python3 "$HERE/mock_services.py" $PORT > /dev/null 2>&1 &
+MOCK=$!
+trap 'kill $MOCK 2>/dev/null' EXIT
+sleep 1
+mkdir -p "$OUT/files"
+status=0
+for t in speech outputs; do "$OUT/$t" $( [ $t = speech ] && echo $PORT || echo "$OUT/files" ) || status=1; done
+"$OUT/extras" $PORT || status=1
+"$OUT/prov" $PORT || status=1
+"$OUT/session" $PORT 127.0.0.1 "$HERE/fake_commander.py" /usr/bin/python3 || status=1
+[ $status = 0 ] && echo "all engine tests passed" || echo "SOME ENGINE TESTS FAILED"
+exit $status

@@ -2,12 +2,12 @@
 # MCP stdio entry point. Nothing but the protocol may be written to stdout.
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
-# Tiger Build Relay settings. The pre-1.6 folder name (TigerDesk) still works.
-RELAY_HOME="${TIGERBUILD_RELAY_HOME:-$HOME/Library/Application Support/Tiger Build Relay}"
-if [ -z "${TIGERBUILD_RELAY_HOME:-}" ] && [ ! -d "$RELAY_HOME" ] && [ -d "$HOME/Library/Application Support/TigerDesk" ]; then
-  RELAY_HOME="$HOME/Library/Application Support/TigerDesk"
+# Settings (TIGER_HOST, TIGER_USER, TIGER_KEY, TIGER_KNOWN) come from $PPC_CONFIG, else ~/.config/ppc-commander/config.sh.
+# The settings file of the old Tiger Build 1.x relay is still read if that is where yours is.
+CONFIG="${PPC_CONFIG:-$HOME/.config/ppc-commander/config.sh}"
+if [ ! -f "$CONFIG" ] && [ -f "$HOME/Library/Application Support/Tiger Build Relay/config.sh" ]; then
+  CONFIG="$HOME/Library/Application Support/Tiger Build Relay/config.sh"
 fi
-CONFIG="${TIGERBUILD_RELAY_CONFIG:-${TIGERDESK_CONFIG:-$RELAY_HOME/config.sh}}"
 if [ -f "$CONFIG" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG"
