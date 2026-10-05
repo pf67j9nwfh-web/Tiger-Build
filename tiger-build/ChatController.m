@@ -1810,6 +1810,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     if (launchScreen)
         [self performSelector:@selector(openLaunchScreen) withObject:nil afterDelay:1.0];
+    if (!launchQuestion && [[NSUserDefaults standardUserDefaults] stringForKey:@"TBLaunchQuestion"]) {
+        /* Like --ask, for a launch from the Finder or `open`; used once. */
+        [self setLaunchQuestion:[[NSUserDefaults standardUserDefaults] stringForKey:@"TBLaunchQuestion"]];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBLaunchQuestion"];
+    }
     if (launchQuestion) {
         [input setStringValue:launchQuestion];
         [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];
