@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBTheme.h"
 #import "TranscriptView.h"
 #import <stdlib.h>
 
@@ -583,6 +584,11 @@ static NSString *newRunId(void)
     [retryButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
     [attachButton setEnabled:!busy && current && ![self chatIsBusyElsewhere:current]];
     [editButton setTitle:editBackup ? @"Cancel Edit" : @"Edit Last"];
+    /* the titles above replace any coloured title Appearance gave these buttons */
+    if ([TBTheme interfaceColor:@"buttons"]) {
+        [self applyButtonTheme:sendButton];
+        [self applyButtonTheme:editButton];
+    }
 }
 
 /* ---- edit and retry the last message ---- */

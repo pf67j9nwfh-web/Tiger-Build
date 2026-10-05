@@ -121,6 +121,7 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 - (IBAction)showAppearance:(id)sender;
 - (void)applyInterfaceTheme;
 - (void)applyPopupTheme:(NSPopUpButton *)popup;
+- (void)applyButtonTheme:(NSButton *)button;
 - (void)interfaceThemeChanged:(NSNotification *)note;
 @end
 
