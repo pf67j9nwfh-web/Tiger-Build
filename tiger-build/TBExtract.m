@@ -1114,6 +1114,325 @@ static NSString *iworkStrings(TBZip *zip)
     return [result componentsJoinedByString:@"\n"];
 }
 
+static NSString *joinLines(NSArray *lines);
+
+/* ---- Numbers tables: the cells themselves, from the IWA archives ---- */
+
+static NSArray *protoAll(NSArray *fields, unsigned number)
+{
+    NSMutableArray *out = [NSMutableArray array];
+    unsigned i;
+    for (i = 0; i < [fields count]; i++)
+        if ([[[fields objectAtIndex:i] objectAtIndex:0] unsignedIntValue] == number)
+            [out addObject:[[fields objectAtIndex:i] objectAtIndex:2]];
+    return out;
+}
+
+static id protoFirst(NSArray *fields, unsigned number)
+{
+    NSArray *all = protoAll(fields, number);
+    return [all count] ? [all objectAtIndex:0] : nil;
+}
+
+static NSArray *messageFields(id data)
+{
+    return [data isKindOfClass:[NSData class]] ? protoFields([data bytes], [data length]) : nil;
+}
+
+/* the object a Reference message points to */
+static NSNumber *referenceId(id data)
+{
+    return protoFirst(messageFields(data), 1);
+}
+
+/* every object in the document's archives: identifier -> [[type, payload]...] */
+static NSDictionary *iworkObjects(TBZip *zip)
+{
+    NSMutableDictionary *objects = [NSMutableDictionary dictionary];
+    NSEnumerator *each = [[zip names] objectEnumerator];
+    NSString *name;
+    while ((name = [each nextObject])) {
+        NSData *decoded;
+        const unsigned char *b;
+        unsigned long size, position = 0;
+        if (![[name lowercaseString] hasSuffix:@".iwa"])
+            continue;
+        NS_DURING
+            decoded = iwaBytes([zip dataFor:name]);
+        NS_HANDLER
+            decoded = nil;
+        NS_ENDHANDLER
+        if (!decoded)
+            continue;
+        b = [decoded bytes];
+        size = [decoded length];
+        while (position < size) {
+            unsigned long long length;
+            NSArray *info, *infos;
+            NSNumber *identifier;
+            unsigned k;
+            if (!varint(b, size, &position, &length) || position + length > size)
+                break;
+            info = protoFields(b + position, length);
+            position += length;
+            if (!info)
+                break;
+            identifier = protoFirst(info, 1);
+            infos = protoAll(info, 2);
+            for (k = 0; k < [infos count]; k++) {
+                NSArray *m = messageFields([infos objectAtIndex:k]);
+                unsigned long long payload = [protoFirst(m, 3) unsignedLongLongValue];
+                NSNumber *type = protoFirst(m, 1);
+                if (position + payload > size)
+                    break;
+                if (identifier && type) {
+                    NSMutableArray *list = [objects objectForKey:identifier];
+                    if (!list) {
+                        list = [NSMutableArray array];
+                        [objects setObject:list forKey:identifier];
+                    }
+                    [list addObject:[NSArray arrayWithObjects:type, [NSData dataWithBytes:b + position length:payload], nil]];
+                }
+                position += payload;
+            }
+        }
+    }
+    return objects;
+}
+
+static NSData *objectOfType(NSDictionary *objects, NSNumber *identifier, int type1, int type2)
+{
+    NSArray *list = [objects objectForKey:identifier];
+    unsigned i;
+    for (i = 0; i < [list count]; i++) {
+        int t = [[[list objectAtIndex:i] objectAtIndex:0] intValue];
+        if (t == type1 || t == type2)
+            return [[list objectAtIndex:i] objectAtIndex:1];
+    }
+    return nil;
+}
+
+/* key -> string for a table's string list (and its segments) */
+static NSDictionary *stringList(NSDictionary *objects, NSNumber *identifier)
+{
+    NSMutableDictionary *out = [NSMutableDictionary dictionary];
+    NSData *list = identifier ? objectOfType(objects, identifier, 6005, 6201) : nil;
+    NSArray *fields = messageFields(list), *entries, *segments;
+    unsigned i, s;
+    if (!list)
+        return out;
+    entries = protoAll(fields, 3);
+    segments = protoAll(fields, 4);
+    for (s = 0; s < [segments count]; s++) {
+        NSData *segment = objectOfType(objects, referenceId([segments objectAtIndex:s]), 6011, 6011);
+        entries = [entries arrayByAddingObjectsFromArray:protoAll(messageFields(segment), 3)];
+    }
+    for (i = 0; i < [entries count]; i++) {
+        NSArray *e = messageFields([entries objectAtIndex:i]);
+        NSData *text = protoFirst(e, 3);
+        if (text)
+            [out setObject:[[[NSString alloc] initWithData:text encoding:NSUTF8StringEncoding] autorelease] forKey:protoFirst(e, 1)];
+    }
+    return out;
+}
+
+static NSString *plainNumber(double v)
+{
+    char text[40];
+    if (v == (double)(long long)v && v < 1e15 && v > -1e15)
+        snprintf(text, sizeof text, "%lld", (long long)v);
+    else
+        snprintf(text, sizeof text, "%.12g", v);
+    return [NSString stringWithUTF8String:text];
+}
+
+/* seconds after 1 January 2001 as a date (and a time when there is one) */
+static NSString *numbersDate(double seconds)
+{
+    long long days = (long long)floor(seconds / 86400.0), era, doe, yoe, doy, mp;
+    long secs = (long)(seconds - days * 86400.0 + 0.5);
+    int y, m, d;
+    days += 11323 + 719468;               /* 2001-01-01 is 11323 days after 1970-01-01 */
+    era = (days >= 0 ? days : days - 146096) / 146097;
+    doe = days - era * 146097;
+    yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    y = (int)(yoe + era * 400);
+    doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    mp = (5 * doy + 2) / 153;
+    d = (int)(doy - (153 * mp + 2) / 5 + 1);
+    m = (int)(mp < 10 ? mp + 3 : mp - 9);
+    if (m <= 2)
+        y++;
+    if (secs)
+        return [NSString stringWithFormat:@"%04d-%02d-%02d %02ld:%02ld", y, m, d, secs / 3600, (secs / 60) % 60];
+    return [NSString stringWithFormat:@"%04d-%02d-%02d", y, m, d];
+}
+
+/* one cell from its storage bytes (version 5); nil when empty or not understood */
+static NSString *numbersCell(const unsigned char *b, unsigned long n, NSDictionary *strings)
+{
+    unsigned flags, offset = 12;
+    double decimal = 0, number = 0, seconds = 0;
+    BOOL haveDecimal = NO, haveNumber = NO, haveSeconds = NO;
+    int stringId = -1, type;
+    if (n < 12 || b[0] != 5)
+        return nil;
+    type = b[1];
+    flags = le32(b + 8);
+    if (flags & 0x1) {
+        const unsigned char *d = b + offset;
+        double mantissa = d[14] & 1;
+        int exponent = (((d[15] & 0x7F) << 7) | (d[14] >> 1)) - 0x1820, i;
+        if (offset + 16 > n)
+            return nil;
+        for (i = 13; i >= 0; i--)
+            mantissa = mantissa * 256 + d[i];
+        decimal = (d[15] & 0x80 ? -mantissa : mantissa) * pow(10, exponent);
+        haveDecimal = YES;
+        offset += 16;
+    }
+    if (flags & 0x2) {
+        if (offset + 8 > n)
+            return nil;
+        memcpy(&number, b + offset, 8);
+        haveNumber = YES;
+        offset += 8;
+    }
+    if (flags & 0x4) {
+        if (offset + 8 > n)
+            return nil;
+        memcpy(&seconds, b + offset, 8);
+        haveSeconds = YES;
+        offset += 8;
+    }
+    if (flags & 0x8) {
+        if (offset + 4 > n)
+            return nil;
+        stringId = (int)le32(b + offset);
+        offset += 4;
+    }
+    switch (type) {
+    case 2: case 10: return haveDecimal ? plainNumber(decimal) : nil;
+    case 3: return stringId >= 0 ? [strings objectForKey:[NSNumber numberWithUnsignedInt:(unsigned)stringId]] : nil;
+    case 5: return haveSeconds ? numbersDate(seconds) : nil;
+    case 6: return haveNumber ? (number > 0 ? @"TRUE" : @"FALSE") : nil;
+    case 7: return haveNumber ? plainNumber(number) : nil;
+    case 8: return @"#ERROR";
+    }
+    return nil;
+}
+
+/* the tables of a Numbers file as tab-separated rows, or nil when none could be read */
+static NSString *numbersTables(TBZip *zip)
+{
+    NSDictionary *objects = iworkObjects(zip);
+    NSMutableDictionary *sheetOf = [NSMutableDictionary dictionary];
+    NSMutableArray *tableIds = [NSMutableArray array], *out = [NSMutableArray array];
+    NSEnumerator *each = [objects keyEnumerator];
+    NSNumber *identifier;
+    NSString *lastSheet = nil;
+    unsigned i;
+    long budget = MAX_TEXT;
+    while ((identifier = [each nextObject])) {
+        NSData *sheet = objectOfType(objects, identifier, 2, 2), *table = objectOfType(objects, identifier, 6001, 6001);
+        if (table)
+            [tableIds addObject:identifier];
+        if (sheet) {
+            NSArray *f = messageFields(sheet), *drawables = protoAll(f, 2);
+            NSData *nameData = protoFirst(f, 1);
+            NSString *sheetName = nameData ? [[[NSString alloc] initWithData:nameData encoding:NSUTF8StringEncoding] autorelease] : @"";
+            unsigned k;
+            for (k = 0; k < [drawables count]; k++) {
+                NSData *info = objectOfType(objects, referenceId([drawables objectAtIndex:k]), 6000, 6000);
+                NSNumber *model = referenceId(protoFirst(messageFields(info), 2));
+                if (model)
+                    [sheetOf setObject:sheetName forKey:model];
+            }
+        }
+    }
+    tableIds = (NSMutableArray *)[tableIds sortedArrayUsingSelector:@selector(compare:)];
+    for (i = 0; i < [tableIds count] && budget > 0; i++) {
+        NSNumber *tid = [tableIds objectAtIndex:i];
+        NSArray *table = messageFields(objectOfType(objects, tid, 6001, 6001)), *store = messageFields(protoFirst(table, 4));
+        NSData *nameData = protoFirst(table, 8);
+        unsigned columns = [protoFirst(table, 7) unsignedIntValue], tileSize = 256;
+        NSArray *tileStorage = messageFields(protoFirst(store, 3)), *tiles = protoAll(tileStorage, 1);
+        NSDictionary *strings = stringList(objects, referenceId(protoFirst(store, 4)));
+        NSMutableDictionary *rows = [NSMutableDictionary dictionary];
+        NSArray *rowNumbers;
+        NSString *sheetName = [sheetOf objectForKey:tid];
+        unsigned t, r;
+        if (protoFirst(tileStorage, 2))
+            tileSize = [protoFirst(tileStorage, 2) unsignedIntValue];
+        if (!tileSize || columns > 1000)
+            continue;
+        for (t = 0; t < [tiles count]; t++) {
+            NSArray *tileRef = messageFields([tiles objectAtIndex:t]);
+            unsigned base = [protoFirst(tileRef, 1) unsignedIntValue] * tileSize;
+            NSArray *tile = messageFields(objectOfType(objects, referenceId(protoFirst(tileRef, 2)), 6002, 6002)), *infos = protoAll(tile, 5);
+            for (r = 0; r < [infos count]; r++) {
+                NSArray *info = messageFields([infos objectAtIndex:r]);
+                NSData *buffer = protoFirst(info, 6), *offsetData = protoFirst(info, 7);
+                BOOL wide = [protoFirst(info, 8) intValue] != 0;
+                const unsigned char *bytes = [buffer bytes], *o = [offsetData bytes];
+                unsigned count = [offsetData length] / 2, c;
+                NSMutableDictionary *row = [NSMutableDictionary dictionary];
+                if (!buffer || !offsetData)
+                    continue;
+                for (c = 0; c < count && c < columns; c++) {
+                    int start = (short)(o[c * 2] | (o[c * 2 + 1] << 8)), end = (int)[buffer length], k;
+                    NSString *text;
+                    if (start < 0)
+                        continue;
+                    if (wide)
+                        start *= 4;
+                    for (k = c + 1; k < (int)count; k++) {
+                        int next = (short)(o[k * 2] | (o[k * 2 + 1] << 8));
+                        if (next >= 0) {
+                            end = wide ? next * 4 : next;
+                            break;
+                        }
+                    }
+                    if (start >= end || end > (int)[buffer length])
+                        continue;
+                    text = numbersCell(bytes + start, end - start, strings);
+                    if (text)
+                        [row setObject:text forKey:[NSNumber numberWithUnsignedInt:c]];
+                }
+                [rows setObject:row forKey:[NSNumber numberWithUnsignedInt:base + [protoFirst(info, 1) unsignedIntValue]]];
+            }
+        }
+        if (![rows count])
+            continue;
+        if (sheetName && ![sheetName isEqualToString:lastSheet]) {
+            [out addObject:[NSString stringWithFormat:@"--- Sheet: %@ ---", sheetName]];
+            lastSheet = sheetName;
+        }
+        [out addObject:[NSString stringWithFormat:@"Table: %@", nameData ? [[[NSString alloc] initWithData:nameData encoding:NSUTF8StringEncoding] autorelease] : @""]];
+        rowNumbers = [[rows allKeys] sortedArrayUsingSelector:@selector(compare:)];
+        for (r = 0; r < [rowNumbers count] && r < 2000 && budget > 0; r++) {
+            NSDictionary *row = [rows objectForKey:[rowNumbers objectAtIndex:r]];
+            NSMutableString *line = [NSMutableString string];
+            unsigned c, last = 0;
+            for (c = 0; c < columns; c++)
+                if ([row objectForKey:[NSNumber numberWithUnsignedInt:c]])
+                    last = c + 1;
+            for (c = 0; c < last; c++) {
+                NSString *cell = [row objectForKey:[NSNumber numberWithUnsignedInt:c]];
+                if (c)
+                    [line appendString:@"\t"];
+                if (cell)
+                    [line appendString:cell];
+            }
+            if ([line length]) {
+                [out addObject:line];
+                budget -= [line length];
+            }
+        }
+    }
+    return [out count] ? joinLines(out) : nil;
+}
+
 static NSString *iworkOldText(TBZip *zip)
 {
     NSString *names[2] = {@"index.xml", @"index.xml.gz"};
@@ -1332,6 +1651,7 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
     NSString *text = @"", *note = @"";
     NSMutableArray *images = [NSMutableArray array];
     TBZip *zip;
+    BOOL tables = NO;
     if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) {
         /* Phone photos are stored sideways with a rotation tag the old Macs ignore. */
         NSData *jpeg;
@@ -1416,6 +1736,11 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
         NSEnumerator *each = [[zip names] objectEnumerator];
         NSString *entry;
         text = iworkOldText(zip);
+        if (![text length] && [ext isEqualToString:@"numbers"]) {
+            text = numbersTables(zip);
+            if ([text length])
+                tables = YES;
+        }
         if (![text length])
             text = iworkStrings(zip);
         while ((entry = [each nextObject])) {
@@ -1423,7 +1748,8 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
                 [images addObject:[zip dataFor:entry]];
             }
         }
-        note = [NSString stringWithFormat:@"Text was read from inside the %@ file, so slide order may differ, tables and layout are lost, and some text may be missing. The picture is the first page or slide.", ext];
+        note = tables ? @"Cell values were read from the tables in this Numbers file; formulas, number formats and charts are not included. The picture is the first sheet."
+            : [NSString stringWithFormat:@"Text was read from inside the %@ file, so slide order may differ, tables and layout are lost, and some text may be missing. The picture is the first page or slide.", ext];
     } else
         fail(@"Files of this type cannot be converted.");
     if ([text length] > MAX_TEXT) {
