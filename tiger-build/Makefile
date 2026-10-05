@@ -29,12 +29,13 @@ CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-m
 CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS)
 CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS) $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
 WEBP := ../third_party/libwebp
+DE265 := ../third_party/libde265
 LIBS32 := $(TLS)/lib/libmbedtls32.a $(WEBP)/lib/libwebp32.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework QTKit
 LIBS64 := $(TLS)/lib/libmbedtls64ppc.a $(WEBP)/lib/libwebp64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio
 comma := ,
 LIBSX86 := $(TLS)/lib/libmbedtls64x86.a $(WEBP)/lib/libwebp64x86.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBSpeech.m TBOutputs.m TBMedia.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBTheme.m TBProviderIcons.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBSpeech.h TBOutputs.h TBMedia.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBTheme.m TBProviderIcons.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBHEIC.h TBSpeech.h TBOutputs.h TBMedia.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
@@ -63,6 +64,8 @@ endif
 	cp TigerBuild.icns $(APP)/Contents/Resources/TigerBuild.icns
 	cp models.txt Emoji.pack Emoji-LICENSE.txt cacert.pem prices-seed.json $(APP)/Contents/Resources/
 	if [ -d ppc-commander ]; then mkdir -p $(APP)/Contents/Resources/ppc-commander && cp ppc-commander/ppc_commander.py ppc-commander/service.py $(APP)/Contents/Resources/ppc-commander/; fi
+	mkdir -p $(APP)/Contents/Frameworks && lipo -create $(DE265)/lib/libde265-32.dylib $(if $(findstring ppc64,$(ARCHS64)),$(DE265)/lib/libde265-64ppc.dylib) $(if $(findstring x86_64,$(ARCHS64)),$(DE265)/lib/libde265-64x86.dylib) -output $(APP)/Contents/Frameworks/libde265.dylib
+	cp $(DE265)/LICENSE $(APP)/Contents/Resources/libde265-LICENSE.txt
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
 tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBSupport.h TBMarkup.h TBEmoji.h TBCompat.h

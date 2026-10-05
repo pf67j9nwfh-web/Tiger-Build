@@ -5,6 +5,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <pthread.h>
 #import "webp/decode.h"
+#import "TBHEIC.h"
 
 NSString *TBExtractError = @"TBExtractError";
 
@@ -1076,6 +1077,13 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
     }
     if ([types(0) containsObject:ext]) {
         NSData *jpeg = jpegFrom(data, 2400);
+        if (!jpeg && [TBHEIC looksLikeHEIF:data]) {
+            /* ImageIO before 10.13 cannot read HEIC: the built-in reader and libde265 do. */
+            NSString *problem = nil;
+            jpeg = [TBHEIC jpegFromData:data longest:2400 problem:&problem];
+            if (!jpeg)
+                fail(@"%@", problem ? problem : @"This HEIC picture could not be converted.");
+        }
         if (!jpeg)
             fail(@"This Mac cannot convert %@ pictures.", [ext uppercaseString]);
         return [self reply:@"" images:[NSArray arrayWithObject:jpeg] note:[NSString stringWithFormat:@"Converted from %@ to JPEG.", [ext uppercaseString]]];

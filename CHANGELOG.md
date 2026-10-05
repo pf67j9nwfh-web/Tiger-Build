@@ -2,7 +2,7 @@
 
 ## 2.0
 - **No relay.** Tiger Build now talks to the AI services itself, over TLS 1.3 and 1.2 from a built-in Mbed TLS 3.6 (patched for gcc 4.0 and the old SDKs, with the Mozilla certificate list). Tested on PowerPC and Intel, Tiger to Snow Leopard. Handshakes take about 0.1 to 0.25 s on a G4 or G3.
-- Everything the relay did is in the app: providers (Grok, ChatGPT, Claude, Gemini, Mistral, Muse, local), the tool loop with Stop, guidance, approvals, compaction and consulting other models, cost estimates, file conversion (Word, Excel, PowerPoint, OpenDocument, Pages, Numbers, Keynote, WebP and other pictures; HEIC and AVIF are not yet), dictation, picture and video making, files from the model (`.docx`, `.xlsx`, `.pdf`), web and picture search, and the agent toolbox.
+- Everything the relay did is in the app: providers (Grok, ChatGPT, Claude, Gemini, Mistral, Muse, local), the tool loop with Stop, guidance, approvals, compaction and consulting other models, cost estimates, file conversion (Word, Excel, PowerPoint, OpenDocument, Pages, Numbers, Keynote, WebP, HEIC and other pictures; AVIF is not supported), dictation, picture and video making, files from the model (`.docx`, `.xlsx`, `.pdf`), web and picture search, and the agent toolbox.
 - **Keys are kept in the Keychain**; there is no relay token or address any more.
 - **MCP servers**: programs on the Mac, or `http://` and `https://` Streamable HTTP servers. The four example servers are built in and need no Python.
 - **Commander** still runs on the Mac you chat from, and can optionally run on another Mac over SSH (Preferences, Commander), with a trusted-host fingerprint.

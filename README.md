@@ -9,7 +9,7 @@ LLM revolution occured around 2009 instead of the 2020s.
 > [!WARNING]
 > USE THIS AT YOUR OWN RISK. MAC OS X TIGER, LEOPARD, AND SNOW LEOPARD ARE A 15+ YEAR OLD OPERATING SYSTEMS AND ARE VERY INSECURE. I AM NOT LIABLE FOR ANY SECURITY VULNERABILITIES ABLE TO BE EXPLOITED FROM USING THIS APPLICATION ON THESE MACHINES. YOU HAVE BEEN WARNED. SAFEGUARDS HAVE BEEN INCLUDED THOUGH AS MUCH AS IS FEASIBLE WITHIN THE CONFINES OF THE LIMITATIONS OF ITS OPERATING ENVIRONMENT.
 
-Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE). Secure connections use [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0); WebP pictures use [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD-3-Clause). The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), copyright Twitter, Inc. and other contributors, under [CC-BY 4.0](tiger-build/Emoji-LICENSE.txt).
+Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE). Secure connections use [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0); WebP pictures use [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD-3-Clause), and HEIC pictures use [libde265](https://github.com/strukturag/libde265) (LGPL-3.0, built as a separate library in `Contents/Frameworks` so it can be replaced). The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), copyright Twitter, Inc. and other contributors, under [CC-BY 4.0](tiger-build/Emoji-LICENSE.txt).
 
 ## Screenshots
 
@@ -125,7 +125,7 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Export and import.** Chat → Export This Chat (⌥⌘E) saves one chat with its files, or as Markdown or text; Import Chat (⌥⌘I) adds it to any workspace. History → Export All History covers every workspace; exports and import backups hold references only. Each workspace file keeps five rolling backups.
 
 **Files and replies**
-- **Attach** (button, ⇧⌘A, drag onto the chat or Dock icon, or paste). Text, code, PDF, RTF and HTML are read on the Mac. Word, Excel, PowerPoint, Pages, Numbers, Keynote, OpenDocument, HEIC, WebP and AVIF are converted by Tiger Build itself (text slide by slide or sheet by sheet, plus a preview picture; Pages/Numbers/Keynote text is recovered, not exact). HEIC and AVIF cannot be converted on these Macs yet; set the iPhone's camera to Most Compatible, or send JPEG. Pictures are shrunk to 1600 pixels and sent to models that can see them; sideways phone photos are turned upright.
+- **Attach** (button, ⇧⌘A, drag onto the chat or Dock icon, or paste). Text, code, PDF, RTF and HTML are read on the Mac. Word, Excel, PowerPoint, Pages, Numbers, Keynote, OpenDocument, HEIC, WebP and AVIF are converted by Tiger Build itself (text slide by slide or sheet by sheet, plus a preview picture; Pages/Numbers/Keynote text is recovered, not exact). HEIC (iPhone photos) is decoded with libde265, which sits in the app as its own library. AVIF cannot be converted on these Macs. Pictures are shrunk to 1600 pixels and sent to models that can see them; sideways phone photos are turned upright.
   - A PDF that is mostly drawings or a scan also sends its first three pages as pictures; Chat → Attach PDF Pages (⇧⌘P) adds pages you name, such as `7, 10-12`.
   - The first attach for each service explains the files go to that service. A file too big for the model's context is offered shortened. Stop cancels a read in progress.
   - Copies are kept in Application Support and the model is told where, so Commander can use them. Only the last six pictures are re-sent.
@@ -200,6 +200,7 @@ ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-
 | `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-2.0.pkg` (the installer for the old Macs) |
 | `third_party/mbedtls/fetch.sh`, `build-mac.sh` | The TLS libraries (already built and kept in git) |
 | `third_party/libwebp/fetch.sh`, `build-mac.sh` | The WebP decoder (already built and kept in git) |
+| `third_party/libde265/fetch.sh`, `patch.py`, `build-mac.sh` | The HEIC video decoder as a dynamic library, patched for the old compilers (already built and kept in git) |
 | `scripts/make-prices.py` | The bundled price list that seeds cost estimates |
 
 ## Upgrading from 1.x

@@ -2337,7 +2337,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (!version || [version length] == 0)
         version = @"2.0";
     NSRunAlertPanel(@"About Tiger Build",
-        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.\nSecure connections: Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0).",
+        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.\nSecure connections: Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0).\nPictures: libwebp (BSD-3-Clause) and libde265 (LGPL-3.0, Contents/Frameworks).",
         @"OK", nil, nil, version);
 }
 

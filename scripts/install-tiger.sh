@@ -26,7 +26,7 @@ mkdir -p "$HOME/ppc-commander" "$HOME/TigerBuild-build/native" "$HOME/Library/Ap
 "$SSH" 'rm -rf "$HOME/TigerBuild-build/native.new" && mkdir -p "$HOME/TigerBuild-build/native.new" "$HOME/TigerBuild-build/third_party"'
 COPYFILE_DISABLE=1 tar -C "$ROOT/tiger-build" --exclude '*.orig' --exclude 'TigerBuild.app' --exclude 'tbtests' -cf - . \
   | "$SSH" 'cd "$HOME/TigerBuild-build/native.new" && tar -xf -'
-COPYFILE_DISABLE=1 tar -C "$ROOT/third_party" -cf - mbedtls/include mbedtls/lib mbedtls/tb_config.h libwebp/include libwebp/lib \
+COPYFILE_DISABLE=1 tar -C "$ROOT/third_party" -cf - mbedtls/include mbedtls/lib mbedtls/tb_config.h libwebp/include libwebp/lib libde265/include libde265/lib libde265/LICENSE \
   | "$SSH" 'cd "$HOME/TigerBuild-build/third_party" && tar -xf -'
 "$SSH" 'cat > "$HOME/TigerBuild-build/native.new/TigerBuild.icns"' < "$ROOT/assets/TigerBuild.icns"
 # The app carries its own ppc-commander and installs it when it is missing or older.
