@@ -178,7 +178,8 @@ static NSMutableDictionary *runs = nil;
         if (pthread_cond_timedwait(&changed, &lock, &limit) != 0)
             break;
     }
-    decision = [answers objectForKey:callId];
+    /* keep it alive: the dictionary held the only reference, and removing the entry would free it */
+    decision = [[[answers objectForKey:callId] retain] autorelease];
     [answers removeObjectForKey:callId];
     pthread_mutex_unlock(&lock);
     [self check];
