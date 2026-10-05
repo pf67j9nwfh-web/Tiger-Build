@@ -4,6 +4,7 @@
 #import "TBLocal.h"
 #import "TBPricing.h"
 #import "TBHTTP.h"
+#import "TBExtract.h"
 
 static NSDictionary *reply(int status, NSData *body, NSString *type)
 {
@@ -239,6 +240,22 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
             if (!limit)
                 limit = [TBProviders contextLimitForModel:model];
             return textReply(200, [NSString stringWithFormat:@"%d\n", limit]);
+        }
+        if ([path isEqualToString:@"/v1/extract"]) {
+            NSDictionary *result;
+            NSString *error = nil;
+            if (![file length] || [file length] > 80 * 1024 * 1024)
+                return textReply(422, @"Files from 1 byte to 80 MB can be converted.\n");
+            if (![TBExtract handles:name])
+                return textReply(422, @"This kind of file cannot be converted.\n");
+            @try {
+                result = [TBExtract extractName:name data:file];
+            } @catch (NSException *exception) {
+                if ([[exception name] isEqualToString:TBExtractError])
+                    return textReply(422, [[exception reason] stringByAppendingString:@"\n"]);
+                return textReply(500, [NSString stringWithFormat:@"Could not convert the file: %@\n", [exception reason]]);
+            }
+            return reply(200, [NSPropertyListSerialization dataFromPropertyList:result format:NSPropertyListXMLFormat_v1_0 errorDescription:&error], @"application/x-plist");
         }
         if ([path isEqualToString:@"/v1/run"]) {
             id incoming = TBJSONParse(body, NULL);

@@ -28,12 +28,12 @@ TLSFLAGS := -std=gnu99 -I$(TLS)/include -DMBEDTLS_USER_CONFIG_FILE=\"$(shell cd 
 CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS)
 CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS)
 CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS) $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
-LIBS32 := $(TLS)/lib/libmbedtls32.a -framework Security -framework Cocoa -framework CoreServices -framework CoreAudio -framework QTKit
-LIBS64 := $(TLS)/lib/libmbedtls64ppc.a -framework Security -framework Cocoa -framework CoreServices -framework CoreAudio
+LIBS32 := $(TLS)/lib/libmbedtls32.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework QTKit
+LIBS64 := $(TLS)/lib/libmbedtls64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio
 comma := ,
-LIBSX86 := $(TLS)/lib/libmbedtls64x86.a -framework Security -framework Cocoa -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBTheme.m TBProviderIcons.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBTheme.h TBProviderIcons.h TranscriptView.h
+LIBSX86 := $(TLS)/lib/libmbedtls64x86.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Voice.m ChatController+Dictation.m RelayClient.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBTheme.m TBProviderIcons.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h RelayClient.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 

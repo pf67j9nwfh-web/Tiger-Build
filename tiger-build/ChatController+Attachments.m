@@ -901,10 +901,9 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
     }
 }
 
-/* ---- files the relay converts ----
-   Word, Excel and PowerPoint files, Pages, Numbers and Keynote files, and HEIC, WebP
-   and similar pictures cannot be read on these Macs. The relay (a modern computer)
-   turns them into text and JPEG pictures; see relay/extract.py. */
+/* ---- files the engine converts ----
+   Word, Excel and PowerPoint files, Pages, Numbers and Keynote files, and pictures in
+   newer formats cannot be read on these Macs. TBExtract turns them into text and JPEG pictures. */
 
 - (BOOL)relayConverts:(NSString *)path
 {
@@ -948,7 +947,7 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
         *problem = [NSString stringWithFormat:@"%@ could not be read.", name];
         return NO;
     }
-    [[job objectForKey:@"placeholder"] setObject:[NSString stringWithFormat:@"Converting %@ on the relay...", name] forKey:@"text"];
+    [[job objectForKey:@"placeholder"] setObject:[NSString stringWithFormat:@"Converting %@...", name] forKey:@"text"];
     [self refreshTranscriptIfCurrent:[job objectForKey:@"chat"]];
     info = [NSMutableDictionary dictionaryWithDictionary:job];
     [info setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
@@ -980,12 +979,10 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
     if (!result) {
         NSString *why = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         NSString *ext = [[name pathExtension] lowercaseString];
-        if ([request status] == 404 || [request status] == 405)
-            why = @"The relay is too old to convert files. Update it to 1.4.";
-        else if ([request status] == 0)
-            why = [request timedOut] ? @"The relay took too long." : @"The relay could not be reached.";
+        if ([request status] == 0)
+            why = [request timedOut] ? @"It took too long." : @"The converter could not be reached.";
         if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) {
-            /* The relay only straightens photos; without it the picture is used as it is. */
+            /* The converter only straightens photos; without it the picture is used as it is. */
             NSMutableDictionary *plain = [self pictureAttachmentFromPath:path name:name pdf:NO problem:&problem];
             if (plain) {
                 [made addObject:plain];
