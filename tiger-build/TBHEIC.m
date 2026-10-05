@@ -467,7 +467,7 @@ static NSData *jpegFromRGB(uint8_t *rgb, unsigned width, unsigned height, int ro
     }
     /* the picture */
     {
-        Item *main = [[items objectForKey:[NSNumber numberWithUnsignedInt:primary]] pointerValue];
+        Item *primaryItem = [[items objectForKey:[NSNumber numberWithUnsignedInt:primary]] pointerValue];
         NSData *result = nil;
         NSString *why = nil;
         int rotation = 0;
@@ -477,17 +477,17 @@ static NSData *jpegFromRGB(uint8_t *rgb, unsigned width, unsigned height, int ro
         uint8_t *canvas = NULL;
         NSEnumerator *each;
         id key;
-        if (!main) {
+        if (!primaryItem) {
             *problem = @"The HEIC file has no main picture.";
             goto done;
         }
-        if (!strcmp(main->type, "av01")) {
+        if (!strcmp(primaryItem->type, "av01")) {
             *problem = @"AVIF pictures cannot be converted on these Macs.";
             goto done;
         }
-        /* properties of the main item */
-        for (i = 0; i < [main->properties count]; i++) {
-            NSData *pr = [main->properties objectAtIndex:i];
+        /* properties of the primaryItem item */
+        for (i = 0; i < [primaryItem->properties count]; i++) {
+            NSData *pr = [primaryItem->properties objectAtIndex:i];
             const uint8_t *q = [pr bytes];
             unsigned n = [pr length];
             if (n >= 16 && !memcmp(q, "ispe", 4)) {
@@ -504,41 +504,41 @@ static NSData *jpegFromRGB(uint8_t *rgb, unsigned width, unsigned height, int ro
             *problem = @"The picture's size is not usable.";
             goto done;
         }
-        if (!strcmp(main->type, "hvc1") || !strcmp(main->type, "hev1")) {
+        if (!strcmp(primaryItem->type, "hvc1") || !strcmp(primaryItem->type, "hev1")) {
             NSData *hvcC = nil;
-            for (i = 0; i < [main->properties count]; i++)
-                if (!memcmp([[main->properties objectAtIndex:i] bytes], "hvcC", 4))
-                    hvcC = [NSData dataWithBytes:(const uint8_t *)[[main->properties objectAtIndex:i] bytes] + 4 length:[[main->properties objectAtIndex:i] length] - 4];
+            for (i = 0; i < [primaryItem->properties count]; i++)
+                if (!memcmp([[primaryItem->properties objectAtIndex:i] bytes], "hvcC", 4))
+                    hvcC = [NSData dataWithBytes:(const uint8_t *)[[primaryItem->properties objectAtIndex:i] bytes] + 4 length:[[primaryItem->properties objectAtIndex:i] length] - 4];
             canvas = malloc((size_t)width * height * 3);
-            if (!hvcC || !canvas || main->constructionMethod != 0) {
+            if (!hvcC || !canvas || primaryItem->constructionMethod != 0) {
                 *problem = @"This kind of HEIC picture is not supported.";
                 goto done;
             }
-            why = decodeItem(main, hvcC, d, total, canvas, width, height, 0, 0, matrix);
+            why = decodeItem(primaryItem, hvcC, d, total, canvas, width, height, 0, 0, matrix);
             if (why) {
                 *problem = why;
                 goto done;
             }
-        } else if (!strcmp(main->type, "grid")) {
+        } else if (!strcmp(primaryItem->type, "grid")) {
             /* a grid of tiles, how an iPhone stores a big picture */
             const uint8_t *g;
             unsigned rows, cols, outW, outH, tile = 0;
             NSMutableArray *tiles = [NSMutableArray array];
             /* the grid's own few bytes are kept in the idat box by most encoders, or in the file */
-            if (main->constructionMethod == 1 && idat && idat->start + main->offset + main->length <= idat->end)
-                g = d + idat->start + main->offset;
-            else if (main->constructionMethod == 0 && main->offset + main->length <= total)
-                g = d + main->offset;
+            if (primaryItem->constructionMethod == 1 && idat && idat->start + primaryItem->offset + primaryItem->length <= idat->end)
+                g = d + idat->start + primaryItem->offset;
+            else if (primaryItem->constructionMethod == 0 && primaryItem->offset + primaryItem->length <= total)
+                g = d + primaryItem->offset;
             else
                 g = NULL;
-            if (!g || main->length < 8) {
+            if (!g || primaryItem->length < 8) {
                 *problem = @"This kind of HEIC picture is not supported.";
                 goto done;
             }
             rows = g[2] + 1;
             cols = g[3] + 1;
             if (g[1] & 1) {
-                if (main->length < 12) { *problem = @"The picture's tiles are damaged."; goto done; }
+                if (primaryItem->length < 12) { *problem = @"The picture's tiles are damaged."; goto done; }
                 outW = be32(g + 4);
                 outH = be32(g + 8);
             } else {
@@ -610,7 +610,7 @@ static NSData *jpegFromRGB(uint8_t *rgb, unsigned width, unsigned height, int ro
                 }
             }
         } else {
-            *problem = [NSString stringWithFormat:@"This kind of HEIC picture (%s) is not supported.", main->type];
+            *problem = [NSString stringWithFormat:@"This kind of HEIC picture (%s) is not supported.", primaryItem->type];
             goto done;
         }
         result = jpegFromRGB(canvas, width, height, rotation, mirror, longest);

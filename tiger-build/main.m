@@ -29,6 +29,10 @@ int main(int argc, char *argv[])
         if (strcmp(argv[i], "--ask") == 0 && i + 1 < argc) {
             [controller setLaunchQuestion:[NSString stringWithUTF8String:argv[i + 1]]];
             i++;
+        } else if (strcmp(argv[i], "--screen") == 0 && i + 1 < argc) {
+            /* For the documentation's screenshots: "prefs:2" opens Preferences on its third tab, "tools:1" the tools window. */
+            [controller setLaunchScreen:[NSString stringWithUTF8String:argv[i + 1]]];
+            i++;
         }
     }
     [app setDelegate:controller];

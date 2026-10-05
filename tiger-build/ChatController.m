@@ -246,11 +246,39 @@ static NSMutableArray *allControllers = nil;
     [frameBuffer release];
     [streamingId release];
     [launchQuestion release];
+    [launchScreen release];
     [localModels release];
     [contextPending release];
     [prefsFields release];
     [prefsWindow release];
     [super dealloc];
+}
+
+- (void)setLaunchScreen:(NSString *)spec
+{
+    [launchScreen release];
+    launchScreen = [spec copy];
+}
+
+/* "prefs:N" or "tools:N": that window on its Nth tab (from 0). */
+- (void)openLaunchScreen
+{
+    NSArray *parts = [launchScreen componentsSeparatedByString:@":"];
+    int tab = [parts count] > 1 ? [[parts objectAtIndex:1] intValue] : 0;
+    NSWindow *shown;
+    NSArray *views;
+    unsigned i;
+    if ([[parts objectAtIndex:0] isEqualToString:@"prefs"]) {
+        [self showPreferences:nil];
+        shown = prefsWindow;
+    } else {
+        [self showIntegrations:nil];
+        shown = [[self performSelector:@selector(integrationFields)] objectForKey:@"window"];
+    }
+    views = [[shown contentView] subviews];
+    for (i = 0; i < [views count]; i++)
+        if ([[views objectAtIndex:i] isKindOfClass:[NSTabView class]])
+            [(NSTabView *)[views objectAtIndex:i] selectTabViewItemAtIndex:tab];
 }
 
 - (void)setLaunchQuestion:(NSString *)text
@@ -1775,6 +1803,13 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (![TBSettings hasKeyForProvider:@"grok"] && ![TBSettings hasKeyForProvider:@"chatgpt"] && ![TBSettings hasKeyForProvider:@"claude"] && ![TBSettings hasKeyForProvider:@"mistral"]
         && ![TBSettings hasKeyForProvider:@"muse"] && ![TBSettings hasKeyForProvider:@"gemini"] && ![[TBProviders localBase] length])
         [self performSelector:@selector(showPreferences:) withObject:nil afterDelay:0.5];
+    if (!launchScreen && [[NSUserDefaults standardUserDefaults] stringForKey:@"TBLaunchScreen"]) {
+        /* The same for a launch from the Finder or `open`, which cannot pass arguments on Tiger; used once. */
+        [self setLaunchScreen:[[NSUserDefaults standardUserDefaults] stringForKey:@"TBLaunchScreen"]];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBLaunchScreen"];
+    }
+    if (launchScreen)
+        [self performSelector:@selector(openLaunchScreen) withObject:nil afterDelay:1.0];
     if (launchQuestion) {
         [input setStringValue:launchQuestion];
         [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];

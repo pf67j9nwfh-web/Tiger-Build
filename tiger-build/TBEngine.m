@@ -1,5 +1,6 @@
 #import "TBEngine.h"
 #import <Security/Security.h>
+#import "TBJSON.h"
 #include <stdarg.h>
 
 NSString *TBErrorException = @"TBError";
@@ -86,18 +87,55 @@ static NSString *kService = @"Tiger Build API keys";
     return value ? [NSString stringWithUTF8String:value] : nil;
 }
 
+/* All the secrets are one Keychain item holding a JSON object, so the system asks for permission once, not once per key. */
+static NSMutableDictionary *secrets = nil;
+static NSString *kAccount = @"keys";
+
++ (NSMutableDictionary *)loadSecrets
+{
+    @synchronized(kService) {
+        if (!secrets) {
+            const char *service = [kService UTF8String];
+            const char *account = [kAccount UTF8String];
+            UInt32 length = 0;
+            void *data = NULL;
+            id parsed = nil;
+            OSStatus status = SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL);
+            if (status == noErr) {
+                NSData *json = [NSData dataWithBytes:data length:length];
+                SecKeychainItemFreeContent(NULL, data);
+                parsed = TBJSONParse(json, NULL);
+            } else if (status != errSecItemNotFound)
+                return nil;   /* locked, or the person said no: do not treat it as empty, or a save would erase the keys */
+            secrets = [[NSMutableDictionary alloc] initWithDictionary:[parsed isKindOfClass:[NSDictionary class]] ? parsed : [NSDictionary dictionary]];
+        }
+        return secrets;
+    }
+    return nil;
+}
+
++ (BOOL)saveSecrets
+{
+    NSData *json = TBJSONData(secrets);
+    const char *service = [kService UTF8String];
+    const char *account = [kAccount UTF8String];
+    SecKeychainItemRef item = NULL;
+    OSStatus status;
+    if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr && item) {
+        status = SecKeychainItemModifyAttributesAndData(item, NULL, [json length], [json bytes]);
+        CFRelease(item);
+        return status == noErr;
+    }
+    return SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, [json length], [json bytes], NULL) == noErr;
+}
+
 + (NSString *)keychainValueForName:(NSString *)name
 {
-    const char *service = [kService UTF8String];
-    const char *account = [name UTF8String];
-    UInt32 length = 0;
-    void *data = NULL;
-    NSString *result = nil;
-    if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL) == noErr) {
-        result = [[[NSString alloc] initWithBytes:data length:length encoding:NSUTF8StringEncoding] autorelease];
-        SecKeychainItemFreeContent(NULL, data);
+    @synchronized(kService) {
+        id v = [[self loadSecrets] objectForKey:name];
+        return [v isKindOfClass:[NSString class]] ? v : nil;
     }
-    return result;
+    return nil;
 }
 
 + (NSString *)valueForName:(NSString *)name
@@ -120,12 +158,13 @@ static NSString *kService = @"Tiger Build API keys";
 + (void)clearName:(NSString *)name
 {
     if ([self isSecret:name]) {
-        const char *service = [kService UTF8String];
-        const char *account = [name UTF8String];
-        SecKeychainItemRef item = NULL;
-        if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr && item) {
-            SecKeychainItemDelete(item);
-            CFRelease(item);
+        @synchronized(kService) {
+            if (![self loadSecrets])
+                return;
+            if ([secrets objectForKey:name]) {
+                [secrets removeObjectForKey:name];
+                [self saveSecrets];
+            }
         }
     } else {
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:[@"TBSetting." stringByAppendingString:name]];
@@ -141,11 +180,13 @@ static NSString *kService = @"Tiger Build API keys";
         return YES;
     }
     if ([self isSecret:name]) {
-        const char *service = [kService UTF8String];
-        const char *account = [name UTF8String];
-        const char *secret = [value UTF8String];
-        [self clearName:name];
-        return SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) == noErr;
+        @synchronized(kService) {
+            if (![self loadSecrets])
+                return NO;
+            [secrets setObject:value forKey:name];
+            return [self saveSecrets];
+        }
+        return NO;
     }
     [[NSUserDefaults standardUserDefaults] setObject:value forKey:[@"TBSetting." stringByAppendingString:name]];
     [[NSUserDefaults standardUserDefaults] synchronize];

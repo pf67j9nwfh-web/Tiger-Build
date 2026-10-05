@@ -43,6 +43,7 @@
     NSArray *toolCatalog;
     NSString *commanderProblem;
     NSString *commanderCode;
+    NSString *launchScreen;
     NSString *thinkingText;
     NSMutableArray *queuedGuidance;
     NSArray *editBackup;
@@ -99,6 +100,7 @@
 }
 
 - (void)setLaunchQuestion:(NSString *)text;
+- (void)setLaunchScreen:(NSString *)spec;
 - (void)layoutSubviews;
 
 @end

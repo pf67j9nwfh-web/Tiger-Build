@@ -82,7 +82,7 @@ Your chat history stays on the Mac. API keys are kept in that Mac's Keychain and
 
 **2. Add keys.** Open **Tiger Build → Preferences**. On the **API Keys** tab paste a key for each service you use, then Save. Keys go to the Keychain; Tiger Build only shows whether one is saved. For LM Studio or Ollama, enter its address on the **Local LLM Server** tab (it can be another computer on your network).
 
-That's it. **Optional:** to run Commander on a different Mac over SSH, use Preferences → Commander (Copy Public Key, Trust Host, Install Commander, Test).
+That's it. **Optional:** to run Commander on a different Mac over SSH, use Preferences → Commander (Copy Key, Trust Host, Install, Test).
 
 **Building it yourself.** On the Mac, in the checkout:
 

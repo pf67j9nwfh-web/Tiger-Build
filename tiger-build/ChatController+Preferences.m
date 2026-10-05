@@ -464,7 +464,7 @@ static NSString *trimmedValue(NSTextField *field)
     tab = [self preferencesTab:@"Commander" in:tabs];
     y = 292;
     [self preferencesNote:@"Commander runs on this Mac. To run the tools on a different Mac over SSH instead, enter its address and account, then follow the steps: "
-        @"Copy Public Key (add it to that Mac's ~/.ssh/authorized_keys), Trust Host, Install Commander, Test. Leave the address empty to use this Mac."
+        @"Copy Key (add it to that Mac's ~/.ssh/authorized_keys), Trust Host, Install (copies Commander there), Test. Leave the address empty to use this Mac."
         frame:NSMakeRect(16, y - 40, 520, 58) inView:tab];
     y -= 82;
     [self preferencesRow:@"Other Mac's address" key:@"ssh_host" y:y secure:NO width:190
@@ -479,11 +479,11 @@ static NSString *trimmedValue(NSTextField *field)
         help:@"Only needed if the account's home folder on that Mac is not /Users/NAME."
         removable:nil inView:tab];
     y -= 40;
-    [self preferencesButton:@"Copy Public Key" frame:NSMakeRect(16, y, 120, 28) action:@selector(copySSHKey:) inView:tab];
-    [self preferencesButton:@"Trust Host..." frame:NSMakeRect(140, y, 104, 28) action:@selector(trustSSHHost:) inView:tab];
-    [self preferencesButton:@"Install Commander" frame:NSMakeRect(248, y, 130, 28) action:@selector(installSSHCommander:) inView:tab];
-    [self preferencesButton:@"Test" frame:NSMakeRect(382, y, 60, 28) action:@selector(testSSH:) inView:tab];
-    [self preferencesButton:@"Use This Mac" frame:NSMakeRect(446, y, 100, 28) action:@selector(disconnectCommander:) inView:tab];
+    [self preferencesButton:@"Copy Key" frame:NSMakeRect(16, y, 84, 28) action:@selector(copySSHKey:) inView:tab];
+    [self preferencesButton:@"Trust Host..." frame:NSMakeRect(104, y, 104, 28) action:@selector(trustSSHHost:) inView:tab];
+    [self preferencesButton:@"Install" frame:NSMakeRect(212, y, 80, 28) action:@selector(installSSHCommander:) inView:tab];
+    [self preferencesButton:@"Test" frame:NSMakeRect(296, y, 64, 28) action:@selector(testSSH:) inView:tab];
+    [self preferencesButton:@"Use This Mac" frame:NSMakeRect(364, y, 118, 28) action:@selector(disconnectCommander:) inView:tab];
     note = [self preferencesNote:@"" frame:NSMakeRect(16, 76, 520, 34) inView:tab];
     [prefsFields setObject:note forKey:@"ssh.status"];
     button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, 46, 400, 20)] autorelease];
@@ -560,7 +560,7 @@ static NSString *trimmedValue(NSTextField *field)
     }
     [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
     [[NSPasteboard generalPasteboard] setString:key forType:NSStringPboardType];
-    [self setSSHStatus:@"Public key copied. Add it as a line in ~/.ssh/authorized_keys on the other Mac, then choose Trust Host."];
+    [self setSSHStatus:@"Key copied. Add it as a line in ~/.ssh/authorized_keys on the other Mac, then choose Trust Host."];
 }
 
 - (void)trustSSHHost:(id)sender
@@ -581,7 +581,7 @@ static NSString *trimmedValue(NSTextField *field)
         return;
     }
     if ([TBSSH trustHost:[TBSSH host] problem:&problem])
-        [self setSSHStatus:@"Trusted. Now choose Install Commander, or Test."];
+        [self setSSHStatus:@"Trusted. Now choose Install, or Test."];
     else
         [self setSSHStatus:problem];
 }
