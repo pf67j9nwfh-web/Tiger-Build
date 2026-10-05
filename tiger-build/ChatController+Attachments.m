@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBExtract.h"
 #import <unistd.h>
 
 /* Files attached to a chat. Each file becomes a message from the person, shown as
@@ -448,6 +449,14 @@ static unsigned pdfPageCount(NSString *path)
     if ([documents containsObject:ext]) {
         NSAttributedString *rich = [[[NSAttributedString alloc] initWithPath:path documentAttributes:NULL] autorelease];
         text = [rich string];
+        if ([text length] == 0 && [ext isEqualToString:@"doc"]) {
+            /* Cocoa could not read it (a newer Mac, or a file it dislikes): the converter reads Word 97 to 2003 files itself */
+            NS_DURING
+                text = [[TBExtract extractName:name data:[NSData dataWithContentsOfFile:path]] objectForKey:@"text"];
+            NS_HANDLER
+                text = nil;
+            NS_ENDHANDLER
+        }
         if ([text length] == 0) {
             *problem = [NSString stringWithFormat:@"%@ could not be read on this version of Mac OS X. Save it as text, RTF or PDF and attach that.", name];
             return nil;
@@ -457,7 +466,7 @@ static unsigned pdfPageCount(NSString *path)
     }
     text = TBReadTextFile(path, TB_ATTACH_TEXT_MAX, NULL);
     if (!text) {
-        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, RTF and HTML documents, and pictures (including HEIC and WebP) can be attached. Older .xls and .ppt files can be saved as .xlsx or .pptx first.", name];
+        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, RTF and HTML documents, and pictures (including HEIC and WebP) can be attached.", name];
         return nil;
     }
     one = [self textAttachmentWithText:text name:name size:size problem:problem];
@@ -907,7 +916,7 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
 
 - (BOOL)relayConverts:(NSString *)path
 {
-    NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
+    NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"ppt", @"xls", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
         @"heic", @"heif", @"webp", @"avif", @"gif", @"jpg", @"jpeg", nil];
     return [kinds containsObject:[[path pathExtension] lowercaseString]];
 }

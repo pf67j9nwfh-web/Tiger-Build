@@ -98,6 +98,7 @@
     NSTimer *relayTimer;
     BOOL relayReachable;
     double lastCatalog;
+    NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 
 - (void)setLaunchQuestion:(NSString *)text;

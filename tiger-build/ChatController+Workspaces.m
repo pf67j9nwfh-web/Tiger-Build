@@ -48,6 +48,7 @@
     for(i=0;i<[names count];i++) [workspacePopup addItemWithTitle:[names objectAtIndex:i]];
     [workspacePopup selectItemWithTitle:[self workspaceName]];
     [workspacePopup setToolTip:@"Each project has its own chats. API keys and tools are shared."];
+    [self applyPopupTheme:workspacePopup];
 }
 - (void)switchWorkspace:(NSString *)name
 {

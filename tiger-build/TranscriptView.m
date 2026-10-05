@@ -632,6 +632,7 @@ static float transcriptScale = 0;
     [bodyAttrs release];
     [userAttrs release];
     [statusAttrs release];
+    [toolAttrs release];
     style = [[NSMutableParagraphStyle alloc] init];
     [style setLineBreakMode:NSLineBreakByWordWrapping];
     bodyAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -644,11 +645,8 @@ static float transcriptScale = 0;
         [TBTheme textColor:YES], NSForegroundColorAttributeName,
         style, NSParagraphStyleAttributeName,
         nil];
-    statusAttrs = [[NSDictionary alloc] initWithObjectsAndKeys:
-        [NSFont systemFontOfSize:11 * scale], NSFontAttributeName,
-        [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName,
-        style, NSParagraphStyleAttributeName,
-        nil];
+    statusAttrs = [[TBTheme statusAttributesScale:scale paragraph:style] retain];
+    toolAttrs = [[TBTheme toolAttributesScale:scale paragraph:style] retain];
     [style release];
 }
 
@@ -756,6 +754,7 @@ static float transcriptScale = 0;
     [bodyAttrs release];
     [userAttrs release];
     [statusAttrs release];
+    [toolAttrs release];
     [super dealloc];
 }
 
@@ -878,7 +877,7 @@ static float transcriptScale = 0;
 {
     NSValue *key = [NSValue valueWithPointer:message];
     NSString *signature = [NSString stringWithFormat:@"%lu|%.0f|%.0f|%@", (unsigned long)[text length], width, height,
-        attrs == statusAttrs ? @"s" : (attrs == userAttrs ? @"u" : (attrs == bodyAttrs ? @"b" : @"m"))];
+        attrs == statusAttrs ? @"s" : (attrs == userAttrs ? @"u" : (attrs == bodyAttrs ? @"b" : (attrs == toolAttrs ? @"t" : @"m")))];
     NSArray *hit = [sizeCache objectForKey:key];
     NSRect used;
     /* The text itself is compared too: a reply that grows from "..." to "OK."
@@ -1360,9 +1359,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             text=[prefix stringByAppendingString:text];
             if([[message objectForKey:@"expanded"] boolValue]&&[[message objectForKey:@"detail"] length])
                 text=[text stringByAppendingFormat:@"\n%@",[message objectForKey:@"detail"]];
-            NSMutableDictionary *mono=[NSMutableDictionary dictionaryWithDictionary:statusAttrs];
-            [mono setObject:[NSFont fontWithName:@"Monaco" size:11 * [TranscriptView textScale]] forKey:NSFontAttributeName];
-            attrs=mono;
+            attrs=toolAttrs;
         }
         rich = nil;
         if (!status && !activity && !fromUser && [text length] > 0)
@@ -1706,8 +1703,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         if (status) {
             if([[box objectForKey:@"activity"] boolValue]) {
                 NSBezierPath *card=[NSBezierPath bezierPath];appendRoundedRect(card,rect,5);
-                [[NSColor colorWithCalibratedWhite:0.96 alpha:1] set];[card fill];
-                [[NSColor colorWithCalibratedWhite:0.72 alpha:1] set];[card setLineWidth:1];[card stroke];
+                [[TBTheme toolBoxColor] set];[card fill];
+                [[TBTheme toolBorderColor] set];[card setLineWidth:1];[card stroke];
             }
             continue;
         }
@@ -2029,10 +2026,68 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     [TBTheme drawBackground:dirty visible:[self bounds]];
     [self drawSample:@"Can you help me with this?" sent:YES y:NSHeight([self bounds]) - 46];
     [self drawSample:@"Yes. What would you like to know?" sent:NO y:NSHeight([self bounds]) - 86];
-    paintThoughtCloud(NSMakeRect(16, 3, 84, 50), 1);
+    paintThoughtCloud(NSMakeRect(NSWidth([self bounds]) - 104, 4, 84, 40), 1);
     /* The thin frame around the sample, as in iChat's preferences. */
     [[NSColor colorWithCalibratedWhite:0.45f alpha:1] set];
     NSFrameRect(NSInsetRect([self bounds], 0, 0));
+}
+
+@end
+
+/* A line of the chat's tool card or status text, drawn the way the transcript draws it, for the Appearance tabs. */
+@implementation TBThemeSampleView
+
+- (id)initWithFrame:(NSRect)frame mode:(int)which
+{
+    self = [super initWithFrame:frame];
+    if (self) {
+        mode = which;
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refresh:) name:TBThemeChangedNotification object:nil];
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
+}
+
+- (void)refresh:(NSNotification *)note
+{
+    (void)note;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirty
+{
+    NSMutableParagraphStyle *style = [[[NSMutableParagraphStyle alloc] init] autorelease];
+    [style setLineBreakMode:NSLineBreakByClipping];
+    [TBTheme drawBackground:dirty visible:[self bounds]];
+    if (mode == 0) {
+        NSDictionary *attrs = [TBTheme toolAttributesScale:1 paragraph:style];
+        NSString *lines[2] = {[NSString stringWithFormat:@"%C start_process - Completed (0.5s)", (unichar)0x25b6], [NSString stringWithFormat:@"%C read_file - Completed (0.1s)", (unichar)0x25b6]};
+        int i;
+        for (i = 0; i < 2; i++) {
+            NSSize size = [lines[i] sizeWithAttributes:attrs];
+            NSRect card = NSMakeRect(24, NSHeight([self bounds]) - 12 - (i + 1) * (size.height + 16) - i * 6, NSWidth([self bounds]) - 48, size.height + 12);
+            NSBezierPath *path = [NSBezierPath bezierPath];
+            appendRoundedRect(path, card, 5);
+            [[TBTheme toolBoxColor] set];
+            [path fill];
+            [[TBTheme toolBorderColor] set];
+            [path setLineWidth:1];
+            [path stroke];
+            [lines[i] drawInRect:NSMakeRect(NSMinX(card) + 8, NSMinY(card) + 6, NSWidth(card) - 16, size.height) withAttributes:attrs];
+        }
+    } else {
+        NSDictionary *attrs = [TBTheme statusAttributesScale:1 paragraph:style];
+        NSString *text = @"Working on the next step...";
+        NSSize size = [text sizeWithAttributes:attrs];
+        [text drawAtPoint:NSMakePoint((NSWidth([self bounds]) - size.width) / 2, (NSHeight([self bounds]) - size.height) / 2) withAttributes:attrs];
+    }
+    [[NSColor colorWithCalibratedWhite:0.45f alpha:1] set];
+    NSFrameRect([self bounds]);
 }
 
 @end

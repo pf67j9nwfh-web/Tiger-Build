@@ -24,22 +24,23 @@ CC32 ?= $(if $(wildcard /usr/bin/gcc-4.0),gcc-4.0,gcc)
 CC64 ?= $(if $(wildcard /usr/bin/gcc-4.2),gcc-4.2,gcc)
 # TLS 1.3 and 1.2 from mbedTLS (third_party/mbedtls), which the old systems lack.
 TLS := ../third_party/mbedtls
-TLSFLAGS := -std=gnu99 -I$(TLS)/include -I../third_party/libwebp/include -DMBEDTLS_USER_CONFIG_FILE=\"$(shell cd $(TLS) && pwd)/tb_config.h\"
+TLSFLAGS := -std=gnu99 -I$(TLS)/include -I../third_party/libwebp/include -I../third_party/libaom/include -DMBEDTLS_USER_CONFIG_FILE=\"$(shell cd $(TLS) && pwd)/tb_config.h\"
 CFLAGS32 := $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS)
 CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS)
 CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS) $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
 WEBP := ../third_party/libwebp
+AOM := ../third_party/libaom
 DE265 := ../third_party/libde265
-LIBS32 := $(TLS)/lib/libmbedtls32.a $(WEBP)/lib/libwebp32.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework QTKit
-LIBS64 := $(TLS)/lib/libmbedtls64ppc.a $(WEBP)/lib/libwebp64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio
+LIBS32 := $(TLS)/lib/libmbedtls32.a $(WEBP)/lib/libwebp32.a $(AOM)/lib/libaom32.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework QTKit
+LIBS64 := $(TLS)/lib/libmbedtls64ppc.a $(WEBP)/lib/libwebp64ppc.a $(AOM)/lib/libaom64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio
 comma := ,
-LIBSX86 := $(TLS)/lib/libmbedtls64x86.a $(WEBP)/lib/libwebp64x86.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBTheme.m TBProviderIcons.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBHEIC.h TBSpeech.h TBOutputs.h TBMedia.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
+LIBSX86 := $(TLS)/lib/libmbedtls64x86.a $(WEBP)/lib/libwebp64x86.a $(AOM)/lib/libaom64x86.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBTheme.m TBProviderIcons.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBOffice.h TBHEIC.h TBSpeech.h TBOutputs.h TBMedia.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
-.PHONY: all clean test
+.PHONY: all clean test convert
 
 all: $(BIN)
 
@@ -62,10 +63,17 @@ endif
 	cp Info.plist $(APP)/Contents/Info.plist
 	cp TigerBuild.icns $(APP)/Contents/Resources/TigerBuild.icns
 	cp models.txt Emoji.pack Emoji-LICENSE.txt cacert.pem prices-seed.json $(APP)/Contents/Resources/
-	$(MAKE) -C ../commander TB=$(CURDIR) && cp ../commander/ppc-commander $(APP)/Contents/Resources/ppc-commander
+	rm -rf $(APP)/Contents/Resources/ppc-commander; $(MAKE) -C ../commander TB=$(CURDIR) && cp ../commander/ppc-commander $(APP)/Contents/Resources/ppc-commander
 	mkdir -p $(APP)/Contents/Frameworks && lipo -create $(DE265)/lib/libde265-32.dylib $(if $(findstring ppc64,$(ARCHS64)),$(DE265)/lib/libde265-64ppc.dylib) $(if $(findstring x86_64,$(ARCHS64)),$(DE265)/lib/libde265-64x86.dylib) -output $(APP)/Contents/Frameworks/libde265.dylib
 	cp $(DE265)/LICENSE $(APP)/Contents/Resources/libde265-LICENSE.txt
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
+
+convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m
+	mkdir -p build
+	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
+	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o convert32 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNet32.o $(LIBS32)
+	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -c -o build/TBNetX64.o TBNet.c && $(CC64) $(CFLAGSX86) -fobjc-exceptions -o convertX64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNetX64.o $(LIBSX86))
+	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -c -o build/TBNetP64.o TBNet.c && $(CC64) $(CFLAGSPPC64) -fobjc-exceptions -o convertP64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNetP64.o $(LIBS64))
 
 tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBSupport.h TBMarkup.h TBEmoji.h TBCompat.h
 	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m -framework Foundation

@@ -2,14 +2,14 @@
 
 **A native AI chat app for Mac OS X 10.4 Tiger, 10.5 Leopard and 10.6 Snow Leopard for PowerPC and Intel.**
 
-Tiger Build is a Cocoa chat window for old Macs. It talks to the AI services directly, over TLS 1.3 and 1.2 that it brings with it, so **no other computer is needed**. It has support for a broad range of providers including: Grok, ChatGPT, Claude, Mistral, Muse, Gemini, and local LLM servers. With **Commander** (ppc-commander) on, the model can list folders, read and edit files, run shell commands, use git and Subversion, and take screenshots on that Mac. Tiger Build is also designed to look right at home on these older Macs
+Tiger Build is a Cocoa chat window for old Macs. It talks to the AI services directly, over TLS 1.3 and 1.2 that it brings with it, so **no other computer is needed**. It has support for a broad range of providers including: Grok, ChatGPT, Claude, Mistral, Muse, Gemini, and local LLM servers. With **Commander** on (a small native program inside the app), the model can list folders, read and edit files, run shell commands, use git and Subversion, and take screenshots on that Mac. Tiger Build is also designed to look right at home on these older Macs
 and uses a UI that is mostly period accurate for the OSes it's operating on. It's almost like a glance into an alternate reality where the
 LLM revolution occured around 2009 instead of the 2020s.
 
 > [!WARNING]
 > USE THIS AT YOUR OWN RISK. MAC OS X TIGER, LEOPARD, AND SNOW LEOPARD ARE A 15+ YEAR OLD OPERATING SYSTEMS AND ARE VERY INSECURE. I AM NOT LIABLE FOR ANY SECURITY VULNERABILITIES ABLE TO BE EXPLOITED FROM USING THIS APPLICATION ON THESE MACHINES. YOU HAVE BEEN WARNED. SAFEGUARDS HAVE BEEN INCLUDED THOUGH AS MUCH AS IS FEASIBLE WITHIN THE CONFINES OF THE LIMITATIONS OF ITS OPERATING ENVIRONMENT.
 
-Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE). Secure connections use [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0); WebP pictures use [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD-3-Clause), and HEIC pictures use [libde265](https://github.com/strukturag/libde265) (LGPL-3.0, built as a separate library in `Contents/Frameworks` so it can be replaced). The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), copyright Twitter, Inc. and other contributors, under [CC-BY 4.0](tiger-build/Emoji-LICENSE.txt).
+Tiger Build is licensed under the MIT License and comes with no warranty. See [`LICENSE`](LICENSE). Secure connections use [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0); WebP pictures use [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD-3-Clause), AVIF pictures use the decoder of [libaom](https://aomedia.googlesource.com/aom/) (BSD-2-Clause with a patent grant), and HEIC pictures use [libde265](https://github.com/strukturag/libde265) (LGPL-3.0, built as a separate library in `Contents/Frameworks` so it can be replaced). The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), copyright Twitter, Inc. and other contributors, under [CC-BY 4.0](tiger-build/Emoji-LICENSE.txt).
 
 ## Screenshots
 
@@ -50,7 +50,7 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 
 ## How it works
 
-Tiger Build 2.0 does everything itself. Version 1.x needed a **relay** on a newer computer because Tiger and the Leopards cannot open modern HTTPS connections; 2.0 carries its own TLS (Mbed TLS 3.6 with the Mozilla certificate list), tested on PowerPC and Intel from Tiger to Snow Leopard. The app calls each AI service, runs the tool loop, converts attached files, transcribes speech, makes pictures and videos, and starts ppc-commander (and any MCP servers you add) on the Mac. The basic operation can be seen in the diagram below:
+Tiger Build 2.0 does everything itself. Version 1.x needed a **relay** on a newer computer because Tiger and the Leopards cannot open modern HTTPS connections; 2.0 carries its own TLS (Mbed TLS 3.6 with the Mozilla certificate list), tested on PowerPC and Intel from Tiger to Snow Leopard. The app calls each AI service, runs the tool loop, converts attached files, transcribes speech, makes pictures and videos, and starts Commander (and any MCP servers you add) when a chat needs them. There is no Python, no relay and no service to switch on. The basic operation can be seen in the diagram below:
 
 ```
  Your Mac (10.4 to 10.6, PowerPC or Intel)
@@ -60,9 +60,10 @@ Tiger Build 2.0 does everything itself. Version 1.x needed a **relay** on a newe
  │  conversion, dictation, MCP client           │   HTTP            │  keys for)           │
  │                                              │ ────────────────▶ │ Local LLM server     │
  │  ┌──────────────────────┐                    │                   │ (if configured)      │
- │  │ ~/ppc-commander/     │ ◀─ runs when asked │   SSH (optional)  ┌──────────────────────┐
- │  └──────────────────────┘ ─────────────────────────────────────▶ │ Commander on another │
- └──────────────────────────────────────────────┘                   │ Mac                  │
+ │  │ Commander (in the    │ ◀─ starts with a   │   SSH (optional)  ┌──────────────────────┐
+ │  │ app), local only     │    chat that uses  ─────────────────────▶ │ Another Mac running  │
+ │  └──────────────────────┘    it              │                   │ Tiger Build, as an   │
+ └──────────────────────────────────────────────┘                   │ MCP server           │
                                                                     └──────────────────────┘
 ```
 
@@ -72,17 +73,17 @@ Your chat history stays on the Mac. API keys are kept in that Mac's Keychain and
 
 | Where | What |
 | --- | --- |
-| The Mac | Mac OS X 10.4 to 10.6, PowerPC or Intel, with its built-in Python (2.3, 2.5 or 2.6) for ppc-commander. To build the app yourself: Xcode 2.5 on Tiger, or Xcode 3.1/3.2 on Leopard and Snow Leopard. It's generated as a universal binary that covers `ppc`, `i386`, `ppc64` and `x86_64`; ppc64 is only supported on Leopard due to OS API limitations. Newer versions of Mac OS X are theoretically supported since this app does include 64 bit Intel support. It is strongly recommended that you install the Developer Tools disc and/or the appropriate version of Xcode for your system even if you aren't compiling Tiger Build yourself, to let your agents take full advantage of your Mac's capabilities. |
+| The Mac | Mac OS X 10.4 to 10.6, PowerPC or Intel. To build the app yourself: Xcode 2.5 on Tiger, or Xcode 3.1/3.2 on Leopard and Snow Leopard. It's generated as a universal binary that covers `ppc`, `i386`, `ppc64` and `x86_64`; ppc64 is only supported on Leopard due to OS API limitations. Newer versions of Mac OS X are theoretically supported since this app does include 64 bit Intel support. It is strongly recommended that you install the Developer Tools disc and/or the appropriate version of Xcode for your system even if you aren't compiling Tiger Build yourself, to let your agents take full advantage of your Mac's capabilities. |
 | Network | Internet access to the services you use. The first connection to each service takes a moment on a PowerPC Mac (about 0.2 s for the TLS handshake on a G4). |
-| Optional | API keys for xAI, OpenAI, Anthropic, Mistral, Muse, or Google (as few or as many as you want to configure), a Brave or Tavily key for better web search, a local OpenAI-compatible model server (LM Studio, Ollama), and a second Mac with Remote Login if you want Commander to work there. |
+| Optional | API keys for xAI, OpenAI, Anthropic, Mistral, Muse, or Google (as few or as many as you want to configure), a Brave or Tavily key for better web search, a local OpenAI-compatible model server (LM Studio, Ollama), and another Mac running Tiger Build (with Remote Login and *Allow Other Computers* on) if you want a chat to use that Mac's files and shell too. |
 
 ## Setup
 
-**1. Install.** Open `TigerBuild-2.0.pkg` (or build it yourself, below). It installs Tiger Build in `/Applications` and copies ppc-commander to `~/ppc-commander` for every account.
+**1. Install.** Open `TigerBuild-2.0.pkg` (or build it yourself, below). It installs Tiger Build in `/Applications`; Commander is inside the app, so nothing else is installed and no sharing service is turned on.
 
 **2. Add keys.** Open **Tiger Build → Preferences**. On the **API Keys** tab paste a key for each service you use, then Save. Keys go to the Keychain; Tiger Build only shows whether one is saved. For LM Studio or Ollama, enter its address on the **Local LLM Server** tab (it can be another computer on your network).
 
-That's it. **Optional:** to run Commander on a different Mac over SSH, use Preferences → Commander (Copy Key, Trust Host, Install, Test).
+That's it. **Optional:** to use another Mac's files and shell from a chat, run Tiger Build there, choose Commander → Allow Other Computers, and on this Mac add it under Tool Settings → MCP Servers → Add → *Commander on another computer (SSH)* (Copy Key, Trust Host, Test).
 
 **Building it yourself.** On the Mac, in the checkout:
 
@@ -102,11 +103,12 @@ Everything is on the Mac. API keys, the search keys and the custom MCP server li
 | --- | --- |
 | `chats.plist`, `workspaces/<name>.plist` | Chats and settings per workspace, with `backups/` beside them |
 | `attachments/`, `media/` | Attached files, and pictures, videos and files the model made |
-| `ssh/` | The key and trusted host list for Commander on another Mac (only if you set that up) |
+| `ssh/` | The key and trusted host list for MCP servers on other computers (only if you set that up) |
+| `commander/` | Commander's settings, tool history and the files that say whether Commander is stopped or other computers are allowed |
 | `notes-data.json`, `agent-notes.txt` | The example notebook server and the toolbox notes |
 | `history-before-import-*.plist` | Backups made before a history import |
 
-Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`, and ppc-commander is in `~/ppc-commander/`.
+Preferences are in `~/Library/Preferences/local.tigerbuild.TigerBuild.plist`.
 
 Note: Pricing estimates on model usage are provided as a convenience and may not always be accurate. Check the usage directly on the provider's API dashboard for the actual numbers.
 
@@ -120,12 +122,12 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Models.** The popups under the chat list pick service and model. A new chat starts with the last chat's model, tools and approvals, or a fixed model chosen in Preferences. Services with no key or no working model are dimmed with the reason.
 - **Stop and guidance.** Stop (⌘.) ends a reply at once, even mid-command. While a model uses tools, Send becomes **Guide**: a note typed then reaches the model between steps (Grok, ChatGPT, Claude, Gemini, Mistral).
 - **Edit and retry.** Retry resends your last message. Edit Last takes it back into the message box (Cancel Edit restores). Right-click any message for **Edit From Here** or **Branch Chat From Here**.
-- **Appearance** (View → Appearance, ⌥⌘K). As in iChat, set the bubble colour, text colour and font for your messages and for replies, and put a solid colour, a gradient or a picture behind the chat. Changes show at once; Reset to Default restores the original look. While a reply has not started, a thought cloud with three moving dots shows, like iChat's typing indicator.
+- **Appearance** (View → Appearance, ⌥⌘K), in four tabs. **Chat**: as in iChat, the bubble colour, text colour and font for your messages and for replies, and a solid colour, gradient or picture behind the chat. **Tool Calls**: font, text colour and box colour of the cards that show each tool run. **Status Text**: font, colour and an optional shadow or glow for the words outside the bubbles ("Working on the next step..."). **Interface**: font and colours for the chat list, labels, buttons and menus, and the window's look (brushed metal, plain gray, pinstripes or a colour). Changes show at once; Reset to Default restores the original look. Settings windows stay in front of the chat. While a reply has not started, a thought cloud with three moving dots shows, like iChat's typing indicator.
 - **Find in Chats** (⌘F), **Custom Instructions** (⌥⌘T, per chat or per workspace), and **View → Bigger/Smaller Text** (⌥⌘= and ⌥⌘-).
 - **Export and import.** Chat → Export This Chat (⌥⌘E) saves one chat with its files, or as Markdown or text; Import Chat (⌥⌘I) adds it to any workspace. History → Export All History covers every workspace; exports and import backups hold references only. Each workspace file keeps five rolling backups.
 
 **Files and replies**
-- **Attach** (button, ⇧⌘A, drag onto the chat or Dock icon, or paste). Text, code, PDF, RTF and HTML are read on the Mac. Word, Excel, PowerPoint, Pages, Numbers, Keynote, OpenDocument, HEIC, WebP and AVIF are converted by Tiger Build itself (text slide by slide or sheet by sheet, plus a preview picture; Pages/Numbers/Keynote text is recovered, not exact). HEIC (iPhone photos) is decoded with libde265, which sits in the app as its own library. AVIF cannot be converted on these Macs. Pictures are shrunk to 1600 pixels and sent to models that can see them; sideways phone photos are turned upright.
+- **Attach** (button, ⇧⌘A, drag onto the chat or Dock icon, or paste). Text, code, PDF, RTF and HTML are read on the Mac. Word, Excel, PowerPoint (both the modern `.docx`, `.xlsx`, `.pptx` and the old `.doc`, `.xls`, `.ppt`), Pages, Numbers, Keynote, OpenDocument, HEIC, WebP (animated too, up to four frames) and AVIF are converted by Tiger Build itself (text slide by slide or sheet by sheet, plus a preview picture; Pages/Numbers/Keynote text is recovered, not exact; old Office files give text only). HEIC (iPhone photos) is decoded with libde265, which sits in the app as its own library; AVIF uses libaom's AV1 decoder, which takes a few seconds for a big picture on a G4. Pictures are shrunk to 1600 pixels and sent to models that can see them; sideways phone photos are turned upright.
   - A PDF that is mostly drawings or a scan also sends its first three pages as pictures; Chat → Attach PDF Pages (⇧⌘P) adds pages you name, such as `7, 10-12`.
   - The first attach for each service explains the files go to that service. A file too big for the model's context is offered shortened. Stop cancels a read in progress.
   - Copies are kept in Application Support and the model is told where, so Commander can use them. Only the last six pictures are re-sent.
@@ -136,7 +138,7 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Cost and context.** The line above the chat shows context use and an **estimated cost** (hover for the breakdown), from a public price list Tiger Build fetches once a day; local models show N/A. A full context is summarized (also Chat → Compact Chat Now), and a reply that hits the output limit ends with a note.
 
 **Tools**
-- **The Tools button** switches each tool on or off for the chat: Commander, the agent toolbox, web search, other models and every MCP server. **Ask Before Running** waits for your answer, for all tools or chosen ones; "Always Allow" turns it off for that tool in that chat. It is on by default for tools that act on the Mac in chats with attachments. Each call shows as a card; click for the command and output.
+- **The Tools button** switches each tool on or off for the chat: Commander, **Administrator (sudo) for Commander** (turning it on turns Commander on, and asks for the account password once), the agent toolbox, web search, other models and every MCP server. **Ask Before Running** waits for your answer, for all tools or chosen ones; "Always Allow" turns it off for that tool in that chat. It is on by default for tools that act on the Mac in chats with attachments. Each call shows as a card; click for the command and output.
 - **Screenshots.** `take_screenshot` shows the Mac's screen (someone must be logged in); `view_image` shows a picture file. Models without vision are not offered either.
 - **Source control.** `repo_info`, `git_read`, `git_write`, `svn_read` and `svn_write` let a model check status, read diffs and logs, and commit. Read tools never ask first; write tools follow Ask Before Running. A diff or commit shows `2 files +3 −0` on its card.
   - Subversion ships with Mac OS X 10.5 and later. git does not (before Lion): install it yourself, for example from MacPorts, and the tools find it.
@@ -150,19 +152,19 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Dictate** (⌥⌘R) records, press again to stop (⌘. cancels), and puts the words in the message box. The clip (16 kHz mono, up to 90 seconds) goes to OpenAI, Mistral or Google, whichever has a key, and is not kept; Tiger Build says so the first time. Send Dictation Automatically (⌥⌘Y) sends it straight away. It needs a working microphone.
 
 **Several Macs and windows**
-- Commander runs on the Mac you chat from, or on another Mac you set up over SSH (Preferences → Commander). Windows share each workspace's chats (a chat working in one window cannot be sent to from another).
+- Commander runs on the Mac you chat from. To let a chat use another Mac, add that Mac as an MCP server over SSH (Tool Settings → MCP Servers → *Commander on another computer*); the other Mac must allow it (Commander → Allow Other Computers). Windows share each workspace's chats (a chat working in one window cannot be sent to from another).
 
 **Status and menus**
 - A red line at the top says what is wrong with the service you picked (no key, not reachable); an orange one says why Commander cannot run, with the fix. Long runs show their progress, so slow commands never look like a lost connection.
-- **Commander menu:** Start, Stop and Start at Login for ppc-commander, and this Mac's model, OS and addresses. **Configuration menu:** MCP servers and agent tools, and export/import of all settings. VoiceOver labels are set on controls and messages.
+- **Commander menu:** Start and Stop, **Allow Other Computers** (off by default: with it off, only Tiger Build on this Mac can use Commander), and this Mac's model, OS and addresses. **Configuration menu:** MCP servers and agent tools, and export/import of all settings. VoiceOver labels are set on controls and messages.
 
 ## Models, tools and search
 
 - **Live model list.** At start and every six hours Tiger Build asks each keyed service for its models, drops non-chat ones, and test-calls each with a tool. Only models that pass are offered; changing a key retests that service. This means this app will theoretically always have
 the latest and greatest models available for you to use, excluding API updates that break compatibility. The more powerful models tend to do a much better job of working within the confines of the old OS environments than the less powerful ones.
 - **Local LLM server.** None is assumed. Give its address: `http://127.0.0.1:1234` for LM Studio or `http://127.0.0.1:11434` for Ollama (`/v1` is added if left off). Tiger Build reads each model's context length from the server. With Ollama, set its context length in Ollama's settings; the default can be small, and Ollama then drops the oldest part of a long chat without saying so.
-- **Custom MCP servers.** Add a program that runs on the Mac (path, arguments, environment) or an `http://` or `https://` address of a Streamable HTTP server (a token goes in the environment as `MCP_AUTH_TOKEN`) in Configuration → MCP Servers and Agent Tools; double-click to edit. They start disabled, can be set to ask first, and plain `http://` is only allowed on your own network. Enable only servers you trust. OAuth and the older SSE transport are not supported.
-- **Example servers.** The first launch adds four built-in servers: a calculator and unit converter, a notebook, system info (with `slow_task` and `always_fails` for testing Stop) and weather from wttr.in. They need no Python; remove or switch off any you do not want and it stays that way. `mcp-examples/` has Python 3 sources you can copy to write your own stdio server. The official servers work too, for example program `/path/to/npx`, arguments `-y|@modelcontextprotocol/server-filesystem|/some/folder`.
+- **Custom MCP servers.** Add a program that runs on the Mac (path, arguments, environment), a program on **another computer over SSH** (user@address and the command to run there, using Tiger Build's own key and a host list you confirm), or an `http://` or `https://` address of a Streamable HTTP server (a token goes in the environment as `MCP_AUTH_TOKEN`) in Configuration → MCP Servers and Agent Tools; double-click to edit. Each server can have a **description** for the model: what it is for, or extra instructions, added to each of its tools. They can be set to ask first, and plain `http://` is only allowed on your own network. Enable only servers you trust. OAuth and the older SSE transport are not supported.
+- **Example servers.** The first launch adds four built-in servers: a calculator and unit converter, a notebook, system info (with `slow_task` and `always_fails` for testing Stop) and weather from wttr.in. They need no Python; remove or switch off any you do not want and it stays that way. Any program that speaks MCP over standard input and output works as a server of your own. The official servers work too, for example program `/path/to/npx`, arguments `-y|@modelcontextprotocol/server-filesystem|/some/folder`.
 - **Web search and pictures.** It works with no key (DuckDuckGo, with Wikipedia as a fallback); a Brave or Tavily key broadens it, and a refused key falls back to the free search. Models can find pictures (Brave or Tavily, else Wikimedia Commons) and show them in the chat; Tiger Build downloads them, and only from public addresses. Grok uses its own search while that switch is on.
 - **Agent toolbox** adds UTC time and scratch notes. **Claude thinking** passes signed blocks back unchanged, as Anthropic requires in their more recent updates for 5.5 and later models.
 - **Settings backups.** Export/Import All Settings. Backups hold API keys in plain text; imported MCP servers stay disabled.
@@ -170,10 +172,11 @@ the latest and greatest models available for you to use, excluding API updates t
 ## Security
 
 - Connections to the AI services use TLS 1.3 or 1.2 and check the server's certificate against the Mozilla list that ships in the app; there is no option to skip the check. Keys are in the Keychain and go only to the service that owns them.
-- A model cannot change ppc-commander's blocked commands, allowed folders or shell, or edit its files.
+- A model cannot change Commander's blocked commands, allowed folders or shell, or edit its files.
+- **Commander is local only.** It starts as part of a chat on the same Mac and nothing listens on the network. Another computer can use it over SSH only if you turn on Commander → Allow Other Computers, which also needs Remote Login in System Preferences; otherwise the program refuses to run for it.
 - File conversion refuses XML entity definitions and oversized archives. A model can only fetch pictures from public web addresses, never from your own network.
-- **Commander on another Mac** uses a key only Tiger Build knows (`ssh/` in Application Support) and a host list you confirm by fingerprint; if that Mac's key ever changes, Tiger Build refuses to connect. Tiger's OpenSSH can only make RSA keys, which a recent macOS must be told to accept.
-- **Administrator (sudo) mode** is off. To let agents run commands as root on a Mac, open Preferences, Commander, tick *Let agents run administrator (sudo) commands*, and type the account password once. Tiger Build checks it and keeps it in that Mac's Keychain, where only Tiger Build can read it. SSH sessions cannot open the Keychain, so when a command contains `sudo`, Commander asks the running Tiger Build for the password over a socket only that account can use (Tiger Build must be open on that Mac), and gives it to sudo through a pipe that is closed before the model's command starts. The model never sees it, but it runs as the same account, so with sudo on it can do anything root can. `ppc_commander.py --sudo on|off|status` does the same from a terminal, and a root-owned `/etc/ppc-commander.json` containing `{"sudoMode": false}` keeps it off. Blocked commands such as `shutdown` stay blocked under sudo, the approval question marks sudo commands, and `sudo` is refused with `detach`. The login keychain must be unlocked, so stay logged in at that Mac.
+- **Programs on other computers** (an MCP server over SSH, such as another Mac's Commander) use a key only Tiger Build knows (`ssh/` in Application Support) and a host list you confirm by fingerprint; if that computer's key ever changes, Tiger Build refuses to connect. Tiger's OpenSSH can only make RSA keys, which a recent macOS must be told to accept.
+- **Administrator (sudo) mode** is off. To let agents run commands as root on a Mac, open Preferences, Commander, tick *Let agents run administrator (sudo) commands*, and type the account password once. Tiger Build checks it and keeps it in that Mac's Keychain, where only Tiger Build can read it. Commander cannot open that Keychain item, so when a command contains `sudo`, it asks the running Tiger Build for the password over a socket only that account can use, and gives it to sudo through a pipe that is closed before the model's command starts. A chat can switch sudo on from its Tools menu (which turns Commander on); the Preferences setting makes it available to every chat. It works only for Commander on this Mac. The model never sees it, but it runs as the same account, so with sudo on it can do anything root can. `Tiger Build.app/Contents/Resources/ppc-commander --sudo on|off|status` does the same from a terminal, and a root-owned `/etc/ppc-commander.json` containing `{"sudoMode": false}` keeps it off. Blocked commands such as `shutdown` stay blocked under sudo, the approval question marks sudo commands, and `sudo` is refused with `detach`. The login keychain must be unlocked, so stay logged in.
 - With tools on, a model runs shell commands as your account. The guards stop mistakes and simple tricks, not a determined attacker; use a separate account for real separation.
 
 ## Troubleshooting
@@ -183,7 +186,7 @@ the latest and greatest models available for you to use, excluding API updates t
 | "No usable service configured" | Open Preferences and add a key, or the address of a local LLM server |
 | "Certificate ... not trusted" or a failed handshake | Check the Mac's date and time (a wrong clock fails every certificate), then try again |
 | A service is dimmed | Add its key, or wait for its models to finish testing |
-| The orange Commander line, or "tools are offline" | The message says why. Usually Commander is not installed (quit and reopen Tiger Build), or for another Mac: Remote Login is off, the key is not in its `authorized_keys`, or the host is not trusted yet |
+| The orange Commander line, or "tools are offline" | The message says why. Usually Commander was stopped (Commander → Start), or for another computer: Remote Login is off, Allow Other Computers is off there, the key is not in its `authorized_keys`, or the host is not trusted yet |
 | Claude asks for `anthropic-workspace-id` | Enter the Workspace ID |
 | The first reply is slow on a PowerPC Mac | The first connection to a service does a TLS handshake (about 0.2 s on a G4); later ones are quicker |
 
@@ -192,7 +195,6 @@ the latest and greatest models available for you to use, excluding API updates t
 ```bash
 cd tiger-build && make test                   # unit tests on the Mac you build on
 sh tests/engine/run-host.sh                   # engine tests against mock services (run on a current Mac)
-ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-test'
 ```
 
 | Script | Makes |
@@ -200,8 +202,10 @@ ppc-commander/bin/ppc-ssh 'cd ~/ppc-commander && python ppc_commander.py --self-
 | `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-2.0.pkg` (the installer for the old Macs) |
 | `third_party/mbedtls/fetch.sh`, `build-mac.sh` | The TLS libraries (already built and kept in git) |
 | `third_party/libwebp/fetch.sh`, `build-mac.sh` | The WebP decoder (already built and kept in git) |
-| `third_party/libde265/fetch.sh`, `patch.py`, `build-mac.sh` | The HEIC video decoder as a dynamic library, patched for the old compilers (already built and kept in git) |
-| `scripts/make-prices.py` | The bundled price list that seeds cost estimates |
+| `third_party/libde265/fetch.sh`, `old-compilers.patch`, `build-mac.sh` | The HEIC video decoder as a dynamic library, patched for the old compilers (already built and kept in git) |
+| `third_party/libaom/fetch.sh`, `build-mac.sh` | The AV1 decoder for AVIF pictures, plain C (already built and kept in git) |
+| `commander/Makefile` | Commander, built with the app (`make host` builds it for the Mac you are on) |
+| `scripts/make-prices.m`, `make-icns.m`, `pack-emoji.c`, `scan-secrets.sh` | Small helpers: the price list, the icon, the emoji pack, and a check that a package holds no keys (each file says how to build it) |
 
 ## Upgrading from 1.x
 

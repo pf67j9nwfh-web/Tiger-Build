@@ -16,15 +16,21 @@ for f in $WEBP/src/dec/*.c $WEBP/src/dsp/*.c $WEBP/src/utils/*.c $WEBP/src/demux
   case $(basename $f) in *_sse2.c|*_sse41.c|*_neon.c|*_mips*.c|*_msa.c|*enc*|ssim.c|cost.c|quant_levels_utils.c|bit_writer_utils.c) continue;; esac
   clang -O1 -w -DHAVE_CONFIG_H -I"$OUT/cfg" -I$WEBP -I$WEBP/src -c $f -o "$OUT/webp/$(basename $f .c).o"
 done
+AOM=../third_party/libaom
+mkdir -p "$OUT/aom"
+for f in $(cat $AOM/files.txt) config/aom_config.c; do
+  case $f in config/*) src=$AOM/$f;; *) src=$AOM/src/libaom/$f;; esac
+  clang -O1 -w -std=c99 -DNDEBUG -I$AOM/src/libaom -I$AOM -c $src -o "$OUT/aom/$(echo $f | tr / _).o"
+done
 COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m"
 COMMON_NO_MCP="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m"
 LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices $TLS/build/libmbedtls-host.a -lz"
-build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -o "$OUT/$name" "$@" $LIBS; }
+build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
-build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
-build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
+build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build prov ../tests/engine/provtest.m TBProviders.m $COMMON
-build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o
+build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"

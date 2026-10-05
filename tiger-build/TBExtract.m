@@ -7,6 +7,7 @@
 #import "webp/decode.h"
 #import "webp/demux.h"
 #import "TBHEIC.h"
+#import "TBOffice.h"
 
 NSString *TBExtractError = @"TBExtractError";
 
@@ -1287,7 +1288,7 @@ static NSArray *types(int which)
 {
     switch (which) {
     case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
-    case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", nil];
+    case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", nil];
     }
     return [NSArray arrayWithObjects:@"pages", @"numbers", @"key", nil];
 }
@@ -1380,6 +1381,16 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
         if (!jpeg)
             fail(@"This Mac cannot convert %@ pictures.", [ext uppercaseString]);
         return [self reply:@"" images:[NSArray arrayWithObject:jpeg] note:[NSString stringWithFormat:@"Converted from %@ to JPEG.", [ext uppercaseString]]];
+    }
+    if ([ext isEqualToString:@"doc"] || [ext isEqualToString:@"xls"] || [ext isEqualToString:@"ppt"]) {
+        text = TBLegacyOfficeText(ext, data);
+        if ([text length] > MAX_TEXT) {
+            text = [text substringToIndex:MAX_TEXT];
+            note = @"Only the first part of the text is included.";
+        }
+        if (![TBTrim(text) length])
+            fail(@"No text could be found in this file.");
+        return [self reply:text images:images note:[NSString stringWithFormat:@"Text was read from this old-format %@ file; layout, pictures and formatting are not included.", [ext uppercaseString]]];
     }
     zip = [TBZip zipWithData:data];
     if (!zip) {

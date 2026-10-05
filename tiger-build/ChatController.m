@@ -5,6 +5,7 @@
 #import "TBPricing.h"
 #import "TBIntegrations.h"
 #import "TBEngine.h"
+#import "TBTheme.h"
 #import "TBProviders.h"
 #import <CoreServices/CoreServices.h>
 
@@ -126,9 +127,16 @@ static NSMutableArray *allControllers = nil;
     controller = owner;
 }
 
+/* Brushed metal shows through; the other looks paint over it */
 - (BOOL)isOpaque
 {
-    return NO;
+    return ![[TBTheme windowStyle] isEqualToString:@"metal"];
+}
+
+- (void)drawRect:(NSRect)dirty
+{
+    if (![[TBTheme windowStyle] isEqualToString:@"metal"])
+        [TBTheme paintWindow:dirty];
 }
 
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize
@@ -790,6 +798,9 @@ static NSMutableArray *allControllers = nil;
         name:TBStoreChangedNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(storesReplaced:)
         name:@"TBStoresReplaced" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(interfaceThemeChanged:)
+        name:TBThemeChangedNotification object:nil];
+    [self applyInterfaceTheme];
 }
 
 - (float)clampedSidebar:(float)proposed
@@ -1393,6 +1404,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         /* Local stays enabled so choosing it asks the server for models again. */
         [[modelPopup lastItem] setEnabled:([pid isEqualToString:@"local"] || [self providerNote:pid] == nil)];
     }
+    [self applyPopupTheme:modelPopup];
 }
 
 - (void)refreshCatalog
@@ -1587,6 +1599,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         item = [list objectAtIndex:i];
         [self addVariantTitle:[item objectForKey:@"title"] model:[item objectForKey:@"id"]];
     }
+    [self applyPopupTheme:variantPopup];
     selected = [self modelForChat:current];
     for (i = 0; i < [variantPopup numberOfItems]; i++) {
         if ([[[variantPopup itemAtIndex:i] representedObject] isEqualToString:selected]) {

@@ -22,6 +22,19 @@ extern NSString *TBThemeChangedNotification;   /* userInfo "layout" is YES when 
 + (NSColor *)textColor:(BOOL)sent;
 + (NSFont *)font:(BOOL)sent scale:(float)scale;
 
+/* Tool-call boxes ("start_process - Completed"), the status text between bubbles ("Working on the next step..."), and the controls around
+   the chat. Every setting is optional; nothing set is the original look. */
++ (NSDictionary *)toolAttributesScale:(float)scale paragraph:(NSParagraphStyle *)style;
++ (NSDictionary *)statusAttributesScale:(float)scale paragraph:(NSParagraphStyle *)style;   /* with the shadow or glow, if chosen */
++ (NSColor *)toolBoxColor;
++ (NSColor *)toolBorderColor;
+/* A control font: the chosen family at the size it already has; nil colour means the original. `group` is "side", "labels", "buttons" or "menus". */
++ (NSFont *)interfaceFont:(NSFont *)original group:(NSString *)group;
++ (NSColor *)interfaceColor:(NSString *)group;
++ (NSColor *)sidebarBackground;
++ (NSString *)windowStyle;                  /* "metal" (the original), "gray", "stripes" or "solid" */
++ (void)paintWindow:(NSRect)dirty;          /* for the styles other than metal */
+
 /* A straight vertical blend that fills the current clip. */
 + (void)fillGradient:(NSRect)area from:(NSColor *)top to:(NSColor *)bottom;
 + (BOOL)hasCustomBackground;
@@ -43,3 +56,24 @@ extern NSString *const TBThemeBackground;    /* "solid", "gradient" or "picture"
 extern NSString *const TBThemeBackColor;
 extern NSString *const TBThemeBackColor2;
 extern NSString *const TBThemePicture;       /* path of the picture */
+extern NSString *const TBThemeToolFont;
+extern NSString *const TBThemeToolSize;
+extern NSString *const TBThemeToolText;
+extern NSString *const TBThemeToolBox;
+extern NSString *const TBThemeStatusFont;
+extern NSString *const TBThemeStatusSize;
+extern NSString *const TBThemeStatusText;
+extern NSString *const TBThemeStatusEffect;  /* "shadow" or "glow" */
+extern NSString *const TBThemeStatusGlow;    /* the shadow or glow colour */
+extern NSString *const TBThemeSideFont;      /* also: TBThemeSideSize, TBThemeSideText, TBThemeSideBack */
+extern NSString *const TBThemeSideSize;
+extern NSString *const TBThemeSideText;
+extern NSString *const TBThemeSideBack;
+extern NSString *const TBThemeLabelFont;
+extern NSString *const TBThemeLabelText;
+extern NSString *const TBThemeButtonFont;
+extern NSString *const TBThemeButtonText;
+extern NSString *const TBThemeMenuFont;
+extern NSString *const TBThemeMenuText;
+extern NSString *const TBThemeWindow;
+extern NSString *const TBThemeWindowColor;

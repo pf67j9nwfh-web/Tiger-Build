@@ -113,6 +113,9 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 @interface ChatController (Sudo)
 - (void)startSudoBroker;
 - (void)refreshSudoStatus;
+- (void)applyInterfaceTheme;
+- (void)applyPopupTheme:(NSPopUpButton *)popup;
+- (void)interfaceThemeChanged:(NSNotification *)note;
 - (IBAction)toggleSudoMode:(id)sender;
 - (IBAction)setAdministratorPassword:(id)sender;
 @end

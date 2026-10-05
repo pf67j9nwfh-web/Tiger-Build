@@ -13,6 +13,27 @@ NSString *const TBThemeBackground = @"TBThemeBackground";
 NSString *const TBThemeBackColor = @"TBThemeBackColor";
 NSString *const TBThemeBackColor2 = @"TBThemeBackColor2";
 NSString *const TBThemePicture = @"TBThemePicture";
+NSString *const TBThemeToolFont = @"TBThemeToolFont";
+NSString *const TBThemeToolSize = @"TBThemeToolSize";
+NSString *const TBThemeToolText = @"TBThemeToolText";
+NSString *const TBThemeToolBox = @"TBThemeToolBox";
+NSString *const TBThemeStatusFont = @"TBThemeStatusFont";
+NSString *const TBThemeStatusSize = @"TBThemeStatusSize";
+NSString *const TBThemeStatusText = @"TBThemeStatusText";
+NSString *const TBThemeStatusEffect = @"TBThemeStatusEffect";
+NSString *const TBThemeStatusGlow = @"TBThemeStatusGlow";
+NSString *const TBThemeSideFont = @"TBThemeSideFont";
+NSString *const TBThemeSideSize = @"TBThemeSideSize";
+NSString *const TBThemeSideText = @"TBThemeSideText";
+NSString *const TBThemeSideBack = @"TBThemeSideBack";
+NSString *const TBThemeLabelFont = @"TBThemeLabelFont";
+NSString *const TBThemeLabelText = @"TBThemeLabelText";
+NSString *const TBThemeButtonFont = @"TBThemeButtonFont";
+NSString *const TBThemeButtonText = @"TBThemeButtonText";
+NSString *const TBThemeMenuFont = @"TBThemeMenuFont";
+NSString *const TBThemeMenuText = @"TBThemeMenuText";
+NSString *const TBThemeWindow = @"TBThemeWindow";
+NSString *const TBThemeWindowColor = @"TBThemeWindowColor";
 
 /* The original look, as the numbers fillBubble used to hold. */
 static const float defaultSent[4][3] = {
@@ -33,7 +54,10 @@ static NSImage *source = nil;
 + (NSArray *)keys
 {
     return [NSArray arrayWithObjects:TBThemeSentBubble, TBThemeSentText, TBThemeGotBubble, TBThemeGotText, TBThemeSentFont, TBThemeGotFont,
-        TBThemeSentSize, TBThemeGotSize, TBThemeBackground, TBThemeBackColor, TBThemeBackColor2, TBThemePicture, nil];
+        TBThemeSentSize, TBThemeGotSize, TBThemeBackground, TBThemeBackColor, TBThemeBackColor2, TBThemePicture,
+        TBThemeToolFont, TBThemeToolSize, TBThemeToolText, TBThemeToolBox, TBThemeStatusFont, TBThemeStatusSize, TBThemeStatusText, TBThemeStatusEffect, TBThemeStatusGlow,
+        TBThemeSideFont, TBThemeSideSize, TBThemeSideText, TBThemeSideBack, TBThemeLabelFont, TBThemeLabelText, TBThemeButtonFont, TBThemeButtonText,
+        TBThemeMenuFont, TBThemeMenuText, TBThemeWindow, TBThemeWindowColor, nil];
 }
 
 + (void)reload
@@ -149,6 +173,136 @@ static void lighten(const float *color, float amount, float *out)
     if ([family isKindOfClass:[NSString class]] && [family length] > 0)
         font = [[NSFontManager sharedFontManager] fontWithFamily:family traits:0 weight:5 size:size * scale];
     return font ? font : [NSFont systemFontOfSize:size * scale];
+}
+
+/* a font of the family at the size, or nil */
+static NSFont *familyFont(id family, float size, BOOL monospaceFallback)
+{
+    NSFont *font = nil;
+    if ([family isKindOfClass:[NSString class]] && [family length] > 0)
+        font = [[NSFontManager sharedFontManager] fontWithFamily:family traits:0 weight:5 size:size];
+    if (!font && monospaceFallback)
+        font = [NSFont fontWithName:@"Monaco" size:size];
+    return font;
+}
+
++ (NSDictionary *)toolAttributesScale:(float)scale paragraph:(NSParagraphStyle *)style
+{
+    float size = [[self setting:TBThemeToolSize] floatValue];
+    NSColor *color = [self colorForKey:TBThemeToolText];
+    NSFont *font;
+    if (size < 8 || size > 40)
+        size = 11;
+    font = familyFont([self setting:TBThemeToolFont], size * scale, YES);
+    return [NSDictionary dictionaryWithObjectsAndKeys:font ? font : [NSFont systemFontOfSize:size * scale], NSFontAttributeName,
+        color ? color : [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName, style, NSParagraphStyleAttributeName, nil];
+}
+
++ (NSDictionary *)statusAttributesScale:(float)scale paragraph:(NSParagraphStyle *)style
+{
+    float size = [[self setting:TBThemeStatusSize] floatValue];
+    NSColor *color = [self colorForKey:TBThemeStatusText], *effectColor = [self colorForKey:TBThemeStatusGlow];
+    NSString *effect = [self setting:TBThemeStatusEffect];
+    NSFont *font;
+    NSMutableDictionary *attrs;
+    if (size < 8 || size > 40)
+        size = 11;
+    font = familyFont([self setting:TBThemeStatusFont], size * scale, NO);
+    attrs = [NSMutableDictionary dictionaryWithObjectsAndKeys:font ? font : [NSFont systemFontOfSize:size * scale], NSFontAttributeName,
+        color ? color : [NSColor colorWithCalibratedWhite:0.35 alpha:1], NSForegroundColorAttributeName, style, NSParagraphStyleAttributeName, nil];
+    if ([effect isEqualToString:@"shadow"] || [effect isEqualToString:@"glow"]) {
+        NSShadow *shadow = [[[NSShadow alloc] init] autorelease];
+        if ([effect isEqualToString:@"glow"]) {
+            [shadow setShadowOffset:NSZeroSize];
+            [shadow setShadowBlurRadius:7];
+            [shadow setShadowColor:effectColor ? effectColor : [NSColor colorWithCalibratedRed:1 green:1 blue:0.6f alpha:1]];
+        } else {
+            [shadow setShadowOffset:NSMakeSize(1, -1.5f)];
+            [shadow setShadowBlurRadius:2];
+            [shadow setShadowColor:effectColor ? effectColor : [NSColor colorWithCalibratedWhite:0 alpha:0.55f]];
+        }
+        [attrs setObject:shadow forKey:NSShadowAttributeName];
+    }
+    return attrs;
+}
+
++ (NSColor *)toolBoxColor
+{
+    NSColor *custom = [self colorForKey:TBThemeToolBox];
+    return custom ? custom : [NSColor colorWithCalibratedWhite:0.96f alpha:1];
+}
+
++ (NSColor *)toolBorderColor
+{
+    NSColor *custom = [self colorForKey:TBThemeToolBox];
+    if (!custom)
+        return [NSColor colorWithCalibratedWhite:0.72f alpha:1];
+    return [NSColor colorWithCalibratedRed:[custom redComponent] * 0.6f green:[custom greenComponent] * 0.6f blue:[custom blueComponent] * 0.6f alpha:1];
+}
+
++ (NSString *)keyFor:(NSString *)group part:(NSString *)part
+{
+    return [NSString stringWithFormat:@"TBTheme%@%@", [group isEqualToString:@"side"] ? @"Side" : ([group isEqualToString:@"labels"] ? @"Label" : ([group isEqualToString:@"buttons"] ? @"Button" : @"Menu")), part];
+}
+
++ (NSFont *)interfaceFont:(NSFont *)original group:(NSString *)group
+{
+    id family = [self setting:[self keyFor:group part:@"Font"]];
+    float size = [original pointSize];
+    NSFont *font;
+    if ([group isEqualToString:@"side"]) {
+        float own = [[self setting:TBThemeSideSize] floatValue];
+        if (own >= 8 && own <= 30)
+            size = own;
+    }
+    if (![family isKindOfClass:[NSString class]] || ![family length])
+        return [group isEqualToString:@"side"] && size != [original pointSize] ? [NSFont systemFontOfSize:size] : original;
+    font = [[NSFontManager sharedFontManager] fontWithFamily:family traits:([[NSFontManager sharedFontManager] traitsOfFont:original] & NSBoldFontMask) weight:5 size:size];
+    return font ? font : original;
+}
+
++ (NSColor *)interfaceColor:(NSString *)group
+{
+    return [self colorForKey:[self keyFor:group part:@"Text"]];
+}
+
++ (NSColor *)sidebarBackground
+{
+    return [self colorForKey:TBThemeSideBack];
+}
+
++ (NSString *)windowStyle
+{
+    NSString *style = [self setting:TBThemeWindow];
+    return [style isKindOfClass:[NSString class]] && [style length] ? style : @"metal";
+}
+
++ (void)paintWindow:(NSRect)dirty
+{
+    NSString *style = [self windowStyle];
+    static NSColor *stripes = nil;
+    if ([style isEqualToString:@"solid"]) {
+        NSColor *c = [self colorForKey:TBThemeWindowColor];
+        [(c ? c : [NSColor colorWithCalibratedWhite:0.85f alpha:1]) set];
+        NSRectFill(dirty);
+    } else if ([style isEqualToString:@"stripes"]) {
+        if (!stripes) {
+            NSImage *tile = [[NSImage alloc] initWithSize:NSMakeSize(4, 4)];
+            [tile lockFocus];
+            [[NSColor colorWithCalibratedWhite:0.965f alpha:1] set];
+            NSRectFill(NSMakeRect(0, 0, 4, 4));
+            [[NSColor colorWithCalibratedWhite:0.925f alpha:1] set];
+            NSRectFill(NSMakeRect(0, 0, 4, 2));
+            [tile unlockFocus];
+            stripes = [[NSColor colorWithPatternImage:tile] retain];
+            [tile release];
+        }
+        [stripes set];
+        NSRectFill(dirty);
+    } else {
+        [[NSColor colorWithCalibratedWhite:0.905f alpha:1] set];
+        NSRectFill(dirty);
+    }
 }
 
 + (BOOL)hasCustomBackground
