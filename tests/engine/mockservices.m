@@ -218,7 +218,9 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
                 E(@"response.completed", D(@"response.completed", @"type", D(@"r1", @"id", A(D(@"function_call", @"type", @"fc_9", @"call_id", @"start_process", @"name", @"{\"command\":\"ls\"}", @"arguments")), @"output",
                     D(N(30), @"input_tokens", N(3), @"output_tokens"), @"usage"), @"response")));
         sendChunked(fd, 200, sse(items));
-    } else if ([path isEqualToString:@"/openai-down"])
+    } else if ([path isEqualToString:@"/gemini-search"])
+        sendJSON(fd, 200, D(A(D(D(A(D(@"Canberra is the capital.", @"text")), @"parts"), @"content", D(A(D(D(@"Australia - Wikipedia", @"title", @"https://en.wikipedia.org/wiki/Australia", @"uri"), @"web")), @"groundingChunks"), @"groundingMetadata")), @"candidates"));
+    else if ([path isEqualToString:@"/openai-down"])
         sendJSON(fd, 429, D(D(@"Rate limit reached", @"message"), @"error"));
     else if ([path isEqualToString:@"/anthropic"])
         sendChunked(fd, 200, sse(anthropicEvents(tools, [request objectForKey:@"thinking"] != nil)));

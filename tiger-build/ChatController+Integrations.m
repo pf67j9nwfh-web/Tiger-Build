@@ -138,6 +138,7 @@
         [self integrationSwitch:@"Ask other models: lets a model get a second opinion (a chat turns it on)" key:@"consult_enabled" y:y in:tab];y-=26;
         [self integrationSwitch:@"Web and picture search for other providers" key:@"search_enabled" y:y in:tab];y-=26;
         [self integrationSwitch:@"Grok native web search" key:@"grok_native_search" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Gemini searches with Google (needs a Gemini key)" key:@"gemini_native_search" y:y in:tab];y-=26;
         [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=40;
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
         NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
@@ -216,7 +217,7 @@
 - (void)loadIntegrationForm:(NSDictionary *)data
 {
     NSMutableDictionary *fields=[self integrationFields];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",nil];
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"claude_thinking",nil];
     unsigned i;
     for(i=0;i<[keys count];i++)[[fields objectForKey:[keys objectAtIndex:i]] setState:[[data objectForKey:[keys objectAtIndex:i]] boolValue]?NSOnState:NSOffState];
     [(TBServerSource *)[fields objectForKey:@"source"] setServers:[data objectForKey:@"servers"]];
@@ -448,7 +449,7 @@ static NSString *trimmedText(NSString *text)
 - (NSDictionary *)integrationFormData
 {
     NSMutableDictionary *fields=[self integrationFields];NSMutableDictionary *data=[NSMutableDictionary dictionary];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
     for(i=0;i<[keys count];i++)[data setObject:[NSNumber numberWithBool:[[fields objectForKey:[keys objectAtIndex:i]] state]==NSOnState] forKey:[keys objectAtIndex:i]];
     [data setObject:[[fields objectForKey:@"search_api_key"] stringValue] forKey:@"search_api_key"];
     [data setObject:[[fields objectForKey:@"tavily_api_key"] stringValue] forKey:@"tavily_api_key"];

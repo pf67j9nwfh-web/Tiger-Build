@@ -66,6 +66,24 @@ int main(int argc, char **argv)
         @try { [c start]; } @catch (NSException *e) { refused = [[e reason] rangeOfString:@"HTTPS"].location != NSNotFound; }
         expectThat(refused, @"plain http to a public host is refused");
     }
+    expectThat([[TBBuiltin call:@"inflation_adjust" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:100], @"amount", [NSNumber numberWithInt:1980], @"from_year", [NSNumber numberWithInt:2024], @"to_year", nil] server:@"inflation" run:run] rangeOfString:@"$380.65 in 2024"].location != NSNotFound, @"inflation: 100 dollars of 1980 in 2024");
+    expectThat([[TBBuiltin call:@"convert_currency" arguments:[NSDictionary dictionaryWithObjectsAndKeys:@"usd", @"from", @"USD", @"to", [NSNumber numberWithInt:5], @"amount", nil] server:@"currency" run:run] rangeOfString:@"same currency"].location != NSNotFound, @"currency: the same currency needs no service");
+    {
+        BOOL refused = NO;
+        @try { [TBBuiltin call:@"convert_currency" arguments:[NSDictionary dictionaryWithObjectsAndKeys:@"dollars", @"from", @"EUR", @"to", nil] server:@"currency" run:run]; } @catch (NSException *x) { refused = YES; }
+        expectThat(refused, @"currency: a bad code is refused");
+    }
+    {
+        TBExtras *g = [[TBExtras alloc] initWithRun:run];
+        NSDictionary *r;
+        setenv("TB_GEMINI_API_KEY", "gk", 1);
+        [[NSUserDefaults standardUserDefaults] setObject:[base stringByAppendingString:@"/gemini-search"] forKey:@"TBSearchURL.gemini-search"];
+        [g definitionsForProvider:@"gemini" skip:[NSSet set]];
+        r = [g call:@"agent_web_search" arguments:[NSDictionary dictionaryWithObject:@"capital of Australia" forKey:@"query"]];
+        expectThat([[r objectForKey:@"output"] rangeOfString:@"Canberra is the capital."].location != NSNotFound && [[r objectForKey:@"output"] rangeOfString:@"wikipedia.org/wiki/Australia"].location != NSNotFound, @"Gemini search answers with its sources");
+        [g release];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBSearchURL.gemini-search"];
+    }
     a = [NSDictionary dictionaryWithObjectsAndKeys:@"x.md", @"name", @"# hi", @"content", nil];
     {
         TBExtras *extras = [[TBExtras alloc] initWithRun:run];

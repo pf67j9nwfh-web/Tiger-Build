@@ -170,6 +170,43 @@ static NSComparisonResult pageOrder(id a, id b, void *context)
     return x < y ? NSOrderedAscending : (x > y ? NSOrderedDescending : NSOrderedSame);
 }
 
+/* Gemini's own Google Search, asked as a separate request so it works with every model: the answer comes back with the pages it used.
+   nil when it cannot be used (no key, or the service refused), and the ordinary search takes over. */
+static NSString *geminiSearch(NSString *query, TBRun *run)
+{
+    NSString *key = [TBSettings valueForName:@"gemini_api_key"], *root = base(@"gemini-search", @"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent");
+    int status = 0;
+    NSData *data;
+    id json, candidate, answer;
+    NSMutableString *text = [NSMutableString string];
+    NSMutableArray *links = [NSMutableArray array];
+    NSArray *parts, *chunks;
+    unsigned i;
+    if (![key length])
+        return nil;
+    data = get(root, [NSArray arrayWithObjects:@"x-goog-api-key", key, @"Content-Type", @"application/json", nil],
+        TBJSONData([NSDictionary dictionaryWithObjectsAndKeys:
+            [NSArray arrayWithObject:[NSDictionary dictionaryWithObject:[NSArray arrayWithObject:[NSDictionary dictionaryWithObject:query forKey:@"text"]] forKey:@"parts"]], @"contents",
+            [NSArray arrayWithObject:[NSDictionary dictionaryWithObject:[NSDictionary dictionary] forKey:@"google_search"]], @"tools", nil]), 45, &status, run);
+    if (status < 200 || status >= 300)
+        return nil;
+    json = TBJSONParse(data, NULL);
+    candidate = [TBArray(json, @"candidates") count] ? [TBArray(json, @"candidates") objectAtIndex:0] : nil;
+    parts = TBArray(TBDictionary(candidate, @"content"), @"parts");
+    for (i = 0; i < [parts count]; i++)
+        [text appendString:TBString([parts objectAtIndex:i], @"text")];
+    if (![TBTrim(text) length])
+        return nil;
+    chunks = TBArray(TBDictionary(candidate, @"groundingMetadata"), @"groundingChunks");
+    for (i = 0; i < [chunks count]; i++) {
+        id web = TBDictionary([chunks objectAtIndex:i], @"web");
+        if ([TBString(web, @"uri") length])
+            [links addObject:[NSDictionary dictionaryWithObjectsAndKeys:TBString(web, @"title"), @"title", TBString(web, @"uri"), @"url", nil]];
+    }
+    answer = [NSDictionary dictionaryWithObjectsAndKeys:@"Google Search through Gemini", @"source", text, @"answer", links, @"sources", nil];
+    return TBJSONString(answer);
+}
+
 static NSString *search(NSString *query, TBRun *run)
 {
     NSString *provider = [[TBSettings valueForName:@"search_provider"] isEqualToString:@"tavily"] ? @"tavily" : @"brave";
@@ -291,6 +328,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     [owners release];
     [offered release];
     [errors release];
+    [lastProvider release];
     [super dealloc];
 }
 
@@ -338,6 +376,8 @@ static NSString *imageSearch(NSString *query, TBRun *run)
 
 - (NSArray *)definitionsForProvider:(NSString *)provider skip:(NSSet *)skip
 {
+    [lastProvider release];
+    lastProvider = [provider copy];
     NSMutableArray *tools = [NSMutableArray arrayWithArray:[self auxiliaryForProvider:provider skip:skip]];
     NSArray *servers = [TBIntegrations servers];
     unsigned i, t;
@@ -467,7 +507,12 @@ static NSString *imageSearch(NSString *query, TBRun *run)
             return result(@"The picture is now shown in the chat.", NO, [@"image " stringByAppendingString:file]);
         }
         if ([name isEqualToString:@"agent_web_search"])
-            return result(search(TBString(args, @"query"), run), NO, nil);
+        {
+            NSString *answer = nil;
+            if ([lastProvider isEqualToString:@"gemini"] && [TBSettings flag:@"gemini_native_search"] && [TBSettings flag:@"search_enabled"])
+                answer = geminiSearch(TBString(args, @"query"), run);
+            return result(answer ? answer : search(TBString(args, @"query"), run), NO, nil);
+        }
         if ([name isEqualToString:@"agent_image_search"])
             return result(imageSearch(TBString(args, @"query"), run), NO, nil);
         if ([name isEqualToString:@"agent_current_time"]) {

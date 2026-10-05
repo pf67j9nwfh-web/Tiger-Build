@@ -10,6 +10,7 @@
     NSMutableDictionary *owners;    /* tool name -> the chat's key for it ("toolbox", "search", "mcp_<id>") */
     NSMutableSet *offered;
     NSMutableArray *errors;
+    NSString *lastProvider;         /* the provider of the latest request, for tools that work differently for one */
 }
 - (id)initWithRun:(TBRun *)run;
 /* The tools to offer. skip holds the keys the chat turned off. */

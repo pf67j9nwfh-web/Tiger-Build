@@ -6,7 +6,7 @@ static NSString *kServers = @"mcp_servers";
 
 static NSArray *flagNames(void)
 {
-    return [NSArray arrayWithObjects:@"ppc_approval", @"consult_enabled", @"ppc_enabled", @"toolbox_enabled", @"search_enabled", @"grok_native_search", @"claude_thinking", nil];
+    return [NSArray arrayWithObjects:@"ppc_approval", @"consult_enabled", @"ppc_enabled", @"toolbox_enabled", @"search_enabled", @"grok_native_search", @"gemini_native_search", @"claude_thinking", nil];
 }
 
 static BOOL validServerId(NSString *name)
@@ -239,27 +239,39 @@ static NSArray *validated(id list, BOOL forceOff)
     NSArray *have;
     NSArray *examples;
     unsigned i, e;
-    if ([d boolForKey:@"TBExamplesInstalled"])
-        return;
+    NSMutableArray *given = [NSMutableArray arrayWithArray:[d arrayForKey:@"TBExamplesGiven"]];
+    BOOL changed = NO;
+    /* the first four were handed out once, before this list existed */
+    if (![d arrayForKey:@"TBExamplesGiven"] && [d boolForKey:@"TBExamplesInstalled"])
+        [given addObjectsFromArray:[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", nil]];
     have = [self servers];
     list = [NSMutableArray arrayWithArray:have];
     examples = [NSArray arrayWithObjects:
         [NSArray arrayWithObjects:@"calc", @"Calculator", [NSNumber numberWithBool:NO], nil],
         [NSArray arrayWithObjects:@"notes", @"Notebook", [NSNumber numberWithBool:YES], nil],
         [NSArray arrayWithObjects:@"sysinfo", @"System info", [NSNumber numberWithBool:NO], nil],
-        [NSArray arrayWithObjects:@"weather", @"Weather (wttr.in)", [NSNumber numberWithBool:NO], nil], nil];
+        [NSArray arrayWithObjects:@"weather", @"Weather (wttr.in)", [NSNumber numberWithBool:NO], nil],
+        [NSArray arrayWithObjects:@"currency", @"Currency exchange rates", [NSNumber numberWithBool:NO], nil],
+        [NSArray arrayWithObjects:@"inflation", @"US inflation (CPI-U)", [NSNumber numberWithBool:NO], nil], nil];
     for (e = 0; e < [examples count]; e++) {
         NSArray *x = [examples objectAtIndex:e];
-        BOOL there = NO;
+        BOOL there = [given containsObject:[x objectAtIndex:0]];
         for (i = 0; i < [have count]; i++)
             if ([TBString([have objectAtIndex:i], @"id") isEqualToString:[x objectAtIndex:0]])
                 there = YES;
+        if (![given containsObject:[x objectAtIndex:0]]) {
+            [given addObject:[x objectAtIndex:0]];
+            changed = YES;
+        }
         if (!there && [list count] < 24)
             [list addObject:[NSDictionary dictionaryWithObjectsAndKeys:[x objectAtIndex:0], @"id", [x objectAtIndex:1], @"title", [@"builtin:" stringByAppendingString:[x objectAtIndex:0]], @"command",
                 [NSArray array], @"args", [NSDictionary dictionary], @"env", [NSNumber numberWithBool:YES], @"enabled", [x objectAtIndex:2], @"approval", nil]];
     }
+    if (!changed)
+        return;
     NS_DURING
         [self storeServers:list];
+        [d setObject:given forKey:@"TBExamplesGiven"];
         [d setBool:YES forKey:@"TBExamplesInstalled"];
     NS_HANDLER
     NS_ENDHANDLER

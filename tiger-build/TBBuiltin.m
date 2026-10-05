@@ -409,11 +409,191 @@ static NSString *displayReport(void)
     return out;
 }
 
+/* ---- currency (Frankfurter, with open.er-api.com as the second source) and US inflation (BLS CPI-U) ---- */
+
+static NSData *fetchURL(NSString *url, TBRun *run, int *status)
+{
+    TBHTTP *http = [TBHTTP request:@"GET" url:url];
+    int result;
+    NSData *data;
+    [http setHeader:@"User-Agent" value:@"TigerBuild/2.0"];
+    [http setIdleTimeout:25];
+    [run attach:http];
+    result = [http perform];
+    [run detach:http];
+    [run check];
+    *status = result == TBNET_OK ? [http status] : 0;
+    data = result == TBNET_OK ? [http data] : nil;
+    return data;
+}
+
+static NSString *rateText(double v)
+{
+    char text[40];
+    snprintf(text, sizeof text, v >= 100 ? "%.2f" : (v >= 1 ? "%.4f" : "%.6g"), v);
+    return [NSString stringWithUTF8String:text];
+}
+
+static NSString *currencyCode(NSDictionary *args, NSString *key)
+{
+    NSString *code = [TBTrim(TBString(args, key)) uppercaseString];
+    unsigned i;
+    if ([code length] != 3)
+        TBFail(@"Give %@ as a three-letter currency code such as USD, EUR or JPY.", key);
+    for (i = 0; i < 3; i++) {
+        unichar c = [code characterAtIndex:i];
+        if (c < 'A' || c > 'Z')
+            TBFail(@"Give %@ as a three-letter currency code such as USD, EUR or JPY.", key);
+    }
+    return code;
+}
+
+static NSString *convertCurrency(NSDictionary *args, TBRun *run)
+{
+    NSString *from = currencyCode(args, @"from"), *to = currencyCode(args, @"to"), *date = TBTrim(TBString(args, @"date")), *root, *path;
+    double amount = [TBValue(args, @"amount") isKindOfClass:[NSNumber class]] ? [TBValue(args, @"amount") doubleValue] : 1, rate = 0;
+    int status = 0;
+    NSData *data;
+    id json;
+    NSString *when = @"latest";
+    NSString *baseURL = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBBaseURL.frankfurter"];
+    root = [baseURL length] ? baseURL : @"https://api.frankfurter.dev";
+    if ([date length] && ([date length] != 10 || [date characterAtIndex:4] != '-' || [date characterAtIndex:7] != '-'))
+        TBFail(@"Give the date as YYYY-MM-DD, or leave it out for today's rate.");
+    if (amount < 0 || amount > 1e15)
+        TBFail(@"That amount is not usable.");
+    if ([from isEqualToString:to])
+        return [NSString stringWithFormat:@"%@ %@ = %@ %@ (same currency)", rateText(amount), from, rateText(amount), to];
+    path = [NSString stringWithFormat:@"%@/v1/%@?base=%@&symbols=%@", root, [date length] ? date : @"latest", from, to];
+    data = fetchURL(path, run, &status);
+    json = status == 200 ? TBJSONParse(data, NULL) : nil;
+    if ([TBDictionary(json, @"rates") objectForKey:to]) {
+        rate = [[TBDictionary(json, @"rates") objectForKey:to] doubleValue];
+        when = TBString(json, @"date");
+    } else if (status == 404 || status == 422)
+        TBFail(@"%@ or %@ is not a currency this source knows, or there is no rate for %@. list_currencies shows the ones it has.", from, to, [date length] ? date : @"today");
+    else if (![date length]) {
+        /* the second source: today's rates from another service */
+        NSString *second = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBBaseURL.er-api"];
+        data = fetchURL([NSString stringWithFormat:@"%@/v6/latest/%@", [second length] ? second : @"https://open.er-api.com", from], run, &status);
+        json = status == 200 ? TBJSONParse(data, NULL) : nil;
+        if ([TBDictionary(json, @"rates") objectForKey:to]) {
+            rate = [[TBDictionary(json, @"rates") objectForKey:to] doubleValue];
+            when = [TBString(json, @"time_last_update_utc") length] ? TBString(json, @"time_last_update_utc") : @"latest (open.er-api.com)";
+        }
+    }
+    if (rate <= 0)
+        TBFail(@"No exchange rate service answered. Try again in a moment.");
+    return [NSString stringWithFormat:@"%@ %@ = %@ %@  (1 %@ = %@ %@, rate of %@)", rateText(amount), from, rateText(amount * rate), to, from, rateText(rate), to, when];
+}
+
+static NSString *listCurrencies(TBRun *run)
+{
+    NSString *baseURL = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBBaseURL.frankfurter"];
+    int status = 0;
+    NSData *data = fetchURL([NSString stringWithFormat:@"%@/v1/currencies", [baseURL length] ? baseURL : @"https://api.frankfurter.dev"], run, &status);
+    id json = status == 200 ? TBJSONParse(data, NULL) : nil;
+    NSArray *codes;
+    NSMutableArray *lines = [NSMutableArray array];
+    unsigned i;
+    if (![json isKindOfClass:[NSDictionary class]])
+        TBFail(@"The exchange rate service did not answer.");
+    codes = [[json allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    for (i = 0; i < [codes count]; i++)
+        [lines addObject:[NSString stringWithFormat:@"%@ %@", [codes objectAtIndex:i], [json objectForKey:[codes objectAtIndex:i]]]];
+    return [lines componentsJoinedByString:@"\n"];
+}
+
+/* US consumer prices (CPI-U, all items, not adjusted, 1982-84 = 100): yearly averages 1913 to 2024 are built in. Later years come from the
+   Bureau of Labor Statistics when the Mac can reach it, as the average of the months published so far. */
+static const double cpiAnnual[112] = {9.883, 10.017, 10.108, 10.883, 12.825, 15.042, 17.333, 20.042, 17.850, 16.750, 17.050, 17.125, 17.542, 17.700, 17.358, 17.158, 17.158, 16.700, 15.208, 13.642, 12.933, 13.383, 13.725, 13.867, 14.383, 14.092, 13.908, 14.008, 14.725, 16.333, 17.308, 17.592, 17.992, 19.517, 22.325, 24.042, 23.808, 24.067, 25.958, 26.550, 26.767, 26.850, 26.775, 27.183, 28.092, 28.858, 29.150, 29.575, 29.892, 30.250, 30.625, 31.017, 31.508, 32.458, 33.358, 34.783, 36.683, 38.825, 40.492, 41.817, 44.400, 49.308, 53.817, 56.908, 60.608, 65.233, 72.575, 82.408, 90.925, 96.500, 99.600, 103.883, 107.567, 109.608, 113.625, 118.258, 123.967, 130.658, 136.192, 140.317, 144.458, 148.225, 152.383, 156.850, 160.517, 163.008, 166.575, 172.200, 177.067, 179.875, 183.958, 188.883, 195.292, 201.592, 207.342, 215.303, 214.537, 218.056, 224.939, 229.594, 232.957, 236.736, 237.017, 240.007, 245.120, 251.107, 255.657, 258.811, 270.970, 292.655, 304.702, 313.689};
+
+static NSMutableDictionary *cpiLater = nil;   /* year -> [average, months] */
+
+static void loadLaterCPI(TBRun *run)
+{
+    int status = 0;
+    NSData *data;
+    NSArray *rows, *years;
+    NSMutableDictionary *sums = [NSMutableDictionary dictionary], *counts = [NSMutableDictionary dictionary];
+    unsigned i;
+    NSString *baseURL = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBBaseURL.bls"];
+    id json;
+    if (cpiLater)
+        return;
+    /* the Bureau of Labor Statistics' public API, no key needed: the latest three years of the series */
+    data = fetchURL([NSString stringWithFormat:@"%@/publicAPI/v1/timeseries/data/CUUR0000SA0", [baseURL length] ? baseURL : @"https://api.bls.gov"], run, &status);
+    cpiLater = [[NSMutableDictionary alloc] init];
+    if (status != 200)
+        return;
+    json = TBJSONParse(data, NULL);
+    {
+        NSArray *series = TBArray(TBDictionary(json, @"Results"), @"series");
+        rows = [series count] ? TBArray([series objectAtIndex:0], @"data") : nil;
+    }
+    for (i = 0; i < [rows count]; i++) {
+        id row = [rows objectAtIndex:i];
+        NSNumber *year = [NSNumber numberWithInt:[TBString(row, @"year") intValue]];
+        double v = [TBString(row, @"value") doubleValue];
+        if (v <= 0 || ![TBString(row, @"period") hasPrefix:@"M"] || [TBString(row, @"period") isEqualToString:@"M13"] || [year intValue] < 2025)
+            continue;
+        [sums setObject:[NSNumber numberWithDouble:[[sums objectForKey:year] doubleValue] + v] forKey:year];
+        [counts setObject:[NSNumber numberWithInt:[[counts objectForKey:year] intValue] + 1] forKey:year];
+    }
+    years = [sums allKeys];
+    for (i = 0; i < [years count]; i++) {
+        NSNumber *year = [years objectAtIndex:i];
+        [cpiLater setObject:[NSArray arrayWithObjects:[NSNumber numberWithDouble:[[sums objectForKey:year] doubleValue] / [[counts objectForKey:year] intValue]], [counts objectForKey:year], nil] forKey:year];
+    }
+}
+
+/* the index for a year, with a note when it is not a whole year; 0 when unknown */
+static double cpiFor(int year, NSString **note, TBRun *run)
+{
+    if (year >= 1913 && year <= 2024)
+        return cpiAnnual[year - 1913];
+    if (year > 2024) {
+        NSArray *entry;
+        loadLaterCPI(run);
+        entry = [cpiLater objectForKey:[NSNumber numberWithInt:year]];
+        if (entry) {
+            if ([[entry objectAtIndex:1] intValue] < 12)
+                *note = [NSString stringWithFormat:@"%d is the average of its %d published months.", year, [[entry objectAtIndex:1] intValue]];
+            return [[entry objectAtIndex:0] doubleValue];
+        }
+    }
+    return 0;
+}
+
+static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
+{
+    int from = [TBValue(args, @"from_year") isKindOfClass:[NSNumber class]] ? [TBValue(args, @"from_year") intValue] : 0;
+    int to = [TBValue(args, @"to_year") isKindOfClass:[NSNumber class]] ? [TBValue(args, @"to_year") intValue] : 0;
+    double amount = [TBValue(args, @"amount") isKindOfClass:[NSNumber class]] ? [TBValue(args, @"amount") doubleValue] : 1, a, b;
+    NSString *note = nil;
+    if (!to) {
+        int y;
+        loadLaterCPI(run);
+        to = 2024;
+        for (y = 2025; y < 2100; y++)
+            if ([cpiLater objectForKey:[NSNumber numberWithInt:y]])
+                to = y;
+    }
+    if (from < 1913)
+        TBFail(@"Give from_year between 1913 and the present.");
+    a = cpiFor(from, &note, run);
+    b = cpiFor(to, &note, run);
+    if (a <= 0 || b <= 0)
+        TBFail(@"No price index for %d. Years from 1913 to 2024 are built in; later years need an internet connection to the Bureau of Labor Statistics.", a <= 0 ? from : to);
+    return [NSString stringWithFormat:@"$%@ in %d has the buying power of $%.2f in %d (prices changed by %+.1f%%; CPI-U %.1f to %.1f).%@",
+        rateText(amount), from, amount * b / a, to, (b / a - 1) * 100, a, b, note ? [@" " stringByAppendingString:note] : @""];
+}
+
 @implementation TBBuiltin
 
 + (BOOL)knows:(NSString *)name
 {
-    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", nil] containsObject:name];
+    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", nil] containsObject:name];
 }
 
 + (NSDictionary *)listTools:(NSString *)name
@@ -440,6 +620,15 @@ static NSString *displayReport(void)
             tool(@"sha256", @"SHA-256 of a piece of text, as hex.", [NSArray arrayWithObject:@"text"], text, [NSArray arrayWithObject:@"text"]),
             tool(@"slow_task", @"Wait for a number of seconds (up to 120), then report. For testing Stop and long runs.", [NSArray arrayWithObject:@"seconds"], [NSArray arrayWithObject:@"number"], none),
             tool(@"always_fails", @"A tool that always returns an error. For testing error handling.", none, none, none), nil];
+    else if ([name isEqualToString:@"currency"])
+        tools = [NSArray arrayWithObjects:
+            tool(@"convert_currency", @"Convert an amount between two currencies at the latest published rate, or the rate on a past date (back to 1999 for most currencies; central bank data, updated on working days).",
+                [NSArray arrayWithObjects:@"amount", @"from", @"to", @"date", nil], [NSArray arrayWithObjects:@"number", @"string", @"string", @"string", nil], [NSArray arrayWithObjects:@"from", @"to", nil]),
+            tool(@"list_currencies", @"The currency codes and names this service knows.", none, none, none), nil];
+    else if ([name isEqualToString:@"inflation"])
+        tools = [NSArray arrayWithObjects:
+            tool(@"inflation_adjust", @"What an amount of US dollars from one year is worth in another year, by the US consumer price index (CPI-U): yearly averages from 1913. to_year defaults to the latest year with data.",
+                [NSArray arrayWithObjects:@"amount", @"from_year", @"to_year", nil], [NSArray arrayWithObjects:@"number", @"number", @"number", nil], [NSArray arrayWithObjects:@"amount", @"from_year", nil]), nil];
     else if ([name isEqualToString:@"weather"])
         tools = [NSArray arrayWithObjects:
             tool(@"current_weather", @"Current conditions from wttr.in for a place (a city, postcode or 'City,Country').", [NSArray arrayWithObject:@"place"], text, [NSArray arrayWithObject:@"place"]),
@@ -560,6 +749,14 @@ static NSString *displayReport(void)
         }
         if ([name isEqualToString:@"always_fails"])
             TBFail(@"this tool always fails, to show how errors look");
+    } else if ([server isEqualToString:@"currency"]) {
+        if ([name isEqualToString:@"convert_currency"])
+            return convertCurrency(args, run);
+        if ([name isEqualToString:@"list_currencies"])
+            return listCurrencies(run);
+    } else if ([server isEqualToString:@"inflation"]) {
+        if ([name isEqualToString:@"inflation_adjust"])
+            return inflationAdjust(args, run);
     } else if ([server isEqualToString:@"weather"]) {
         id data = weatherData(args, run);
         if ([name isEqualToString:@"current_weather"]) {
