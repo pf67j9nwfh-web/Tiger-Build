@@ -52,7 +52,11 @@ static NSString *addresses(void)
     for (p = list; p; p = p->ifa_next) {
         char text[32];
         struct sockaddr_in *a;
+        const char *n = p->ifa_name;
         if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET || !(p->ifa_flags & IFF_UP))
+            continue;
+        /* virtual adapters (Parallels, VMware, VirtualBox, tunnels, bridges) are not how another computer reaches this Mac */
+        if (!strncmp(n, "vnic", 4) || !strncmp(n, "vmnet", 5) || !strncmp(n, "vboxnet", 7) || !strncmp(n, "bridge", 6) || !strncmp(n, "utun", 4) || !strncmp(n, "tun", 3) || !strncmp(n, "tap", 3))
             continue;
         a = (struct sockaddr_in *)p->ifa_addr;
         if (ntohl(a->sin_addr.s_addr) >> 24 == 127 || !inet_ntop(AF_INET, &a->sin_addr, text, sizeof text))
