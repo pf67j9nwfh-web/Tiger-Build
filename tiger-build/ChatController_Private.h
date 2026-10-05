@@ -31,6 +31,8 @@
 - (void)commanderAutostart:(id)sender;
 - (void)commanderIP:(id)sender;
 - (NSDictionary *)commanderCommand:(NSString *)command;
+- (BOOL)administratorPasswordSaved;
+- (BOOL)saveAdministratorPassword;
 - (void)showIntegrations:(id)sender;
 - (void)exportAllSettings:(id)sender;
 - (void)importAllSettings:(id)sender;
@@ -71,7 +73,6 @@
 - (NSString *)defaultModelForProvider:(NSString *)provider;
 - (NSString *)providerNote:(NSString *)provider;
 - (NSArray *)workspaceNamesOnDisk;
-- (void)ensureCommanderInstalled;
 - (void)refreshCommanderStatus;
 @end
 

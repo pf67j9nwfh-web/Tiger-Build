@@ -39,6 +39,9 @@
 - (void)closeTools;
 @end
 
+/* The bundled Commander program. */
+NSString *TBCommanderProgram(void);
+
 @interface TBSession (Commander)
 /* After Commander is installed or changed: look at its tools again. */
 + (void)forgetCommanderTools;

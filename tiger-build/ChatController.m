@@ -1272,10 +1272,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         item = [[[NSMenuItem alloc] initWithTitle:@"Commander: Off" action:NULL keyEquivalent:@""] autorelease];
         [item setEnabled:NO];
         [menu addItem:item];
-        titles = [NSArray arrayWithObjects:@"Start", @"Stop", @"Start at Login", @"This Mac's IP Addresses...", nil];
+        titles = [NSArray arrayWithObjects:@"Start", @"Stop", @"Allow Other Computers", @"This Mac's IP Addresses...", nil];
         actions[0] = @selector(commanderStart:);
         actions[1] = @selector(commanderStop:);
-        actions[2] = @selector(commanderAutostart:);
+        actions[2] = @selector(commanderRemote:);
         actions[3] = @selector(commanderIP:);
         for (i = 0; i < 4; i++) {
             if (i == 2)
@@ -1791,7 +1791,6 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [NSApp activateIgnoringOtherApps:YES];
     [window makeFirstResponder:input];
     [window display];
-    [self ensureCommanderInstalled];
     [self startSudoBroker];
     [TBPricing start];
     [TBIntegrations installExamples];

@@ -83,6 +83,7 @@
 {
     if (![panel isVisible])
         [panel center];
+    [panel setLevel:NSFloatingWindowLevel];
     [panel makeKeyAndOrderFront:nil];
     [panel makeFirstResponder:field];
     [[field currentEditor] selectAll:nil];
@@ -269,6 +270,7 @@
     [panel setDefaultButtonCell:[ok cell]];
     [panel center];
     [panel makeFirstResponder:view];
+    [panel setLevel:NSFloatingWindowLevel];
     result = [NSApp runModalForWindow:panel];
     [panel orderOut:nil];
     if (result == 1) {

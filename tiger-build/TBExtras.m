@@ -1,6 +1,7 @@
 #import "TBExtras.h"
 #import "TBEngine.h"
 #import "TBIntegrations.h"
+#import "TBSSH.h"
 #import "TBBuiltin.h"
 #import "TBMCP.h"
 #import "TBMedia.h"
@@ -361,7 +362,14 @@ static NSString *imageSearch(NSString *query, TBRun *run)
                 NSDictionary *env = TBDictionary(server, @"env");
                 if ([[command lowercaseString] hasPrefix:@"http://"] || [[command lowercaseString] hasPrefix:@"https://"])
                     client = [TBMCPHTTPClient clientWithURL:command token:TBString(env, @"MCP_AUTH_TOKEN")];
-                else
+                else if ([command hasPrefix:@"ssh:"]) {
+                    NSString *problem = nil;
+                    NSArray *remote = TBArray(server, @"args");
+                    NSArray *ssh = [TBSSH argumentsForTarget:[command substringFromIndex:4] remote:[remote count] ? [remote componentsJoinedByString:@" "] : nil problem:&problem];
+                    if (!ssh)
+                        TBFail(@"%@", problem);
+                    client = [TBMCPClient clientWithPath:@"/usr/bin/ssh" arguments:ssh environment:nil label:sid];
+                } else
                     client = [TBMCPClient clientWithPath:command arguments:TBArray(server, @"args") environment:env label:sid];
                 [run attach:client];
                 [client start];
@@ -381,7 +389,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
                     [owners setObject:key forKey:alias];
                     copy = [NSMutableDictionary dictionaryWithDictionary:f];
                     [copy setObject:alias forKey:@"name"];
-                    [copy setObject:[NSString stringWithFormat:@"[MCP %@] %@", sid, TBString(f, @"description")] forKey:@"description"];
+                    [copy setObject:[NSString stringWithFormat:@"[MCP %@%@] %@", sid, [TBString(server, @"description") length] ? [@": " stringByAppendingString:TBString(server, @"description")] : @"", TBString(f, @"description")] forKey:@"description"];
                     [tools addObject:copy];
                 }
             }

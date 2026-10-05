@@ -1,6 +1,5 @@
 #import "TBSession.h"
 #import "TBIntegrations.h"
-#import "TBSSH.h"
 #import "TBExtras.h"
 #import "TBOutputs.h"
 #import "TBJSON.h"
@@ -406,8 +405,6 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (NSString *)machine
 {
-    if ([TBSSH enabled])
-        return [NSString stringWithFormat:@"the Mac at %@", [TBSSH host]];
     return [TBString(client, @"machine") length] ? TBString(client, @"machine") : @"a Mac";
 }
 
@@ -418,15 +415,11 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (NSString *)account
 {
-    if ([TBSSH enabled])
-        return [TBSSH user];
     return NSUserName();
 }
 
 - (NSString *)home
 {
-    if ([TBSSH enabled])
-        return [TBSSH home];
     return NSHomeDirectory();
 }
 
@@ -455,6 +448,8 @@ static NSArray *withoutPictures(NSArray *messages)
     }
     if ((CFBooleanRef)[servers objectForKey:@"consult"] != kCFBooleanTrue)
         [skip addObject:@"consult"];
+    if ((CFBooleanRef)[servers objectForKey:@"sudo"] != kCFBooleanTrue)
+        [skip addObject:@"sudo"];
     return skip;
 }
 
@@ -839,17 +834,11 @@ static BOOL truthyValue(id v)
 
 static NSMutableDictionary *toolCache = nil;      /* tools, at, offline */
 
-/* TBCommanderPath and TBCommanderPython in the preferences replace the installed Commander and the system Python, for tests. */
-static NSString *commanderPath(void)
+/* The Commander that came with the app. TBCommanderPath in the preferences replaces it, for tests. */
+NSString *TBCommanderProgram(void)
 {
     NSString *over = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBCommanderPath"];
-    return [over length] ? over : [NSHomeDirectory() stringByAppendingPathComponent:@"ppc-commander/ppc_commander.py"];
-}
-
-static NSString *commanderPython(void)
-{
-    NSString *over = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBCommanderPython"];
-    return [over length] ? over : @"/usr/bin/python";
+    return [over length] ? over : [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"ppc-commander"];
 }
 
 @implementation TBSession (Commander)
@@ -874,28 +863,15 @@ static NSString *commanderPython(void)
 
 - (TBMCPClient *)startCommanderWithRoot:(NSString *)root
 {
-    NSMutableArray *args = [NSMutableArray arrayWithObjects:@"LANG=C", @"LC_ALL=C", nil];
-    NSString *program = @"/usr/bin/env";
+    NSMutableDictionary *env = [NSMutableDictionary dictionaryWithObjectsAndKeys:@"C", @"LANG", @"C", @"LC_ALL", @"1", @"TB_LOCAL", nil];
     TBMCPClient *started;
-    if ([TBSSH enabled]) {
-        /* Commander on another Mac: the same program, started over SSH. */
-        NSString *problem = nil, *remote;
-        NSArray *ssh;
-        remote = [NSString stringWithFormat:@"exec /usr/bin/env LANG=C LC_ALL=C %@/usr/bin/python -u \"$HOME/ppc-commander/ppc_commander.py\"",
-            [root length] ? [NSString stringWithFormat:@"TB_WORKSPACE_ROOT='%@' ", [[root componentsSeparatedByString:@"'"] componentsJoinedByString:@"'\\''"]] : @""];
-        ssh = [TBSSH commandArgumentsRunning:remote problem:&problem];
-        if (!ssh)
-            TBFail(@"%@", problem);
-        program = @"/usr/bin/ssh";
-        args = [NSMutableArray arrayWithArray:ssh];
-    } else {
-        if (![[NSFileManager defaultManager] fileExistsAtPath:commanderPath()])
-            TBFail(@"Commander is not installed on this Mac. Quit and reopen Tiger Build to install it.");
-        if ([root length])
-            [args addObject:[@"TB_WORKSPACE_ROOT=" stringByAppendingString:root]];
-        [args addObjectsFromArray:[NSArray arrayWithObjects:commanderPython(), @"-u", commanderPath(), nil]];
-    }
-    started = [TBMCPClient clientWithPath:program arguments:args environment:nil label:@"Commander"];
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:TBCommanderProgram()])
+        TBFail(@"Commander is missing from the Tiger Build application. Reinstall Tiger Build.");
+    if ([root length])
+        [env setObject:root forKey:@"TB_WORKSPACE_ROOT"];
+    if (![[self skipKeys] containsObject:@"sudo"])
+        [env setObject:@"1" forKey:@"TB_SUDO"];
+    started = [TBMCPClient clientWithPath:TBCommanderProgram() arguments:[NSArray array] environment:env label:@"Commander"];
     [run attach:started];
     @try {
         [started start];

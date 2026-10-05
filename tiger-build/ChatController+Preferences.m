@@ -1,5 +1,4 @@
 #import "ChatController_Private.h"
-#import "TBSSH.h"
 #import "TBSession.h"
 
 /* Preferences. Keys are kept in the Keychain by the engine, which only ever reports whether each key is saved, never the key itself.
@@ -14,7 +13,6 @@ static NSString *trimmedValue(NSTextField *field)
 
 @interface ChatController (PreferencesPrivate)
 - (void)loadSSHFields;
-- (void)setSSHStatus:(NSString *)text;
 - (void)saveSSHFields;
 - (void)fillNewChatModelPopup;
 - (void)requestSettings;
@@ -463,40 +461,32 @@ static NSString *trimmedValue(NSTextField *field)
     /* ---- Commander ---- */
     tab = [self preferencesTab:@"Commander" in:tabs];
     y = 292;
-    [self preferencesNote:@"Commander runs on this Mac. To run the tools on a different Mac over SSH instead, enter its address and account, then follow the steps: "
-        @"Copy Key (add it to that Mac's ~/.ssh/authorized_keys), Trust Host, Install (copies Commander there), Test. Leave the address empty to use this Mac."
+    [self preferencesNote:@"Commander is the part of Tiger Build that reads and edits files and runs commands on this Mac for a chat. It runs only while a chat uses it, "
+        @"and nothing listens on the network. To use another computer's files and shell, add it under Tool Settings, MCP Servers (Commander on another computer)."
         frame:NSMakeRect(16, y - 40, 520, 58) inView:tab];
-    y -= 82;
-    [self preferencesRow:@"Other Mac's address" key:@"ssh_host" y:y secure:NO width:190
-        help:@"The IP address or name of the Mac whose files and shell the model uses. Empty means this Mac."
-        removable:nil inView:tab];
-    y -= 32;
-    [self preferencesRow:@"Account (short name)" key:@"ssh_user" y:y secure:NO width:190
-        help:@"The short user name Commander signs in as on that Mac, such as thomas."
-        removable:nil inView:tab];
-    y -= 32;
-    [self preferencesRow:@"Home folder (optional)" key:@"ssh_home" y:y secure:NO width:190
-        help:@"Only needed if the account's home folder on that Mac is not /Users/NAME."
-        removable:nil inView:tab];
-    y -= 40;
-    [self preferencesButton:@"Copy Key" frame:NSMakeRect(16, y, 84, 28) action:@selector(copySSHKey:) inView:tab];
-    [self preferencesButton:@"Trust Host..." frame:NSMakeRect(104, y, 104, 28) action:@selector(trustSSHHost:) inView:tab];
-    [self preferencesButton:@"Install" frame:NSMakeRect(212, y, 80, 28) action:@selector(installSSHCommander:) inView:tab];
-    [self preferencesButton:@"Test" frame:NSMakeRect(296, y, 64, 28) action:@selector(testSSH:) inView:tab];
-    [self preferencesButton:@"Use This Mac" frame:NSMakeRect(364, y, 118, 28) action:@selector(disconnectCommander:) inView:tab];
-    note = [self preferencesNote:@"" frame:NSMakeRect(16, 76, 520, 34) inView:tab];
-    [prefsFields setObject:note forKey:@"ssh.status"];
-    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, 46, 400, 20)] autorelease];
+    y -= 76;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Allow other computers to use Commander on this Mac"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [button setToolTip:@"Off by default. Another computer running Tiger Build can then start Commander here over SSH and read, change and run things as you. Needs Remote Login in System Preferences, Sharing."];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"remote.check"];
+    y -= 22;
+    [self preferencesNote:@"Leave it off to use Commander only from Tiger Build on this Mac; then no sharing service needs to be on."
+        frame:NSMakeRect(34, y - 12, 502, 30) inView:tab];
+    y -= 62;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 400, 20)] autorelease];
     [button setButtonType:NSSwitchButton];
     [button setTitle:@"Let agents run administrator (sudo) commands on this Mac"];
     [button setFont:[NSFont systemFontOfSize:12]];
     [button setTarget:self];
     [button setAction:@selector(toggleSudoMode:)];
-    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain, so commands with sudo just work."];
+    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain, so commands with sudo just work. A chat can also switch it on from its Tools menu."];
     [tab addSubview:button];
     [prefsFields setObject:button forKey:@"sudo.check"];
-    [self preferencesButton:@"Set Password..." frame:NSMakeRect(396, 42, 140, 28) action:@selector(setAdministratorPassword:) inView:tab];
-    note = [self preferencesLabel:@"" frame:NSMakeRect(34, 20, 502, 16) inView:tab];
+    [self preferencesButton:@"Set Password..." frame:NSMakeRect(396, y - 4, 140, 28) action:@selector(setAdministratorPassword:) inView:tab];
+    note = [self preferencesLabel:@"" frame:NSMakeRect(34, y - 26, 502, 16) inView:tab];
     [note setFont:[NSFont systemFontOfSize:11]];
     [prefsFields setObject:note forKey:@"sudo.status"];
 
@@ -510,113 +500,24 @@ static NSString *trimmedValue(NSTextField *field)
     [button setKeyEquivalent:@"\033"];
 }
 
-/* ---- Commander on another Mac, over SSH ---- */
-
-- (void)setSSHStatus:(NSString *)text
-{
-    [[prefsFields objectForKey:@"ssh.status"] setStringValue:text ? text : @""];
-    [[prefsFields objectForKey:@"ssh.status"] displayIfNeeded];
-}
+/* ---- Commander access ---- */
 
 - (void)loadSSHFields
 {
-    [[prefsFields objectForKey:@"ssh_host"] setStringValue:[TBSSH host]];
-    [[prefsFields objectForKey:@"ssh_user"] setStringValue:[TBSSH user]];
-    [[prefsFields objectForKey:@"ssh_home"] setStringValue:[[NSUserDefaults standardUserDefaults] stringForKey:@"TBSSHHome"] ? [[NSUserDefaults standardUserDefaults] stringForKey:@"TBSSHHome"] : @""];
-    [self setSSHStatus:[TBSSH enabled] ? [NSString stringWithFormat:@"Commander runs on %@.", [TBSSH host]] : @"Commander runs on this Mac."];
+    [[prefsFields objectForKey:@"remote.check"] setState:[[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0 ? NSOnState : NSOffState];
 }
 
-/* Keep what is typed. An empty address means this Mac. */
 - (void)saveSSHFields
 {
-    NSString *host = trimmedValue([prefsFields objectForKey:@"ssh_host"]);
-    NSString *user = trimmedValue([prefsFields objectForKey:@"ssh_user"]);
-    NSString *home = trimmedValue([prefsFields objectForKey:@"ssh_home"]);
-    if (![host length])
-        [TBSSH clear];
-    else
-        [TBSSH setHost:host user:user home:home];
-    [TBSession forgetCommanderTools];
-    [self refreshToolCatalog];
-}
-
-- (BOOL)sshFieldsReady
-{
-    if (![trimmedValue([prefsFields objectForKey:@"ssh_host"]) length] || ![trimmedValue([prefsFields objectForKey:@"ssh_user"]) length]) {
-        [self setSSHStatus:@"Enter the other Mac's address and account first."];
-        return NO;
-    }
-    [self saveSSHFields];
-    return YES;
-}
-
-- (void)copySSHKey:(id)sender
-{
-    NSString *key = [TBSSH publicKey];
-    (void)sender;
-    if (!key) {
-        [self setSSHStatus:@"Tiger Build could not make its SSH key."];
+    BOOL want = [[prefsFields objectForKey:@"remote.check"] state] == NSOnState;
+    BOOL have = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
+    if (want == have)
         return;
-    }
-    [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
-    [[NSPasteboard generalPasteboard] setString:key forType:NSStringPboardType];
-    [self setSSHStatus:@"Key copied. Add it as a line in ~/.ssh/authorized_keys on the other Mac, then choose Trust Host."];
-}
-
-- (void)trustSSHHost:(id)sender
-{
-    NSString *problem = nil, *print;
-    (void)sender;
-    if (![self sshFieldsReady])
+    if (want && NSRunAlertPanel(@"Allow other computers to use this Mac?",
+        @"Another computer that can sign in to this Mac over SSH will be able to read and change files and run commands here as you, through Commander. "
+        @"Turn it on only for computers you control.", @"Allow", @"Cancel", nil) != NSAlertDefaultReturn)
         return;
-    [self setSSHStatus:@"Looking at the other Mac's key..."];
-    print = [TBSSH fingerprintOfHost:[TBSSH host] problem:&problem];
-    if (!print) {
-        [self setSSHStatus:problem];
-        return;
-    }
-    if (NSRunAlertPanel(@"Trust this Mac?", @"%@ identifies itself with this key:\n\n%@\n\nTrust it only if this matches the other Mac. "
-        @"Tiger Build will refuse to connect if the key ever changes.", @"Trust", @"Cancel", nil, [TBSSH host], print) != NSAlertDefaultReturn) {
-        [self setSSHStatus:@"Not trusted."];
-        return;
-    }
-    if ([TBSSH trustHost:[TBSSH host] problem:&problem])
-        [self setSSHStatus:@"Trusted. Now choose Install, or Test."];
-    else
-        [self setSSHStatus:problem];
-}
-
-- (void)installSSHCommander:(id)sender
-{
-    NSString *why;
-    (void)sender;
-    if (![self sshFieldsReady])
-        return;
-    [self setSSHStatus:@"Copying Commander to the other Mac..."];
-    why = [TBSSH installCommanderFrom:[NSHomeDirectory() stringByAppendingPathComponent:@"ppc-commander/ppc_commander.py"]];
-    [self setSSHStatus:why ? why : @"Commander is installed on the other Mac. Choose Test."];
-}
-
-- (void)testSSH:(id)sender
-{
-    NSString *why;
-    (void)sender;
-    if (![self sshFieldsReady])
-        return;
-    [self setSSHStatus:@"Testing..."];
-    why = [TBSSH test];
-    [self setSSHStatus:why ? why : @"Connected. Commander will run on that Mac."];
-    [TBSession forgetCommanderTools];
-    [self refreshToolCatalog];
-}
-
-- (void)disconnectCommander:(id)sender
-{
-    (void)sender;
-    [TBSSH clear];
-    [TBSession forgetCommanderTools];
-    [self loadSSHFields];
-    [self refreshToolCatalog];
+    [self commanderCommand:want ? @"remote-on" : @"remote-off"];
 }
 
 - (void)showPreferences:(id)sender
@@ -626,6 +527,7 @@ static NSString *trimmedValue(NSTextField *field)
         [self buildPreferencesWindow];
     [self loadPreferenceForm];
     [self refreshSudoStatus];
+    [prefsWindow setLevel:NSFloatingWindowLevel];
     [prefsWindow makeKeyAndOrderFront:nil];
 }
 

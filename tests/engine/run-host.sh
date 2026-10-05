@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the engine tests with the host compiler and runs them against mock_services.py and fake_commander.py.
+# Builds the engine tests with the host compiler and runs them against mockservices and fakecommander.
 # Run on a current Mac: sh tests/engine/run-host.sh. Needs third_party/mbedtls/build/libmbedtls-host.a (third_party/mbedtls/build-host.sh)
 # and the libwebp sources (third_party/libwebp/fetch.sh).
 set -e
@@ -17,15 +17,20 @@ for f in $WEBP/src/dec/*.c $WEBP/src/dsp/*.c $WEBP/src/utils/*.c $WEBP/src/demux
   clang -O1 -w -DHAVE_CONFIG_H -I"$OUT/cfg" -I$WEBP -I$WEBP/src -c $f -o "$OUT/webp/$(basename $f .c).o"
 done
 COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m"
+COMMON_NO_MCP="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m"
 LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices $TLS/build/libmbedtls-host.a -lz"
 build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
 build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
-build extras ../tests/engine/extrastest.m TBBuiltin.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
+build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBHEIC.m $COMMON "$OUT"/webp/*.o
 build prov ../tests/engine/provtest.m TBProviders.m $COMMON
 build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o
+build mock ../tests/engine/mockservices.m TBJSON.m
+clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
+make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"
+build commander ../tests/engine/commandertest.m TBMCP.m $COMMON_NO_MCP
 PORT=8795
-python3 "$HERE/mock_services.py" $PORT > /dev/null 2>&1 &
+"$OUT/mock" $PORT > /dev/null 2>&1 &
 MOCK=$!
 trap 'kill $MOCK 2>/dev/null' EXIT
 sleep 1
@@ -34,6 +39,7 @@ status=0
 for t in speech outputs; do "$OUT/$t" $( [ $t = speech ] && echo $PORT || echo "$OUT/files" ) || status=1; done
 "$OUT/extras" $PORT || status=1
 "$OUT/prov" $PORT || status=1
-"$OUT/session" $PORT 127.0.0.1 "$HERE/fake_commander.py" /usr/bin/python3 || status=1
+"$OUT/commander" "$OUT/ppc-commander" || status=1
+"$OUT/session" $PORT 127.0.0.1 "$OUT/fakecommander" || status=1
 [ $status = 0 ] && echo "all engine tests passed" || echo "SOME ENGINE TESTS FAILED"
 exit $status

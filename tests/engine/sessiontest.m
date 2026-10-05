@@ -1,4 +1,4 @@
-/* Runs whole chat turns (model, tool loop, Commander) against mock_services.py and fake_commander.py.
+/* Runs whole chat turns (model, tool loop, Commander) against mockservices and fakecommander.
    sessiontest PORT [HOST]   from tiger-build/ */
 #import <Foundation/Foundation.h>
 #import "TBSession.h"
@@ -118,12 +118,9 @@ int main(int argc, char **argv)
     [d setObject:[base stringByAppendingString:@"/loop-claude"] forKey:@"TBBaseURL.claude"];
     [d setObject:[base stringByAppendingString:@"/loop-openai"] forKey:@"TBBaseURL.chatgpt"];
     [d setObject:[base stringByAppendingString:@"/grok"] forKey:@"TBBaseURL.grok"];
-    [d setObject:@"/usr/bin/python3" forKey:@"TBCommanderPython"];
-    [d setObject:[([dir length] ? dir : @".") stringByAppendingString:@"/fake_commander.py"] forKey:@"TBCommanderPath"];
+        [d setObject:[([dir length] ? dir : @".") stringByAppendingString:@"/fakecommander"] forKey:@"TBCommanderPath"];
     if (argc > 3)
         [d setObject:[NSString stringWithUTF8String:argv[3]] forKey:@"TBCommanderPath"];
-    if (argc > 4)
-        [d setObject:[NSString stringWithUTF8String:argv[4]] forKey:@"TBCommanderPython"];
     unlink([logPath UTF8String]);
     fetch(@"/reset");
 
@@ -147,7 +144,7 @@ int main(int argc, char **argv)
     }
     {
         NSString *log = [NSString stringWithContentsOfFile:logPath];
-        expectThat([log rangeOfString:@"tools/call"].location != NSNotFound && [log rangeOfString:@"\"timeout_ms\": 15000"].location != NSNotFound, @"commander: the call arrives with the wait capped at 15 s");
+        expectThat([log rangeOfString:@"tools/call"].location != NSNotFound && [log rangeOfString:@"\"timeout_ms\":15000"].location != NSNotFound, @"commander: the call arrives with the wait capped at 15 s");
     }
 
     /* the same through an OpenAI-style service */
@@ -219,7 +216,7 @@ int main(int argc, char **argv)
 
     /* Commander that cannot be started: no Commander tools, said so */
     fetch(@"/reset");
-    [d setObject:@"/nonexistent/ppc_commander.py" forKey:@"TBCommanderPath"];
+    [d setObject:@"/nonexistent/ppc-commander" forKey:@"TBCommanderPath"];
     [TBSession forgetCommanderTools];
     f = turn(@"claude", @"claude-sonnet-5", nil, nil, NULL);
     seen = fetch(@"/seen");

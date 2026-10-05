@@ -35,7 +35,7 @@ static NSArray *validated(id list, BOOL forceOff)
         TBFail(@"At most 24 MCP servers allowed.");
     for (i = 0; i < [list count]; i++) {
         id row = [list objectAtIndex:i];
-        NSString *name, *command, *title;
+        NSString *name, *command, *title, *description;
         NSArray *args;
         NSDictionary *env;
         NSEnumerator *each;
@@ -46,8 +46,8 @@ static NSArray *validated(id list, BOOL forceOff)
         if (!validServerId(name) || [ids containsObject:name])
             TBFail(@"Server IDs must be unique letters/digits/underscore, max 20 characters.");
         command = TBString(row, @"command");
-        if (!([command hasPrefix:@"/"] || [command hasPrefix:@"builtin:"] || [[command lowercaseString] hasPrefix:@"https://"] || [[command lowercaseString] hasPrefix:@"http://"]))
-            TBFail(@"Use an absolute program path, or an http:// or https:// address.");
+        if (!([command hasPrefix:@"/"] || [command hasPrefix:@"builtin:"] || [command hasPrefix:@"ssh:"] || [[command lowercaseString] hasPrefix:@"https://"] || [[command lowercaseString] hasPrefix:@"http://"]))
+            TBFail(@"Use an absolute program path, ssh:user@address, or an http:// or https:// address.");
         args = TBValue(row, @"args") ? TBValue(row, @"args") : [NSArray array];
         if (![args isKindOfClass:[NSArray class]])
             TBFail(@"Arguments must be a string array.");
@@ -67,8 +67,11 @@ static NSArray *validated(id list, BOOL forceOff)
         title = TBString(row, @"title");
         if ([title length] > 60)
             TBFail(@"A server name must be text of at most 60 characters.");
+        description = TBTrim(TBString(row, @"description"));
+        if ([description length] > 1000)
+            description = [description substringToIndex:1000];
         [ids addObject:name];
-        [clean addObject:[NSDictionary dictionaryWithObjectsAndKeys:name, @"id", TBTrim(title), @"title", command, @"command", args, @"args", env, @"env",
+        [clean addObject:[NSDictionary dictionaryWithObjectsAndKeys:name, @"id", TBTrim(title), @"title", command, @"command", args, @"args", env, @"env", description, @"description",
             [NSNumber numberWithBool:forceOff ? NO : TBTruth(row, @"enabled")], @"enabled", [NSNumber numberWithBool:TBTruth(row, @"approval")], @"approval", nil]];
     }
     return clean;

@@ -165,6 +165,7 @@ static NSString *kVoice = @"TBVoiceName";
     [[panel contentView] addSubview:cancel];
     [panel setDefaultButtonCell:[ok cell]];
     [panel center];
+    [panel setLevel:NSFloatingWindowLevel];
     result = [NSApp runModalForWindow:panel];
     [panel orderOut:nil];
     if (result == 1) {

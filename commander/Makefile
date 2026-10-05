@@ -5,9 +5,10 @@ SDKX86 ?= $(if $(wildcard /Developer/SDKs/MacOSX10.6.sdk),/Developer/SDKs/MacOSX
 CC32 ?= $(if $(wildcard /usr/bin/gcc-4.0),gcc-4.0,gcc)
 CC64 ?= $(if $(wildcard /usr/bin/gcc-4.2),gcc-4.2,gcc)
 ARCHS64 ?= $(if $(wildcard $(SDK64)),ppc64 x86_64,)
-SRC := CMCore.m CMFiles.m CMProcess.m CMVcs.m CMServer.m ../tiger-build/TBJSON.m
-HDR := CMCore.h ../tiger-build/TBJSON.h ../tiger-build/TBCompat.h
-FLAGS := -Wall -Wno-deprecated-declarations -O2 -fobjc-exceptions -I. -I../tiger-build -framework Foundation
+TB ?= ../tiger-build
+SRC := CMCore.m CMFiles.m CMProcess.m CMVcs.m CMServer.m $(TB)/TBJSON.m
+HDR := CMCore.h $(TB)/TBJSON.h $(TB)/TBCompat.h
+FLAGS := -Wall -Wno-deprecated-declarations -O2 -fobjc-exceptions -I. -I$(TB) -framework Foundation
 
 ppc-commander: $(SRC) $(HDR)
 	mkdir -p build

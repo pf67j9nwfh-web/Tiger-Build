@@ -70,35 +70,6 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
 
 @implementation TBSSH
 
-+ (NSString *)host { NSString *v = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBSSHHost"]; return v ? TBTrim(v) : @""; }
-+ (NSString *)user { NSString *v = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBSSHUser"]; return v ? TBTrim(v) : @""; }
-+ (BOOL)enabled { return [[self host] length] > 0 && [[self user] length] > 0; }
-
-+ (NSString *)home
-{
-    NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBSSHHome"];
-    NSString *h = saved ? TBTrim(saved) : @"";
-    return [h length] ? h : [@"/Users/" stringByAppendingString:[self user]];
-}
-
-+ (void)setHost:(NSString *)host user:(NSString *)user home:(NSString *)home
-{
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    [d setObject:TBTrim(host) forKey:@"TBSSHHost"];
-    [d setObject:TBTrim(user) forKey:@"TBSSHUser"];
-    [d setObject:TBTrim(home) forKey:@"TBSSHHome"];
-    [d synchronize];
-}
-
-+ (void)clear
-{
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    [d removeObjectForKey:@"TBSSHHost"];
-    [d removeObjectForKey:@"TBSSHUser"];
-    [d removeObjectForKey:@"TBSSHHome"];
-    [d synchronize];
-}
-
 + (NSString *)publicKey
 {
     NSString *pub = [keyPath() stringByAppendingString:@".pub"];
@@ -180,84 +151,56 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
     run(@"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-R", TBTrim(host), @"-f", knownPath(), nil], &status, 15);
 }
 
-+ (NSArray *)baseArguments
+/* "user@host", from what a server entry holds after ssh: */
++ (NSArray *)argumentsForTarget:(NSString *)target remote:(NSString *)remoteCommand problem:(NSString **)problem
 {
-    return [NSArray arrayWithObjects:@"-T", @"-i", keyPath(), @"-o", @"IdentitiesOnly=yes", @"-o", @"BatchMode=yes", @"-o", @"PreferredAuthentications=publickey",
-        @"-o", @"StrictHostKeyChecking=yes", @"-o", [@"UserKnownHostsFile=" stringByAppendingString:knownPath()], @"-o", @"ConnectTimeout=12",
-        @"-o", @"ServerAliveInterval=20", @"-o", @"ServerAliveCountMax=6", [NSString stringWithFormat:@"%@@%@", [self user], [self host]], nil];
-}
-
-+ (NSArray *)commandArgumentsRunning:(NSString *)remoteCommand problem:(NSString **)problem
-{
+    NSRange at = [target rangeOfString:@"@"];
     NSMutableArray *args;
-    if (![self enabled]) {
-        *problem = @"No other Mac is set up.";
-        return nil;
-    }
-    if (![self validHost:[self host]]) {
-        *problem = @"The other Mac's address is not usable.";
+    if (at.location == NSNotFound || at.location == 0 || ![self validHost:[target substringFromIndex:at.location + 1]]) {
+        *problem = @"Give the other computer as user@address.";
         return nil;
     }
     if (![[NSFileManager defaultManager] fileExistsAtPath:knownPath()]) {
-        *problem = @"The other Mac's key is not trusted yet. Open Preferences, Commander, and choose Trust.";
+        *problem = @"The other computer's key is not trusted yet. Edit the server and choose Trust Host.";
         return nil;
     }
-    args = [NSMutableArray arrayWithArray:[self baseArguments]];
-    [args addObject:remoteCommand];
+    args = [NSMutableArray arrayWithObjects:@"-T", @"-i", keyPath(), @"-o", @"IdentitiesOnly=yes", @"-o", @"BatchMode=yes", @"-o", @"PreferredAuthentications=publickey",
+        @"-o", @"StrictHostKeyChecking=yes", @"-o", [@"UserKnownHostsFile=" stringByAppendingString:knownPath()], @"-o", @"ConnectTimeout=12",
+        @"-o", @"ServerAliveInterval=20", @"-o", @"ServerAliveCountMax=6", target, nil];
+    if ([remoteCommand length])
+        [args addObject:remoteCommand];
     return args;
 }
 
-+ (NSString *)installCommanderFrom:(NSString *)localPath
++ (NSString *)hostOfTarget:(NSString *)target
 {
-    NSData *code = [NSData dataWithContentsOfFile:localPath];
-    NSMutableArray *args = [NSMutableArray arrayWithArray:[self baseArguments]];
-    NSTask *task = [[[NSTask alloc] init] autorelease];
-    NSPipe *in = [NSPipe pipe], *out = [NSPipe pipe];
-    NSString *text;
-    if (![code length])
-        return @"The bundled Commander could not be read.";
-    [args addObject:@"mkdir -p \"$HOME/ppc-commander\" && cat > \"$HOME/ppc-commander/ppc_commander.py\" && echo tiger-build-installed"];
-    [task setLaunchPath:@"/usr/bin/ssh"];
-    [task setArguments:args];
-    [task setStandardInput:in];
-    [task setStandardOutput:out];
-    [task setStandardError:out];
-    NS_DURING
-        [task launch];
-        [[in fileHandleForWriting] writeData:code];
-        [[in fileHandleForWriting] closeFile];
-        text = [[[NSString alloc] initWithData:[[out fileHandleForReading] readDataToEndOfFile] encoding:NSUTF8StringEncoding] autorelease];
-        [task waitUntilExit];
-    NS_HANDLER
-        return @"ssh could not be started.";
-    NS_ENDHANDLER
-    return [text rangeOfString:@"tiger-build-installed"].location != NSNotFound ? nil : ([TBTrim(text) length] ? TBTrim(text) : @"The copy failed.");
+    NSRange at = [target rangeOfString:@"@"];
+    return at.location == NSNotFound ? target : [target substringFromIndex:at.location + 1];
 }
 
-+ (NSString *)test
++ (NSString *)testTarget:(NSString *)target
 {
     NSString *problem = nil, *text, *low;
     int status = 0;
-    NSMutableArray *args;
+    NSArray *args;
     if (![self publicKey])
         return @"Tiger Build could not make its SSH key.";
-    if (!([self commandArgumentsRunning:@"echo tiger-build-ok" problem:&problem]))
+    args = [self argumentsForTarget:target remote:@"echo tiger-build-ok" problem:&problem];
+    if (!args)
         return problem;
-    args = [NSMutableArray arrayWithArray:[self baseArguments]];
-    [args addObject:@"echo tiger-build-ok"];
     text = run(@"/usr/bin/ssh", args, &status, 30);
     if (status == 0 && [text rangeOfString:@"tiger-build-ok"].location != NSNotFound)
         return nil;
     low = [text lowercaseString];
     if ([low rangeOfString:@"permission denied"].location != NSNotFound)
-        return [NSString stringWithFormat:@"%@ refused the key. Add Tiger Build's public key to ~/.ssh/authorized_keys on that Mac (use Copy Public Key). "
-            @"A recent macOS may also need ssh-rsa switched on for this key.", [self host]];
-    if ([low rangeOfString:@"host key verification failed"].location != NSNotFound || [low rangeOfString:@"host key"].location != NSNotFound)
-        return @"The other Mac's key changed. If that is expected, choose Forget and Trust again.";
+        return [NSString stringWithFormat:@"%@ refused the key. Add Tiger Build's public key (Copy Key) to ~/.ssh/authorized_keys on that computer. "
+            @"A recent macOS may also need ssh-rsa accepted for this key.", [self hostOfTarget:target]];
+    if ([low rangeOfString:@"host key"].location != NSNotFound)
+        return @"The other computer's key changed. If that is expected, choose Trust Host again.";
     if ([low rangeOfString:@"timed out"].location != NSNotFound || status == -1)
-        return @"The other Mac did not answer. Check its address and that it is awake.";
+        return @"The other computer did not answer. Check its address and that it is awake.";
     if ([low rangeOfString:@"refused"].location != NSNotFound)
-        return @"The other Mac refused the connection. Turn on Remote Login in System Preferences, Sharing.";
+        return @"The other computer refused the connection. Turn on Remote Login in System Preferences, Sharing.";
     return [TBTrim(text) length] ? TBTrim(text) : @"The SSH connection failed.";
 }
 

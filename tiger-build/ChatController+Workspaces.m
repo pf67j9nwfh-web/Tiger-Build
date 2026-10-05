@@ -201,7 +201,7 @@
     [save setTitle:@"Save"];[save setBezelStyle:NSRoundedBezelStyle];[save setKeyEquivalent:@"\r"];[save setTarget:self];[save setAction:@selector(workspaceSettingsSave:)];[view addSubview:save];
     NSButton *cancel=[[[NSButton alloc] initWithFrame:NSMakeRect(388,16,92,30)] autorelease];
     [cancel setTitle:@"Cancel"];[cancel setBezelStyle:NSRoundedBezelStyle];[cancel setKeyEquivalent:@"\033"];[cancel setTarget:self];[cancel setAction:@selector(workspaceSettingsCancel:)];[view addSubview:cancel];
-    [panel makeKeyAndOrderFront:nil];[NSApp runModalForWindow:panel];[panel orderOut:nil];
+    [panel setLevel:NSFloatingWindowLevel];[panel makeKeyAndOrderFront:nil];[NSApp runModalForWindow:panel];[panel orderOut:nil];
     [prefsFields removeObjectForKey:@"ws.limit"];[prefsFields removeObjectForKey:@"ws.root"];
 }
 - (void)workspaceCreateConfirm:(id)sender {(void)sender;[[NSApp modalWindow] makeFirstResponder:nil];[NSApp stopModalWithCode:1];}
@@ -220,7 +220,7 @@
     [cancel setTitle:@"Cancel"];[cancel setBezelStyle:NSRoundedBezelStyle];[cancel setTarget:self];
     [cancel setAction:@selector(workspaceCreateCancel:)];[cancel setKeyEquivalent:@"\033"];[[panel contentView] addSubview:cancel];
     [field setTarget:self];[field setAction:@selector(workspaceCreateConfirm:)];
-    [panel makeKeyAndOrderFront:nil];[panel makeFirstResponder:field];int result=[NSApp runModalForWindow:panel];[panel orderOut:nil];if(result!=1)return;
+    [panel setLevel:NSFloatingWindowLevel];[panel makeKeyAndOrderFront:nil];[panel makeFirstResponder:field];int result=[NSApp runModalForWindow:panel];[panel orderOut:nil];if(result!=1)return;
     NSString *name=[[field stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if(!TBWorkspaceNameOK(name)||[[self workspaceNames] containsObject:name]) {
         NSRunAlertPanel(@"Workspace",@"Use a unique name of 1-60 characters, without slashes or a leading dot.",@"OK",nil,nil);return;

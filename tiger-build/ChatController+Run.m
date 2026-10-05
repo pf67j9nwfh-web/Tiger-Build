@@ -246,7 +246,17 @@ static NSString *newRunId(void)
     NSString *key = [sender representedObject];
     if (!current || !key)
         return;
-    [self setServer:key enabled:![self serverEnabled:key chat:current] chat:current];
+    BOOL on = ![self serverEnabled:key chat:current];
+    if ([key isEqualToString:@"sudo"] && on) {
+        /* Administrator mode needs the password once, and Commander on to use it. */
+        if (![self administratorPasswordSaved] && ![self saveAdministratorPassword]) {
+            [self rebuildToolsMenu];
+            return;
+        }
+        [self setServer:@"commander" enabled:YES chat:current];
+    } else if ([key isEqualToString:@"commander"] && !on)
+        [self setServer:@"sudo" enabled:NO chat:current];
+    [self setServer:key enabled:on chat:current];
     [self rebuildToolsMenu];
     [self saveStore];
     [self updateContextReadout];

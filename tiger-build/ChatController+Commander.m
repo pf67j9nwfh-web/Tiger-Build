@@ -1,180 +1,203 @@
 #import "ChatController_Private.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <ifaddrs.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/select.h>
+#import "TBSession.h"
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <signal.h>
 
-/* The Commander menu (ppc-commander on this Mac) and keeping ppc-commander installed and current. */
+/* The Commander menu. Commander is the program inside the app that lets chats read files and run commands on this Mac.
+   It starts with each chat that uses it, and nothing listens on the network. Another computer can use this Mac's
+   Commander over SSH only when "Allow Other Computers" is on. The state is a few marker files in
+   ~/Library/Application Support/Tiger Build/commander: disabled (Stop), remote-access (Allow Other Computers). */
+
+static NSString *stateFolder(void)
+{
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/commander"];
+}
+
+static NSString *marker(NSString *name)
+{
+    return [stateFolder() stringByAppendingPathComponent:name];
+}
+
+static void setMarker(NSString *name, BOOL on)
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSDictionary *private = [NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0700] forKey:NSFilePosixPermissions];
+    if (on) {
+        NSString *folder = stateFolder();
+        [fm createDirectoryAtPath:[[folder stringByDeletingLastPathComponent] stringByDeletingLastPathComponent] attributes:nil];
+        [fm createDirectoryAtPath:[folder stringByDeletingLastPathComponent] attributes:nil];
+        [fm createDirectoryAtPath:folder attributes:private];
+        [@"on\n" writeToFile:marker(name) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    } else
+        [fm removeFileAtPath:marker(name) handler:nil];
+}
+
+/* the IPv4 addresses of this Mac other than loopback */
+static NSString *addresses(void)
+{
+    struct ifaddrs *list = NULL, *p;
+    NSMutableArray *found = [NSMutableArray array];
+    if (getifaddrs(&list) != 0)
+        return @"";
+    for (p = list; p; p = p->ifa_next) {
+        char text[32];
+        struct sockaddr_in *a;
+        if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET || !(p->ifa_flags & IFF_UP))
+            continue;
+        a = (struct sockaddr_in *)p->ifa_addr;
+        if (ntohl(a->sin_addr.s_addr) >> 24 == 127 || !inet_ntop(AF_INET, &a->sin_addr, text, sizeof text))
+            continue;
+        [found addObject:[NSString stringWithUTF8String:text]];
+    }
+    freeifaddrs(list);
+    return [found componentsJoinedByString:@", "];
+}
+
+/* whether something answers on this Mac's SSH port (Remote Login in System Preferences, Sharing) */
+static BOOL remoteLoginOn(void)
+{
+    struct sockaddr_in a;
+    int fd = socket(AF_INET, SOCK_STREAM, 0), flags;
+    fd_set set;
+    struct timeval wait = {1, 0};
+    BOOL up = NO;
+    if (fd < 0)
+        return NO;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_port = htons(22);
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if (connect(fd, (struct sockaddr *)&a, sizeof a) == 0)
+        up = YES;
+    else if (errno == EINPROGRESS) {
+        FD_ZERO(&set);
+        FD_SET(fd, &set);
+        if (select(fd + 1, NULL, &set, NULL, &wait) > 0) {
+            int err = 0;
+            socklen_t n = sizeof err;
+            getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &n);
+            up = err == 0;
+        }
+    }
+    close(fd);
+    return up;
+}
+
+/* Commander programs other computers have running here, from the files each leaves while it runs */
+static void endSessions(void)
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray *names = [fm directoryContentsAtPath:stateFolder()];
+    unsigned i;
+    for (i = 0; i < [names count]; i++) {
+        NSString *name = [names objectAtIndex:i];
+        if ([name hasPrefix:@"session-"]) {
+            int pid = [[name substringFromIndex:8] intValue];
+            if (pid > 1)
+                kill(pid, SIGTERM);
+            [fm removeFileAtPath:marker(name) handler:nil];
+        }
+    }
+}
 
 @implementation ChatController (Commander)
 
+/* start, stop, remote-on, remote-off, status. Returns enabled, remote, ip as strings. */
 - (NSDictionary *)commanderCommand:(NSString *)command
 {
-    NSTask *task = [[[NSTask alloc] init] autorelease];
-    NSPipe *pipe = [NSPipe pipe];
-    NSData *data;
-    NSString *text;
-    NSMutableDictionary *result = [NSMutableDictionary dictionary];
-    NSArray *lines;
-    unsigned i;
-    NSString *script = [NSHomeDirectory() stringByAppendingPathComponent:@"ppc-commander/service.py"];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:script]) return result;
-    [task setLaunchPath:@"/usr/bin/python"];
-    [task setArguments:[NSArray arrayWithObjects:script, command, nil]];
-    [task setStandardOutput:pipe];
-    [task launch];
-    data = [[pipe fileHandleForReading] readDataToEndOfFile];
-    [task waitUntilExit];
-    text = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
-    lines = [text componentsSeparatedByString:@"\n"];
-    for (i = 0; i < [lines count]; i++) {
-        NSString *line = [lines objectAtIndex:i];
-        NSRange eq = [line rangeOfString:@"="];
-        if (eq.location != NSNotFound)
-            [result setObject:[line substringFromIndex:eq.location + 1] forKey:[line substringToIndex:eq.location]];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if ([command isEqualToString:@"start"])
+        setMarker(@"disabled", NO);
+    else if ([command isEqualToString:@"stop"]) {
+        setMarker(@"disabled", YES);
+        endSessions();
+    } else if ([command isEqualToString:@"remote-on"])
+        setMarker(@"remote-access", YES);
+    else if ([command isEqualToString:@"remote-off"]) {
+        setMarker(@"remote-access", NO);
+        endSessions();
     }
-    return result;
-}
-
-/* Runs on a worker thread. The status command starts Python, which takes a
-   moment on an old Mac; doing it while a menu opens made the menu hang. */
-- (void)commanderStatusWorker:(id)unused
-{
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    NSDictionary *state;
-    (void)unused;
-    state = [self commanderCommand:@"status"];
-    [self performSelectorOnMainThread:@selector(commanderStatusFetched:) withObject:state waitUntilDone:NO];
-    [pool release];
-}
-
-- (void)commanderStatusFetched:(NSDictionary *)state
-{
-    [commanderCache release];
-    commanderCache = [state retain];
-    commanderStatusPending = NO;
+    return [NSDictionary dictionaryWithObjectsAndKeys:[fm fileExistsAtPath:marker(@"disabled")] ? @"0" : @"1", @"enabled",
+        [fm fileExistsAtPath:marker(@"remote-access")] ? @"1" : @"0", @"remote", addresses(), @"ip", nil];
 }
 
 - (void)refreshCommanderStatus
 {
-    if (commanderStatusPending)
-        return;
-    commanderStatusPending = YES;
-    [NSThread detachNewThreadSelector:@selector(commanderStatusWorker:) toTarget:self withObject:nil];
+    [commanderCache release];
+    commanderCache = [[self commanderCommand:@"status"] retain];
 }
 
 - (void)commanderStart:(id)sender
 {
-    [self commanderStatusFetched:[self commanderCommand:@"start"]];
-    [self commanderStatusFetched:[self commanderCommand:@"status"]];
+    [self commanderCommand:@"start"];
+    [TBSession forgetCommanderTools];
+    [self refreshCommanderStatus];
     [self menuNeedsUpdate:[sender menu]];
 }
+
 - (void)commanderStop:(id)sender
 {
-    if (NSRunAlertPanel(@"Stop Commander?", @"Active Commander tool sessions and their child processes will close. "
-        @"New tool sessions are blocked until you choose Start. This does not stop ordinary SSH.",
-        @"Stop", @"Cancel", nil) != NSAlertDefaultReturn) return;
+    if (NSRunAlertPanel(@"Stop Commander?", @"Commander tool sessions that are open, here or from other computers, will close. "
+        @"No chat can use Commander until you choose Start.", @"Stop", @"Cancel", nil) != NSAlertDefaultReturn)
+        return;
     [self commanderCommand:@"stop"];
-    [self commanderStatusFetched:[self commanderCommand:@"status"]];
+    [TBSession forgetCommanderTools];
+    [self refreshCommanderStatus];
     [self menuNeedsUpdate:[sender menu]];
 }
-- (void)commanderAutostart:(id)sender
+
+- (void)commanderRemote:(id)sender
 {
-    NSDictionary *state = [self commanderCommand:@"status"];
-    [self commanderCommand:([[state objectForKey:@"autostart"] intValue] != 0) ? @"autostart-off" : @"autostart-on"];
-    [self commanderStatusFetched:[self commanderCommand:@"status"]];
+    BOOL on = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
+    if (!on && NSRunAlertPanel(@"Allow other computers to use this Mac?",
+        @"Another computer that can sign in to this Mac over SSH will be able to read and change files and run commands here as you, "
+        @"through Commander. Turn it on only for computers you control. Remote Login must also be on in System Preferences, Sharing.",
+        @"Allow", @"Cancel", nil) != NSAlertDefaultReturn)
+        return;
+    [self commanderCommand:on ? @"remote-off" : @"remote-on"];
+    [self refreshCommanderStatus];
     [self menuNeedsUpdate:[sender menu]];
 }
+
 - (void)commanderIP:(id)sender
 {
-    (void)sender;
     NSDictionary *state = [self commanderCommand:@"status"];
-    NSString *ip = [state objectForKey:@"ip"];
-    NSRunInformationalAlertPanel(@"This Mac", @"%@\n%@\n\nIPv4 addresses: %@", @"OK", nil, nil,
-        [TBMachine name], [TBMachine systemVersion], [ip length] ? ip : @"none active");
+    NSString *ip = [state objectForKey:@"ip"], *user = NSUserName();
+    BOOL remote = [[state objectForKey:@"remote"] intValue] != 0;
+    (void)sender;
+    NSRunInformationalAlertPanel(@"This Mac", @"%@\n%@\n\nIPv4 addresses: %@\n\n%@\n\nTo use this Mac from another computer running Tiger Build, add it there under "
+        @"Tool Settings, MCP Servers, Add, \"Commander on another computer\": address %@@%@.", @"OK", nil, nil,
+        [TBMachine name], [TBMachine systemVersion], [ip length] ? ip : @"none active",
+        remote ? (remoteLoginOn() ? @"Other computers are allowed, and Remote Login is on." : @"Other computers are allowed, but Remote Login is off: turn it on in System Preferences, Sharing.")
+               : @"Other computers are not allowed (Commander > Allow Other Computers).",
+        user, [ip length] ? [[ip componentsSeparatedByString:@","] objectAtIndex:0] : @"address");
 }
+
 - (void)menuNeedsUpdate:(NSMenu *)menu
 {
-    NSDictionary *state = commanderCache;
+    NSDictionary *state;
     BOOL enabled;
-    NSString *ip;
-    if (![[menu title] isEqualToString:@"Commander"]) return;
-    [self refreshCommanderStatus];
-    if (!state)
-        state = [self commanderCommand:@"status"];
-    enabled = ([[state objectForKey:@"enabled"] intValue] != 0);
-    ip = [state objectForKey:@"ip"];
+    if (![[menu title] isEqualToString:@"Commander"])
+        return;
+    state = [self commanderCommand:@"status"];
+    enabled = [[state objectForKey:@"enabled"] intValue] != 0;
     [[menu itemAtIndex:0] setTitle:enabled ? @"Commander: On" : @"Commander: Off"];
     [[menu itemAtIndex:1] setEnabled:!enabled];
     [[menu itemAtIndex:2] setEnabled:enabled];
-    [[menu itemAtIndex:4] setTitle:([[state objectForKey:@"autostart"] intValue] != 0) ? @"Stop Start at Login" : @"Start at Login"];
-    [[menu itemAtIndex:5] setTitle:[NSString stringWithFormat:@"IP: %@", [ip length] ? ip : @"unavailable"]];
-}
-
-/* ---- keeping ppc-commander installed ---- */
-
-static NSString *commanderVersion(NSData *data)
-{
-    NSString *text = [[[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding] autorelease];
-    NSRange at = [text rangeOfString:@"VERSION = '"];
-    NSRange end;
-    if (at.location == NSNotFound)
-        return nil;
-    text = [text substringFromIndex:NSMaxRange(at)];
-    end = [text rangeOfString:@"'"];
-    return end.location == NSNotFound ? nil : [text substringToIndex:end.location];
-}
-
-/* x.y.z compared number by number. */
-static int compareVersions(NSString *a, NSString *b)
-{
-    NSArray *left = [a componentsSeparatedByString:@"."];
-    NSArray *right = [b componentsSeparatedByString:@"."];
-    unsigned i;
-    for (i = 0; i < [left count] || i < [right count]; i++) {
-        int x = i < [left count] ? [[left objectAtIndex:i] intValue] : 0;
-        int y = i < [right count] ? [[right objectAtIndex:i] intValue] : 0;
-        if (x != y)
-            return x < y ? -1 : 1;
-    }
-    return 0;
-}
-
-/* The app carries its own ppc-commander. At launch it is copied to
-   ~/ppc-commander when that is missing or older, so the tools that need a new
-   Commander (screenshots, directory restrictions) work without a separate install. */
-- (void)ensureCommanderInstalled
-{
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *folder = [NSHomeDirectory() stringByAppendingPathComponent:@"ppc-commander"];
-    NSString *bundled = [[NSBundle mainBundle] pathForResource:@"ppc_commander" ofType:@"py" inDirectory:@"ppc-commander"];
-    NSData *fresh;
-    NSData *have;
-    NSString *haveVersion;
-    NSString *freshVersion;
-    NSString *dest = [folder stringByAppendingPathComponent:@"ppc_commander.py"];
-    NSString *serviceSource;
-    NSDictionary *mode = [NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0755] forKey:NSFilePosixPermissions];
-    if (!bundled)
-        return;
-    fresh = [NSData dataWithContentsOfFile:bundled];
-    if ([fresh length] == 0)
-        return;
-    have = [NSData dataWithContentsOfFile:dest];
-    haveVersion = have ? commanderVersion(have) : nil;
-    freshVersion = commanderVersion(fresh);
-    if (have && haveVersion && freshVersion && compareVersions(haveVersion, freshVersion) >= 0)
-        return;
-    if (![fm fileExistsAtPath:folder])
-        [fm createDirectoryAtPath:folder attributes:nil];
-    if (have)
-        [have writeToFile:[dest stringByAppendingString:@".previous"] atomically:YES];
-    if (![fresh writeToFile:dest atomically:YES])
-        return;
-    [fm changeFileAttributes:mode atPath:dest];
-    serviceSource = [[NSBundle mainBundle] pathForResource:@"service" ofType:@"py" inDirectory:@"ppc-commander"];
-    if (serviceSource) {
-        NSString *serviceDest = [folder stringByAppendingPathComponent:@"service.py"];
-        [[NSData dataWithContentsOfFile:serviceSource] writeToFile:serviceDest atomically:YES];
-        [fm changeFileAttributes:mode atPath:serviceDest];
-    }
-    NSLog(@"Tiger Build installed ppc-commander %@ (was %@)", freshVersion, haveVersion ? haveVersion : @"missing");
+    [[menu itemAtIndex:4] setState:[[state objectForKey:@"remote"] intValue] != 0 ? NSOnState : NSOffState];
+    [[menu itemAtIndex:5] setTitle:[NSString stringWithFormat:@"IP: %@", [[state objectForKey:@"ip"] length] ? [state objectForKey:@"ip"] : @"unavailable"]];
 }
 
 @end

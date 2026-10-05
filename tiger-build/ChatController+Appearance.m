@@ -196,6 +196,7 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
         [self build];
     [TBTheme reload];
     [self refresh];
+    [panel setLevel:NSFloatingWindowLevel];
     [panel makeKeyAndOrderFront:nil];
 }
 

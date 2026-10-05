@@ -182,6 +182,8 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
     if ([TBSettings flag:@"ppc_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"commander", @"id", @"Commander (this Mac)", @"title", [NSNumber numberWithBool:[TBSettings flag:@"ppc_approval"]], @"approval",
             [NSNumber numberWithBool:YES], @"default", nil]];
+    if ([TBSettings flag:@"ppc_enabled"])
+        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"sudo", @"id", @"Administrator (sudo) for Commander", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
     if ([TBSettings flag:@"toolbox_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"toolbox", @"id", @"Agent toolbox", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
     if ([TBSettings flag:@"search_enabled"])
