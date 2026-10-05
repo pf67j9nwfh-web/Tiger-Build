@@ -394,6 +394,7 @@ static NSString *newRunId(void)
         return;
     }
     stopping = YES;
+    [self forgetQueuedSends];
     [self stopSpeaking:nil];
     if (sideRequest) {
         /* Still compacting, before the chat stream started. */
@@ -571,6 +572,10 @@ static NSString *newRunId(void)
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];
         [sendButton setToolTip:@"Send the message (Return)"];
+    } else if (streamingId && current && ![[current objectForKey:@"id"] isEqualToString:streamingId]) {
+        [sendButton setTitle:@"Queue"];
+        [sendButton setEnabled:YES];
+        [sendButton setToolTip:@"Another chat is working. This message is sent when it has finished."];
     } else if (guide) {
         [sendButton setTitle:[NSString stringWithFormat:@"Guide %C", (unichar)((pulse % 2) ? 0x25CB : 0x25CF)]];
         [sendButton setEnabled:YES];

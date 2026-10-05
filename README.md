@@ -50,7 +50,7 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 
 ## How it works
 
-Tiger Build 2.0 does everything itself. Version 1.x needed a **relay** on a newer computer because Tiger and the Leopards cannot open modern HTTPS connections; 2.0 carries its own TLS (Mbed TLS 3.6 with the Mozilla certificate list), tested on PowerPC and Intel from Tiger to Snow Leopard. The app calls each AI service, runs the tool loop, converts attached files, transcribes speech, makes pictures and videos, and starts Commander (and any MCP servers you add) when a chat needs them. There is no Python, no relay and no service to switch on. The basic operation can be seen in the diagram below:
+Tiger Build 2.0 does everything itself. Version 1.x needed a **relay** on a newer computer because Tiger and the Leopards cannot open modern HTTPS connections; 2.0 carries its own TLS (Mbed TLS 3.6 with the Mozilla certificate list), tested on PowerPC and Intel from Tiger to Snow Leopard. The app calls each AI service, runs the tool loop, converts attached files, transcribes speech, makes pictures (Grok, ChatGPT, Gemini, Muse) and videos (Grok and Gemini; OpenAI closed its video API in September 2026), and starts Commander (and any MCP servers you add) when a chat needs them. There is no Python, no relay and no service to switch on. The basic operation can be seen in the diagram below:
 
 ```
  Your Mac (10.4 to 10.6, PowerPC or Intel)

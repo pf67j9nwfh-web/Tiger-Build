@@ -2280,6 +2280,67 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [window makeFirstResponder:input];
 }
 
+/* ---- messages for a chat while another chat is working ---- */
+
+- (void)queueText:(NSString *)text inChat:(NSMutableDictionary *)chat
+{
+    NSMutableDictionary *userMessage = [NSMutableDictionary dictionary], *notice = [NSMutableDictionary dictionary];
+    [userMessage setObject:@"user" forKey:@"role"];
+    [userMessage setObject:text forKey:@"text"];
+    [userMessage setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+    [notice setObject:@"status" forKey:@"role"];
+    [notice setObject:@"Waiting: this message is sent when the other chat has finished." forKey:@"text"];
+    [notice setObject:[NSNumber numberWithBool:YES] forKey:@"status"];
+    [[chat objectForKey:@"messages"] addObject:userMessage];
+    [[chat objectForKey:@"messages"] addObject:notice];
+    if (!queuedSends)
+        queuedSends = [[NSMutableArray alloc] init];
+    [queuedSends addObject:[NSDictionary dictionaryWithObjectsAndKeys:[chat objectForKey:@"id"], @"chatId", notice, @"notice", nil]];
+    if ([[chat objectForKey:@"title"] isEqualToString:@"New Chat"]) {
+        [chat setObject:[text length] > 26 ? [[text substringToIndex:26] stringByAppendingString:@"..."] : text forKey:@"title"];
+        [self reloadTableSelect:[table selectedRow] show:NO];
+    }
+    [self saveStore];
+    [self refreshTranscriptIfCurrent:chat];
+}
+
+/* The first waiting message whose chat is still there goes now. */
+- (void)startQueuedSend
+{
+    while ([queuedSends count] && !busy) {
+        NSDictionary *entry = [[[queuedSends objectAtIndex:0] retain] autorelease];
+        NSMutableDictionary *chat = [self chatWithId:[entry objectForKey:@"chatId"]], *open;
+        [queuedSends removeObjectAtIndex:0];
+        if (!chat)
+            continue;
+        [[chat objectForKey:@"messages"] removeObject:[entry objectForKey:@"notice"]];
+        open = [NSMutableDictionary dictionary];
+        [open setObject:@"assistant" forKey:@"role"];
+        [open setObject:@"" forKey:@"text"];
+        [open setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+        [open setObject:[NSNumber numberWithBool:YES] forKey:@"open"];
+        [[chat objectForKey:@"messages"] addObject:open];
+        [self saveStore];
+        [self refreshTranscriptIfCurrent:chat];
+        [streamingId release];
+        streamingId = [[chat objectForKey:@"id"] copy];
+        [self setBusy:YES];
+        return;
+    }
+}
+
+- (void)forgetQueuedSends
+{
+    unsigned i;
+    for (i = 0; i < [queuedSends count]; i++) {
+        NSDictionary *entry = [queuedSends objectAtIndex:i];
+        NSMutableDictionary *chat = [self chatWithId:[entry objectForKey:@"chatId"]];
+        [[chat objectForKey:@"messages"] removeObject:[entry objectForKey:@"notice"]];
+        [self refreshTranscriptIfCurrent:chat];
+    }
+    [queuedSends removeAllObjects];
+}
+
 - (void)setBusy:(BOOL)flag
 {
     busy = flag;
@@ -2300,8 +2361,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     suppressSelection = YES;
     [table reloadData];
     suppressSelection = NO;
-    if (!flag)
+    if (!flag) {
         [window makeFirstResponder:input];
+        if ([queuedSends count])
+            [self performSelector:@selector(startQueuedSend) withObject:nil afterDelay:0.3];
+    }
     [self layoutPanes];
 }
 
@@ -2985,6 +3049,20 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         text = [[editor string] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     else
         text = [[input stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (busy && streamingId && ![[current objectForKey:@"id"] isEqualToString:streamingId]) {
+        /* Another chat is working: this message waits and is sent when that one finishes. */
+        if ([text length] == 0) {
+            NSBeep();
+            return;
+        }
+        [input setStringValue:@""];
+        if (editor)
+            [editor setString:@""];
+        inputHeight = TB_FIELD_MIN;
+        [self layoutPanes];
+        [self queueText:text inChat:current];
+        return;
+    }
     if (busy) {
         /* A model is working: what is typed now is guidance for it. */
         if ([text length] == 0 || ![self guidanceAvailable]) {

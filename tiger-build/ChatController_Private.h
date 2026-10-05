@@ -58,6 +58,9 @@
 - (void)storeChanged:(NSNotification *)note;
 - (void)storesReplaced:(NSNotification *)note;
 - (void)startTurn;
+- (void)queueText:(NSString *)text inChat:(NSMutableDictionary *)chat;
+- (void)startQueuedSend;
+- (void)forgetQueuedSends;
 - (void)finishWithoutStream:(NSMutableDictionary *)chat;
 - (NSMutableDictionary *)chatWithId:(NSString *)chatId;
 - (void)addStatus:(NSString *)text toChat:(NSMutableDictionary *)chat;

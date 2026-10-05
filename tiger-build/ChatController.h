@@ -98,6 +98,7 @@
     NSTimer *relayTimer;
     BOOL relayReachable;
     double lastCatalog;
+    NSMutableArray *queuedSends;        /* messages typed in another chat while one was working: {chatId, text, notice} */
     NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 

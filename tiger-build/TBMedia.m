@@ -68,8 +68,8 @@ static NSString *serviceMessage(int status, NSData *data)
         text = TBString(err, @"message");
     else if ([err isKindOfClass:[NSString class]] && [err length])
         text = err;
-    if (!text)
-        text = [NSString stringWithFormat:@"HTTP %d", status];
+    if (![TBTrim(text) length])
+        text = [NSString stringWithFormat:@"The service answered HTTP %d with no explanation.", status];
     return [text length] > 500 ? [text substringToIndex:500] : text;
 }
 
@@ -252,47 +252,6 @@ static NSData *grokVideo(NSString *prompt, TBRun *run)
     return nil;
 }
 
-static NSData *openaiVideo(NSString *prompt, TBRun *run)
-{
-    NSArray *auth = bearer(needKey(@"chatgpt"));
-    NSString *boundary = @"----TigerBuildMedia";
-    NSArray *fields = [NSArray arrayWithObjects:@"model", @"sora-2", @"prompt", prompt, @"seconds", @"4", @"size", @"1280x720", nil];
-    NSMutableData *body = [NSMutableData data];
-    unsigned i;
-    int status;
-    NSData *answer;
-    id started;
-    NSString *videoId;
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:180];
-    for (i = 0; i + 1 < [fields count]; i += 2)
-        [body appendData:[[NSString stringWithFormat:@"--%@\r\nContent-Disposition: form-data; name=\"%@\"\r\n\r\n%@\r\n", boundary, [fields objectAtIndex:i], [fields objectAtIndex:i + 1]] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    answer = TBFetch(@"POST", override(@"chatgpt-video", @"https://api.openai.com/v1/videos"),
-        [auth arrayByAddingObjectsFromArray:[NSArray arrayWithObjects:@"Content-Type", [@"multipart/form-data; boundary=" stringByAppendingString:boundary], nil]], body, 60, &status, run);
-    if (status < 200 || status >= 300)
-        TBFail(@"%@", serviceMessage(status, answer));
-    started = TBJSONParse(answer, NULL);
-    videoId = TBString(started, @"id");
-    if (![videoId length])
-        TBFail(@"ChatGPT did not start a video.");
-    while ([deadline timeIntervalSinceNow] > 0) {
-        id state;
-        NSString *s;
-        pauseFor(4, run);
-        state = jsonCall([override(@"chatgpt-video", @"https://api.openai.com/v1/videos") stringByAppendingFormat:@"/%@", videoId], nil, auth, 30, run);
-        s = TBString(state, @"status");
-        if ([s isEqualToString:@"completed"])
-            return download([override(@"chatgpt-video", @"https://api.openai.com/v1/videos") stringByAppendingFormat:@"/%@/content", videoId], auth, run);
-        if ([s isEqualToString:@"failed"] || [s isEqualToString:@"cancelled"]) {
-            id err = TBValue(state, @"error");
-            NSString *message = [err isKindOfClass:[NSDictionary class]] ? TBString(err, @"message") : @"";
-            TBFail(@"%@", [message length] ? message : @"ChatGPT could not make the video.");
-        }
-    }
-    TBFail(@"The video was still rendering after three minutes.");
-    return nil;
-}
-
 static NSData *geminiVideo(NSString *prompt, TBRun *run)
 {
     NSString *model = geminiModel(YES, run);
@@ -397,7 +356,7 @@ static void checkPictureURL(NSString *url)
             @"Generate a picture with this provider's image service. Use when the person asks for an image, drawing, or illustration.", @"description",
             [NSDictionary dictionaryWithObjectsAndKeys:@"object", @"type", p, @"properties", [NSArray arrayWithObject:@"prompt"], @"required", nil], @"parameters", nil]];
     }
-    if ([provider isEqualToString:@"grok"] || [provider isEqualToString:@"chatgpt"] || [provider isEqualToString:@"gemini"]) {
+    if ([provider isEqualToString:@"grok"] || [provider isEqualToString:@"gemini"]) {   /* OpenAI closed its Videos API on 24 September 2026 */
         p = [NSMutableDictionary dictionary];
         [p setObject:[NSDictionary dictionaryWithObjectsAndKeys:@"string", @"type", @"What the video should show.", @"description", nil] forKey:@"prompt"];
         [tools addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"function", @"type", @"generate_video", @"name",
@@ -424,7 +383,6 @@ static void checkPictureURL(NSString *url)
     } else if ([tool isEqualToString:@"generate_video"]) {
         kind = @"video";
         if ([provider isEqualToString:@"grok"]) data = grokVideo(prompt, run);
-        else if ([provider isEqualToString:@"chatgpt"]) data = openaiVideo(prompt, run);
         else if ([provider isEqualToString:@"gemini"]) data = geminiVideo(prompt, run);
         else { TBFail(@"This model cannot generate videos."); return nil; }
     } else {

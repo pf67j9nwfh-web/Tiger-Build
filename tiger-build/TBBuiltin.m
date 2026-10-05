@@ -7,6 +7,8 @@
 #import <sys/utsname.h>
 #import <sys/sysctl.h>
 #import <unistd.h>
+#import <dlfcn.h>
+#import <ApplicationServices/ApplicationServices.h>
 #import <math.h>
 #import <time.h>
 #import "mbedtls/sha256.h"
@@ -359,6 +361,54 @@ static long cpuCount(void)
 
 /* ---- the servers ---- */
 
+/* The displays, read through CoreGraphics. Newer calls are looked up when the program runs so the same code works from Tiger on. */
+static NSString *displayReport(void)
+{
+    CGDirectDisplayID ids[16];
+    CGDisplayCount count = 0, i;
+    NSMutableString *out = [NSMutableString string];
+    void *cg = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY);
+    CFDictionaryRef (*currentMode)(CGDirectDisplayID) = cg ? (CFDictionaryRef (*)(CGDirectDisplayID))dlsym(cg, "CGDisplayCurrentMode") : NULL;
+    double (*rotation)(CGDirectDisplayID) = cg ? (double (*)(CGDirectDisplayID))dlsym(cg, "CGDisplayRotation") : NULL;
+    CGSize (*screenSize)(CGDirectDisplayID) = cg ? (CGSize (*)(CGDirectDisplayID))dlsym(cg, "CGDisplayScreenSize") : NULL;
+    if (CGGetActiveDisplayList(16, ids, &count) != kCGErrorSuccess || !count)
+        return @"No display is reported (no one may be logged in at the console).";
+    [out appendFormat:@"displays: %u\n", (unsigned)count];
+    for (i = 0; i < count; i++) {
+        CGDirectDisplayID d = ids[i];
+        CGRect b = CGDisplayBounds(d);
+        size_t w = CGDisplayPixelsWide(d), h = CGDisplayPixelsHigh(d);
+        NSMutableString *line = [NSMutableString stringWithFormat:@"display %u%@%@: %lu x %lu pixels", (unsigned)(i + 1), CGDisplayIsMain(d) ? @" (main)" : @"",
+            CGDisplayIsBuiltin(d) ? @" (built in)" : @"", (unsigned long)w, (unsigned long)h];
+        if (currentMode) {
+            CFDictionaryRef mode = currentMode(d);
+            CFNumberRef depth = mode ? CFDictionaryGetValue(mode, CFSTR("BitsPerPixel")) : NULL, rate = mode ? CFDictionaryGetValue(mode, CFSTR("RefreshRate")) : NULL;
+            int bits = 0;
+            double hz = 0;
+            if (depth) CFNumberGetValue(depth, kCFNumberIntType, &bits);
+            if (rate) CFNumberGetValue(rate, kCFNumberDoubleType, &hz);
+            if (bits) [line appendFormat:@", %d-bit colour", bits];
+            if (hz > 0) [line appendFormat:@", %.0f Hz", hz];
+            else [line appendString:@", refresh rate not reported (usual for flat panels)"];
+        }
+        [line appendFormat:@", at (%.0f, %.0f)", b.origin.x, b.origin.y];
+        if (screenSize) {
+            CGSize mm = screenSize(d);
+            if (mm.width > 1 && mm.height > 1) {
+                double diag = sqrt(mm.width * mm.width + mm.height * mm.height) / 25.4;
+                [line appendFormat:@", %.0f x %.0f mm (about %.1f inch diagonal, %.0f pixels per inch)", mm.width, mm.height, diag, w / (mm.width / 25.4)];
+            } else
+                [line appendString:@", physical size not reported"];
+        }
+        if (rotation && rotation(d) != 0)
+            [line appendFormat:@", rotated %.0f degrees", rotation(d)];
+        if (CGDisplayIsInMirrorSet(d))
+            [line appendString:@", mirrored"];
+        [out appendFormat:@"%@\n", line];
+    }
+    return out;
+}
+
 @implementation TBBuiltin
 
 + (BOOL)knows:(NSString *)name
@@ -383,7 +433,8 @@ static long cpuCount(void)
             tool(@"note_delete", @"Delete a note by its title. This cannot be undone.", [NSArray arrayWithObject:@"title"], text, [NSArray arrayWithObject:@"title"]), nil];
     else if ([name isEqualToString:@"sysinfo"])
         tools = [NSArray arrayWithObjects:
-            tool(@"host_info", @"Name, operating system and CPU count of this Mac.", none, none, none),
+            tool(@"host_info", @"Name, operating system and CPU count of this Mac. Use display_info for its screens.", none, none, none),
+            tool(@"display_info", @"The displays attached to this Mac: how many, and for each its resolution in pixels, colour depth, refresh rate, physical size, rotation and position.", none, none, none),
             tool(@"disk_free", @"Free and total disk space for a path on this Mac.", [NSArray arrayWithObject:@"path"], text, none),
             tool(@"current_time", @"This Mac's local date and time with its UTC offset.", none, none, none),
             tool(@"sha256", @"SHA-256 of a piece of text, as hex.", [NSArray arrayWithObject:@"text"], text, [NSArray arrayWithObject:@"text"]),
@@ -467,6 +518,8 @@ static long cpuCount(void)
             uname(&u);
             return [NSString stringWithFormat:@"host: %s\nsystem: %s %s (%s)\ncpus: %ld", host, u.sysname, u.release, u.machine, cpuCount()];
         }
+        if ([name isEqualToString:@"display_info"])
+            return TBTrim(displayReport());
         if ([name isEqualToString:@"disk_free"]) {
             struct statfs fs;
             NSString *path = [TBString(args, @"path") length] ? TBString(args, @"path") : @"/";
