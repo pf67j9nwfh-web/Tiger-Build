@@ -268,7 +268,7 @@ static NSString *docText(TBCompound *cfb)
 {
     NSData *word = [cfb stream:@"WordDocument"], *table;
     const unsigned char *w, *t;
-    unsigned flags, csw, cslw, cb, lcbOffset, ccpText, ccpFtn, fcClx, lcbClx, p, n, i;
+    unsigned flags, csw, cslw, cb, lcbOffset, ccpText, ccpFtn, ccpHdd = 0, ccpAtn = 0, ccpEdn = 0, ccpTxbx = 0, fcClx, lcbClx, p, n, i;
     NSMutableString *raw = [NSMutableString string];
     unsigned long total, wanted;
     if ([word length] < 0x200)
@@ -293,6 +293,12 @@ static NSString *docText(TBCompound *cfb)
         fail(@"This Word file could not be read.");
     ccpText = u32(w + p + 12);
     ccpFtn = u32(w + p + 16);
+    if (cslw >= 11) {
+        ccpHdd = u32(w + p + 20);
+        ccpAtn = u32(w + p + 28);
+        ccpEdn = u32(w + p + 32);
+        ccpTxbx = u32(w + p + 36);
+    }
     p += cslw * 4;
     cb = u16(w + p);
     p += 2;
@@ -317,7 +323,7 @@ static NSString *docText(TBCompound *cfb)
             fail(@"This Word file could not be read.");
         pieces = (lcb - 4) / 12;
         total = 0;
-        wanted = (unsigned long)ccpText + (ccpFtn ? ccpFtn + 1 : 0);
+        wanted = (unsigned long)ccpText + ccpFtn + ccpHdd + ccpAtn + ccpEdn + ccpTxbx;
         for (i = 0; i < pieces && total < wanted && [raw length] < MAX_TEXT * 2; i++) {
             unsigned cpStart = u32(plc + i * 4), cpEnd = u32(plc + (i + 1) * 4);
             const unsigned char *pcd = plc + (pieces + 1) * 4 + i * 8;
@@ -341,12 +347,24 @@ static NSString *docText(TBCompound *cfb)
         }
     }
     {
-        NSString *body = raw;
-        if (ccpFtn && ccpText < [raw length]) {
-            NSString *body0 = [raw substringToIndex:ccpText], *foot = [raw substringFromIndex:ccpText];
-            return [NSString stringWithFormat:@"%@\n\n[Footnotes]\n%@", wordClean(body0), wordClean(foot)];
+        /* the stories follow one another: text, footnotes, headers and footers, comments, endnotes, text boxes */
+        unsigned lengths[6] = {ccpText, ccpFtn, ccpHdd, ccpAtn, ccpEdn, ccpTxbx};
+        NSString *titles[6] = {nil, @"Footnotes", @"Headers and footers", @"Comments", @"Endnotes", @"Text boxes"};
+        NSMutableArray *parts = [NSMutableArray array];
+        unsigned long at = 0;
+        unsigned k;
+        for (k = 0; k < 6; k++) {
+            NSString *story;
+            if (!lengths[k])
+                continue;
+            if (at >= [raw length])
+                break;
+            story = wordClean([raw substringWithRange:NSMakeRange(at, MIN((unsigned long)lengths[k], [raw length] - at))]);
+            at += lengths[k];
+            if ([story length])
+                [parts addObject:titles[k] ? [NSString stringWithFormat:@"[%@]\n%@", titles[k], story] : story];
         }
-        return wordClean(body);
+        return [parts componentsJoinedByString:@"\n\n"];
     }
 }
 
@@ -756,6 +774,7 @@ static NSString *pptText(TBCompound *cfb)
     unsigned long n;
     NSMutableDictionary *persist = [NSMutableDictionary dictionary];
     NSMutableArray *out = [NSMutableArray array], *slideOrder = [NSMutableArray array];
+    NSMutableDictionary *notesPersist = [NSMutableDictionary dictionary];   /* slide id of a notes page -> where it is kept */
     unsigned long edit = 0;
     unsigned docId = 0, guard = 0, i;
     NSMutableArray *edits = [NSMutableArray array];
@@ -814,6 +833,14 @@ static NSString *pptText(TBCompound *cfb)
                             [slideOrder addObject:[NSNumber numberWithUnsignedInt:u32(b + q + 8)]];
                         q += 8 + l2;
                     }
+                } else if (type == 0x0FF0 && (verInst >> 4) == 2) {
+                    unsigned long q = at + 8, qend = at + 8 + len;
+                    while (q + 8 <= qend) {
+                        unsigned long l2 = u32(b + q + 4);
+                        if (u16(b + q + 2) == 0x03F3 && l2 >= 16)
+                            [notesPersist setObject:[NSNumber numberWithUnsignedInt:u32(b + q + 8)] forKey:[NSNumber numberWithUnsignedInt:u32(b + q + 20)]];
+                        q += 8 + l2;
+                    }
                 }
                 at += 8 + len;
             }
@@ -831,6 +858,33 @@ static NSString *pptText(TBCompound *cfb)
                 if (s + 8 + len > n)
                     len = n - s - 8;
                 pptCollect(b, s + 8, s + 8 + len, lines, 0, &saw);
+                {
+                    /* the slide's own atom says which notes page belongs to it */
+                    unsigned long q = s + 8, qend = s + 8 + len;
+                    while (q + 8 <= qend) {
+                        unsigned long l2 = u32(b + q + 4);
+                        if (u16(b + q + 2) == 0x03EF && l2 >= 20) {
+                            NSNumber *page = [notesPersist objectForKey:[NSNumber numberWithUnsignedInt:u32(b + q + 8 + 16)]];
+                            if (page && [page unsignedLongValue] + 8 <= n && u16(b + [page unsignedLongValue] + 2) == 0x03F0) {
+                                unsigned long ns = [page unsignedLongValue], nlen = u32(b + ns + 4);
+                                NSMutableArray *spoken = [NSMutableArray array], *kept = [NSMutableArray array];
+                                unsigned x;
+                                if (ns + 8 + nlen > n)
+                                    nlen = n - ns - 8;
+                                pptCollect(b, ns + 8, ns + 8 + nlen, spoken, 0, &saw);
+                                for (x = 0; x < [spoken count]; x++) {
+                                    NSString *line = TBTrim([spoken objectAtIndex:x]);
+                                    if ([line length] && ![[NSString stringWithFormat:@"%d", [line intValue]] isEqualToString:line])
+                                        [kept addObject:[spoken objectAtIndex:x]];
+                                }
+                                if ([kept count])
+                                    [lines addObject:[@"[Speaker notes] " stringByAppendingString:[kept componentsJoinedByString:@" "]]];
+                            }
+                            break;
+                        }
+                        q += 8 + l2;
+                    }
+                }
             }
             for (j = 0; j < [lines count]; j++)
                 [out addObject:[lines objectAtIndex:j]];
