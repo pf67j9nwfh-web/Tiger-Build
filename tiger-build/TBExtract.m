@@ -440,6 +440,169 @@ static int columnOf(NSString *ref)
 
 @end
 
+
+static const unsigned char *memmem_ptr(const unsigned char *p, const unsigned char *end, const char *needle)
+{
+    size_t k = strlen(needle);
+    while (p + k <= end) {
+        const unsigned char *q = memchr(p, needle[0], end - p);
+        if (!q || q + k > end)
+            return NULL;
+        if (!memcmp(q, needle, k))
+            return q;
+        p = q + 1;
+    }
+    return NULL;
+}
+
+/* ---- spreadsheet rows, read straight from the bytes (an XML parser takes many seconds on a big sheet on a G4) ---- */
+
+static NSString *xmlText(const unsigned char *p, unsigned long n)
+{
+    NSMutableData *out = nil;
+    unsigned long i, last = 0;
+    NSString *text;
+    for (i = 0; i < n; i++) {
+        if (p[i] == '&') {
+            const unsigned char *e = memchr(p + i, ';', n - i > 10 ? 10 : n - i);
+            char code[12];
+            unsigned len;
+            unichar c = 0;
+            const char *rep = NULL;
+            if (!e)
+                continue;
+            len = (unsigned)(e - (p + i + 1));
+            if (len == 0 || len > 8)
+                continue;
+            memcpy(code, p + i + 1, len);
+            code[len] = 0;
+            if (!strcmp(code, "amp")) rep = "&";
+            else if (!strcmp(code, "lt")) rep = "<";
+            else if (!strcmp(code, "gt")) rep = ">";
+            else if (!strcmp(code, "quot")) rep = "\"";
+            else if (!strcmp(code, "apos")) rep = "'";
+            else if (code[0] == '#') {
+                c = (unichar)(code[1] == 'x' || code[1] == 'X' ? strtol(code + 2, NULL, 16) : strtol(code + 1, NULL, 10));
+                if (c == 0 || c > 0xffff)
+                    continue;
+            } else
+                continue;
+            if (!out)
+                out = [NSMutableData data];
+            [out appendBytes:p + last length:i - last];
+            if (rep)
+                [out appendBytes:rep length:1];
+            else {
+                NSString *one = [NSString stringWithFormat:@"%C", c];
+                NSData *bytes = [one dataUsingEncoding:NSUTF8StringEncoding];
+                [out appendData:bytes];
+            }
+            i = (unsigned long)(e - p);
+            last = i + 1;
+        }
+    }
+    if (out) {
+        [out appendBytes:p + last length:n - last];
+        text = [[NSString alloc] initWithData:out encoding:NSUTF8StringEncoding];
+    } else
+        text = [[NSString alloc] initWithBytes:p length:n encoding:NSUTF8StringEncoding];
+    return [text autorelease];
+}
+
+/* the value of an attribute inside a tag [p, end) */
+static NSString *attributeOf(const unsigned char *p, const unsigned char *end, const char *name)
+{
+    size_t k = strlen(name);
+    const unsigned char *q = p;
+    while (q + k + 2 < end) {
+        if ((q == p || q[-1] == ' ') && !memcmp(q, name, k) && q[k] == '=') {
+            const unsigned char *v = q + k + 2, *e = v;
+            unsigned char quote = q[k + 1];
+            while (e < end && *e != quote)
+                e++;
+            return xmlText(v, (unsigned long)(e - v));
+        }
+        q++;
+    }
+    return nil;
+}
+
+/* The rows of a worksheet that hold something, as arrays of cell text, at most `limit` of them. *stopped says more were left. */
+static NSArray *sheetRows(NSData *xml, NSArray *shared, int limit, BOOL *stopped)
+{
+    const unsigned char *b = [xml bytes], *end = b + [xml length], *p = b;
+    NSMutableArray *rows = [NSMutableArray array], *cells = nil;
+    int kept = 0;
+    *stopped = NO;
+    while (p < end && (p = memchr(p, '<', end - p))) {
+        const unsigned char *tagEnd = memchr(p, '>', end - p);
+        if (!tagEnd)
+            break;
+        if (tagEnd - p >= 4 && p[1] == 'r' && p[2] == 'o' && p[3] == 'w' && (p[4] == ' ' || p[4] == '>' || p[4] == '/')) {
+            cells = (tagEnd[-1] == '/') ? nil : [NSMutableArray array];
+        } else if (p[1] == '/' && !memcmp(p + 2, "row>", 4)) {
+            if (cells) {
+                unsigned c;
+                BOOL holds = NO;
+                for (c = 0; c < [cells count] && !holds; c++)
+                    if ([[cells objectAtIndex:c] length])
+                        holds = YES;
+                [rows addObject:cells];
+                cells = nil;
+                if (holds && ++kept >= limit) {
+                    *stopped = YES;
+                    return rows;
+                }
+            }
+        } else if (cells && p[1] == 'c' && (p[2] == ' ' || p[2] == '>')) {
+            if (tagEnd[-1] != '/') {
+                /* a cell with content: up to </c> */
+                const unsigned char *close = p, *vstart = NULL, *vend = NULL;
+                NSString *reference = attributeOf(p, tagEnd, "r"), *kind = attributeOf(p, tagEnd, "t"), *text = @"";
+                int column = columnOf(reference);
+                NSMutableString *inlineText = nil;
+                while (close < end && (close = memchr(close + 1, '<', end - close - 1))) {
+                    if (close[1] == '/' && close[2] == 'c' && close[3] == '>')
+                        break;
+                    if (close[1] == 'v' && close[2] == '>') {
+                        const unsigned char *e = memmem_ptr(close + 3, end, "</v>");
+                        vstart = close + 3;
+                        vend = e;
+                        if (e)
+                            close = e;
+                    } else if (close[1] == 't' && (close[2] == '>' || close[2] == ' ')) {
+                        const unsigned char *gt = memchr(close, '>', end - close), *e = gt ? memmem_ptr(gt + 1, end, "</t>") : NULL;
+                        if (e) {
+                            if (!inlineText)
+                                inlineText = [NSMutableString string];
+                            [inlineText appendString:xmlText(gt + 1, (unsigned long)(e - gt - 1))];
+                            close = e;
+                        }
+                    }
+                }
+                if (kind && [kind isEqualToString:@"inlineStr"] && inlineText)
+                    text = inlineText;
+                else if (vstart && vend) {
+                    NSString *v = xmlText(vstart, (unsigned long)(vend - vstart));
+                    if (kind && [kind isEqualToString:@"s"]) {
+                        long index = strtol([v UTF8String], NULL, 10);
+                        text = (index >= 0 && (unsigned long)index < [shared count]) ? [shared objectAtIndex:(unsigned)index] : @"";
+                    } else
+                        text = v;
+                }
+                while ((int)[cells count] < column && column < 16384)
+                    [cells addObject:@""];
+                if ([text length])
+                    text = swap(swap(text, @"\t", @" "), @"\n", @" ");
+                [cells addObject:text];
+                p = close ? close : tagEnd;
+            }
+        }
+        p = tagEnd + 1;
+    }
+    return rows;
+}
+
 /* ---- pictures ---- */
 
 static BOOL isWebP(NSData *data)
@@ -1087,7 +1250,7 @@ static NSString *xlsxText(TBZip *zip)
             [out addObject:@"[this sheet is not shown: the text limit was reached]"];
             continue;
         }
-        rows = [TBCells rowsOf:[zip dataFor:part] shared:shared limit:2000 stopped:&stopped];
+        rows = sheetRows(checkedXML([zip dataFor:part]), shared, 2000, &stopped);
         for (r = 0; r < [rows count] && shown < 2000 && budget > 0; r++) {
             NSMutableString *line = [NSMutableString stringWithString:[[rows objectAtIndex:r] componentsJoinedByString:@"\t"]];
             while ([line hasSuffix:@"\t"])
