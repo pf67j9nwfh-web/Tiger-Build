@@ -1307,7 +1307,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             applyMenuShortcuts([[bar itemAtIndex:g] submenu], shortcuts);
     }
     [NSApp setMainMenu:bar];
-    if (TBSystemMinor() < 5)
+    /* Leopard shows the first menu twice (its own application menu, then ours) unless it is told which one is the application menu. */
+    if (TBSystemMinor() < 6)
         [NSApp setAppleMenu:appMenu];
     [appMenu release];
     [bar release];
@@ -1816,6 +1817,8 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBLaunchQuestion"];
     }
     if (launchQuestion) {
+        /* A question given at launch gets a chat of its own, with the model new chats start with. */
+        [self newChat:nil];
         [input setStringValue:launchQuestion];
         [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];
     }

@@ -106,7 +106,7 @@ static NSString *trimmedValue(NSTextField *field)
             saved++;
     }
     if (saved == 0)
-        [self setPreferencesStatus:@"No provider keys yet. Add some or a configure a local LLM server connection to get started."];
+        [self setPreferencesStatus:@"No provider keys yet. Add a key or a local LLM server."];
 }
 
 - (void)showHelp:(id)sender
@@ -400,13 +400,13 @@ static NSString *trimmedValue(NSTextField *field)
         frame:NSMakeRect(16, y - 14, 520, 30) inView:tab];
     y -= 40;
     keys = [NSArray arrayWithObjects:
-        [NSArray arrayWithObjects:@"xAI (Grok)", @"xai_api_key", @"1", @"", nil],
+        [NSArray arrayWithObjects:@"SpaceXAI (Grok)", @"xai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"OpenAI (ChatGPT)", @"openai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Anthropic (Claude)", @"anthropic_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Workspace ID (optional)", @"anthropic_workspace_id", @"0",
             @"Only needed if your Anthropic key belongs to a workspace that requires its ID. Most keys do not.", nil],
         [NSArray arrayWithObjects:@"Mistral", @"mistral_api_key", @"1", @"", nil],
-        [NSArray arrayWithObjects:@"Muse", @"muse_api_key", @"1", @"", nil],
+        [NSArray arrayWithObjects:@"Meta (Muse)", @"muse_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Google (Gemini)", @"gemini_api_key", @"1", @"", nil],
         nil];
     for (i = 0; i < [keys count]; i++) {
@@ -500,7 +500,7 @@ static NSString *trimmedValue(NSTextField *field)
     [note setFont:[NSFont systemFontOfSize:11]];
     [prefsFields setObject:note forKey:@"sudo.status"];
 
-    note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 360, 18) inView:view];
+    note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
     button = [self preferencesButton:@"Save" frame:NSMakeRect(396, 16, 94, 30)
                               action:@selector(savePreferences:) inView:view];

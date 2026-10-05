@@ -22,6 +22,7 @@
 - (NSData *)historyData;
 - (void)importHistoryData:(NSData *)data;
 - (void)clearAllHistory:(id)sender;
+- (IBAction)newChat:(id)sender;
 - (void)exportHistory:(id)sender;
 - (void)importHistory:(id)sender;
 - (void)reportUnconfigured;
