@@ -25,6 +25,7 @@
     NSArray *commanderTools;
     NSString *grokKey;
     id extras;
+    NSMutableSet *alwaysAllowed;     /* tool keys the person chose "Always Allow" for during this turn */
 }
 + (NSDictionary *)cleanOptions:(id)incoming;
 + (BOOL)supportsImages:(NSString *)provider model:(NSString *)model;

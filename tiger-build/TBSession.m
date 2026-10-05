@@ -370,6 +370,7 @@ static NSArray *withoutPictures(NSArray *messages)
     [commanderTools release];
     [grokKey release];
     [extras release];
+    [alwaysAllowed release];
     [super dealloc];
 }
 
@@ -630,7 +631,7 @@ static BOOL truthyValue(id v)
     NSDictionary *args;
     if ([name isEqualToString:@"git_read"] || [name isEqualToString:@"svn_read"] || [name isEqualToString:@"repo_info"])
         return YES;
-    if (![self needsApprovalForKey:key])
+    if (![self needsApprovalForKey:key] || [alwaysAllowed containsObject:key])
         return YES;
     callId = [TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : ([name length] ? name : @"call"));
     [run ask:callId];
@@ -653,6 +654,12 @@ static BOOL truthyValue(id v)
         detail = [detail substringToIndex:4000];
     [self emit:@"q" text:[TBSession propertyListText:[NSDictionary dictionaryWithObjectsAndKeys:callId, @"id", [name length] ? name : @"tool", @"name", key, @"server", detail, @"detail", nil]]];
     decision = [run waitFor:callId];
+    if ([decision isEqualToString:@"always"]) {
+        /* "Always Allow" holds from now on in this reply too, not only from the next one. */
+        if (!alwaysAllowed)
+            alwaysAllowed = [[NSMutableSet alloc] init];
+        [alwaysAllowed addObject:key];
+    }
     return [decision isEqualToString:@"allow"] || [decision isEqualToString:@"always"];
 }
 
