@@ -40,7 +40,7 @@ HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h 
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
-.PHONY: all clean test convert
+.PHONY: all clean test convert cmtest
 
 all: $(BIN)
 
@@ -75,6 +75,12 @@ convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TB
 	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o convert32 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNet32.o $(LIBS32)
 	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -c -o build/TBNetX64.o TBNet.c && $(CC64) $(CFLAGSX86) -fobjc-exceptions -o convertX64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNetX64.o $(LIBSX86))
 	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -c -o build/TBNetP64.o TBNet.c && $(CC64) $(CFLAGSPPC64) -fobjc-exceptions -o convertP64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNetP64.o $(LIBS64))
+
+# Commander's tools against the program in ../commander (make first): ./cmtest32 ../commander/ppc-commander
+cmtest: ../tests/engine/commanderfull.m TBMCP.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m
+	mkdir -p build
+	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
+	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o cmtest32 -I. ../tests/engine/commanderfull.m TBMCP.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m build/TBNet32.o $(LIBS32)
 
 tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBSupport.h TBMarkup.h TBEmoji.h TBCompat.h
 	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m -framework Foundation

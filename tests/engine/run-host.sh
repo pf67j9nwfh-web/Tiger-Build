@@ -35,6 +35,7 @@ build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"
 build commander ../tests/engine/commandertest.m TBMCP.m $COMMON_NO_MCP
+build commanderfull ../tests/engine/commanderfull.m TBMCP.m $COMMON_NO_MCP
 PORT=8795
 "$OUT/mock" $PORT > /dev/null 2>&1 &
 MOCK=$!
@@ -46,6 +47,7 @@ for t in speech outputs; do "$OUT/$t" $( [ $t = speech ] && echo $PORT || echo "
 "$OUT/extras" $PORT || status=1
 "$OUT/prov" $PORT || status=1
 "$OUT/commander" "$OUT/ppc-commander" || status=1
+"$OUT/commanderfull" "$OUT/ppc-commander" || status=1
 "$OUT/session" $PORT 127.0.0.1 "$OUT/fakecommander" || status=1
 [ $status = 0 ] && echo "all engine tests passed" || echo "SOME ENGINE TESTS FAILED"
 exit $status
