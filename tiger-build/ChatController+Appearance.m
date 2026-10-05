@@ -203,7 +203,7 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
     /* ---- tool calls ---- */
     [self addTab:@"Tool Calls"];
     [self label:@"The boxes that show each tool the model ran, such as \"start_process - Completed\"." frame:NSMakeRect(20, 290, 440, 17) right:NO bold:NO];
-    [self fontRow:@"Font:" y:254 family:TBThemeToolFont size:TBThemeToolSize defaultName:@"Monaco"];
+    [self fontRow:@"Font:" y:254 family:TBThemeToolFont size:TBThemeToolSize defaultName:@"Default (Monaco)"];
     [self colorRow:@"Text color:" x:10 y:218 key:TBThemeToolText fallback:[NSColor colorWithCalibratedWhite:0.35f alpha:1]];
     [self colorRow:@"Box color:" x:240 y:218 key:TBThemeToolBox fallback:[NSColor colorWithCalibratedWhite:0.96f alpha:1]];
     [self label:@"Sample" frame:NSMakeRect(20, 190, 100, 17) right:NO bold:YES];
