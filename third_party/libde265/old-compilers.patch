@@ -1,0 +1,444 @@
+diff -ruN a/libde265/alloc_pool.cc b/libde265/alloc_pool.cc
+--- a/libde265/alloc_pool.cc	2021-01-24 13:57:56
++++ b/libde265/alloc_pool.cc	2026-10-05 12:58:39
+@@ -53,8 +53,8 @@
+ 
+ alloc_pool::~alloc_pool()
+ {
+-  FOR_LOOP(uint8_t*, p, m_memBlocks) {
+-    delete[] p;
++  for (size_t b = 0; b < m_memBlocks.size(); b++) {
++    delete[] m_memBlocks[b];
+   }
+ }
+ 
+@@ -88,7 +88,8 @@
+ {
+   int memBlockSize = mObjSize * mPoolSize;
+ 
+-  FOR_LOOP(uint8_t*, memBlk, m_memBlocks) {
++  for (size_t b = 0; b < m_memBlocks.size(); b++) {
++    uint8_t* memBlk = m_memBlocks[b];
+     if (memBlk <= obj && obj < memBlk + memBlockSize) {
+       m_freeList.push_back(obj);
+       return;
+diff -ruN a/libde265/alloc_pool.h b/libde265/alloc_pool.h
+--- a/libde265/alloc_pool.h	2023-02-20 06:02:19
++++ b/libde265/alloc_pool.h	2026-10-05 12:58:39
+@@ -28,8 +28,8 @@
+ #endif
+ 
+ #include <vector>
+-#include <cstddef>
+-#include <cstdint>
++#include <stddef.h>
++#include <stdint.h>
+ 
+ 
+ class alloc_pool
+diff -ruN a/libde265/contextmodel.cc b/libde265/contextmodel.cc
+--- a/libde265/contextmodel.cc	2023-02-20 06:02:19
++++ b/libde265/contextmodel.cc	2026-10-05 12:58:39
+@@ -83,8 +83,8 @@
+     delete refcnt;
+   }
+ 
+-  model = nullptr;
+-  refcnt= nullptr;
++  model = NULL;
++  refcnt= NULL;
+ }
+ 
+ 
+@@ -114,8 +114,8 @@
+   newtable.model = model;
+   newtable.refcnt= refcnt;
+ 
+-  model =nullptr;
+-  refcnt=nullptr;
++  model =NULL;
++  refcnt=NULL;
+ 
+   return newtable;
+ }
+@@ -146,7 +146,7 @@
+ bool context_model_table::operator==(const context_model_table& b) const
+ {
+   if (b.model == model) return true;
+-  if (b.model == nullptr || model == nullptr) return false;
++  if (b.model == NULL || model == NULL) return false;
+ 
+   for (int i=0;i<CONTEXT_MODEL_TABLE_LENGTH;i++) {
+     if (!(b.model[i] == model[i])) return false;
+diff -ruN a/libde265/de265.cc b/libde265/de265.cc
+--- a/libde265/de265.cc	2023-09-19 13:21:11
++++ b/libde265/de265.cc	2026-10-05 12:58:39
+@@ -31,7 +31,7 @@
+ #include <assert.h>
+ #include <string.h>
+ #include <stdlib.h>
+-#include <mutex>
++#include <pthread.h>
+ 
+ 
+ // TODO: should be in some vps.c related header
+@@ -190,16 +190,17 @@
+ 
+ static int de265_init_count;
+ 
+-static std::mutex& de265_init_mutex()
+-{
+-  static std::mutex de265_init_mutex;
+-  return de265_init_mutex;
+-}
++static pthread_mutex_t de265_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+ 
++struct de265_init_lock {
++  de265_init_lock() { pthread_mutex_lock(&de265_init_mutex); }
++  ~de265_init_lock() { pthread_mutex_unlock(&de265_init_mutex); }
++};
+ 
++
+ LIBDE265_API de265_error de265_init()
+ {
+-  std::lock_guard<std::mutex> lock(de265_init_mutex());
++  de265_init_lock lock;
+ 
+   de265_init_count++;
+ 
+@@ -224,7 +225,7 @@
+ 
+ LIBDE265_API de265_error de265_free()
+ {
+-  std::lock_guard<std::mutex> lock(de265_init_mutex());
++  de265_init_lock lock;
+ 
+   if (de265_init_count<=0) {
+     return DE265_ERROR_LIBRARY_NOT_INITIALIZED;
+diff -ruN a/libde265/decctx.cc b/libde265/decctx.cc
+--- a/libde265/decctx.cc	2023-11-04 09:31:00
++++ b/libde265/decctx.cc	2026-10-05 12:58:39
+@@ -234,9 +234,9 @@
+   memset(&slice,0,sizeof(slice_segment_header)*DE265_MAX_SLICES);
+   */
+ 
+-  current_vps = NULL;
+-  current_sps = NULL;
+-  current_pps = NULL;
++  current_vps.reset();
++  current_sps.reset();
++  current_pps.reset();
+ 
+   //memset(&thread_pool,0,sizeof(struct thread_pool));
+   num_worker_threads = 0;
+@@ -265,7 +265,7 @@
+   prevPicOrderCntLsb = 0;
+   prevPicOrderCntMsb = 0;
+   img = NULL;
+-  previous_slice_header = nullptr;
++  previous_slice_header = NULL;
+ 
+   /*
+   int PocLsbLt[MAX_NUM_REF_PICS];
+@@ -373,9 +373,9 @@
+ #if 0
+   ctx->end_of_stream = false;
+   ctx->pending_input_NAL = NULL;
+-  ctx->current_vps = NULL;
+-  ctx->current_sps = NULL;
+-  ctx->current_pps = NULL;
++  ctx->current_vps.reset();
++  ctx->current_sps.reset();
++  ctx->current_pps.reset();
+   ctx->num_worker_threads = 0;
+   ctx->current_image_poc_lsb = 0;
+   ctx->first_decoded_picture = 0;
+@@ -531,7 +531,7 @@
+ {
+   logdebug(LogHeaders,"---> read VPS\n");
+ 
+-  std::shared_ptr<video_parameter_set> new_vps = std::make_shared<video_parameter_set>();
++  std::tr1::shared_ptr<video_parameter_set> new_vps = std::tr1::shared_ptr<video_parameter_set>(new video_parameter_set());
+   de265_error err = new_vps->read(this,&reader);
+   if (err != DE265_OK) {
+     return err;
+@@ -550,7 +550,7 @@
+ {
+   logdebug(LogHeaders,"----> read SPS\n");
+ 
+-  std::shared_ptr<seq_parameter_set> new_sps = std::make_shared<seq_parameter_set>();
++  std::tr1::shared_ptr<seq_parameter_set> new_sps = std::tr1::shared_ptr<seq_parameter_set>(new seq_parameter_set());
+   de265_error err;
+ 
+   if ((err=new_sps->read(this, &reader)) != DE265_OK) {
+@@ -566,9 +566,9 @@
+   // Remove the all PPS that referenced the old SPS because parameters may have changed and we do not want to
+   // get the SPS and PPS parameters (e.g. image size) out of sync.
+   
+-  for (auto& p : pps) {
+-    if (p && p->seq_parameter_set_id == new_sps->seq_parameter_set_id) {
+-      p = nullptr;
++  for (int i = 0; i < DE265_MAX_PPS_SETS; i++) {
++    if (pps[i] && pps[i]->seq_parameter_set_id == new_sps->seq_parameter_set_id) {
++      pps[i].reset();
+     }
+   }
+ 
+@@ -579,7 +579,7 @@
+ {
+   logdebug(LogHeaders,"----> read PPS\n");
+ 
+-  std::shared_ptr<pic_parameter_set> new_pps = std::make_shared<pic_parameter_set>();
++  std::tr1::shared_ptr<pic_parameter_set> new_pps = std::tr1::shared_ptr<pic_parameter_set>(new pic_parameter_set());
+ 
+   bool success = new_pps->read(&reader,this);
+   if (!success) {
+@@ -1424,7 +1424,7 @@
+ {
+   assert(dpb.has_free_dpb_picture(true));
+ 
+-  std::shared_ptr<const seq_parameter_set> current_sps = this->sps[ (int)current_pps->seq_parameter_set_id ];
++  std::tr1::shared_ptr<const seq_parameter_set> current_sps = this->sps[ (int)current_pps->seq_parameter_set_id ];
+ 
+   int idx = dpb.new_image(current_sps, this, 0,0, false);
+   if (idx<0) {
+@@ -2005,7 +2005,7 @@
+   // get PPS and SPS for this slice
+ 
+   int pps_id = hdr->slice_pic_parameter_set_id;
+-  if (pps[pps_id]==nullptr || pps[pps_id]->pps_read==false) {
++  if (!pps[pps_id] || pps[pps_id]->pps_read==false) {
+     logerror(LogHeaders, "PPS %d has not been read\n", pps_id);
+     img->decctx->add_warning(DE265_WARNING_NONEXISTING_PPS_REFERENCED, false);
+     return false;
+diff -ruN a/libde265/decctx.h b/libde265/decctx.h
+--- a/libde265/decctx.h	2023-11-04 09:31:00
++++ b/libde265/decctx.h	2026-10-05 12:58:39
+@@ -35,7 +35,7 @@
+ #include "libde265/acceleration.h"
+ #include "libde265/nal-parser.h"
+ 
+-#include <memory>
++#include <tr1/memory>
+ 
+ #define DE265_MAX_VPS_SETS 16   // this is the maximum as defined in the standard
+ #define DE265_MAX_SPS_SETS 16   // this is the maximum as defined in the standard
+@@ -301,8 +301,8 @@
+   bool has_sps(int id) const { return (bool)sps[id]; }
+   bool has_pps(int id) const { return (bool)pps[id]; }
+ 
+-  std::shared_ptr<const seq_parameter_set> get_shared_sps(int id) { return sps[id]; }
+-  std::shared_ptr<const pic_parameter_set> get_shared_pps(int id) { return pps[id]; }
++  std::tr1::shared_ptr<const seq_parameter_set> get_shared_sps(int id) { return sps[id]; }
++  std::tr1::shared_ptr<const pic_parameter_set> get_shared_pps(int id) { return pps[id]; }
+ 
+   /* */ seq_parameter_set* get_sps(int id)       { return sps[id].get(); }
+   const seq_parameter_set* get_sps(int id) const { return sps[id].get(); }
+@@ -388,13 +388,13 @@
+  private:
+   // --- internal data ---
+ 
+-  std::shared_ptr<video_parameter_set>  vps[ DE265_MAX_VPS_SETS ];
+-  std::shared_ptr<seq_parameter_set>    sps[ DE265_MAX_SPS_SETS ];
+-  std::shared_ptr<pic_parameter_set>    pps[ DE265_MAX_PPS_SETS ];
++  std::tr1::shared_ptr<video_parameter_set>  vps[ DE265_MAX_VPS_SETS ];
++  std::tr1::shared_ptr<seq_parameter_set>    sps[ DE265_MAX_SPS_SETS ];
++  std::tr1::shared_ptr<pic_parameter_set>    pps[ DE265_MAX_PPS_SETS ];
+ 
+-  std::shared_ptr<video_parameter_set>  current_vps;
+-  std::shared_ptr<seq_parameter_set>    current_sps;
+-  std::shared_ptr<pic_parameter_set>    current_pps;
++  std::tr1::shared_ptr<video_parameter_set>  current_vps;
++  std::tr1::shared_ptr<seq_parameter_set>    current_sps;
++  std::tr1::shared_ptr<pic_parameter_set>    current_pps;
+ 
+  public:
+   thread_pool thread_pool_;
+diff -ruN a/libde265/dpb.cc b/libde265/dpb.cc
+--- a/libde265/dpb.cc	2023-11-04 09:31:00
++++ b/libde265/dpb.cc	2026-10-05 12:58:39
+@@ -201,7 +201,7 @@
+ }
+ 
+ 
+-int decoded_picture_buffer::new_image(std::shared_ptr<const seq_parameter_set> sps,
++int decoded_picture_buffer::new_image(std::tr1::shared_ptr<const seq_parameter_set> sps,
+                                       decoder_context* decctx,
+                                       de265_PTS pts, void* user_data, bool isOutputImage)
+ {
+diff -ruN a/libde265/dpb.h b/libde265/dpb.h
+--- a/libde265/dpb.h	2023-02-20 06:02:19
++++ b/libde265/dpb.h	2026-10-05 12:58:39
+@@ -41,7 +41,7 @@
+      If there is no space for a new image, returns the negative value of an de265_error.
+      I.e. you can check for error by return_value<0, which is error (-return_value);
+      */
+-  int new_image(std::shared_ptr<const seq_parameter_set> sps, decoder_context* decctx,
++  int new_image(std::tr1::shared_ptr<const seq_parameter_set> sps, decoder_context* decctx,
+                 de265_PTS pts, void* user_data, bool isOutputImage);
+ 
+   /* Check for a free slot in the DPB. There are some slots reserved for
+diff -ruN a/libde265/image.cc b/libde265/image.cc
+--- a/libde265/image.cc	2023-11-30 04:55:41
++++ b/libde265/image.cc	2026-10-05 12:58:39
+@@ -232,7 +232,7 @@
+ 
+ 
+ de265_error de265_image::alloc_image(int w,int h, enum de265_chroma c,
+-                                     std::shared_ptr<const seq_parameter_set> sps, bool allocMetadata,
++                                     std::tr1::shared_ptr<const seq_parameter_set> sps, bool allocMetadata,
+                                      decoder_context* dctx,
+                                      //encoder_context* ectx,
+                                      de265_PTS pts, void* user_data,
+diff -ruN a/libde265/image.h b/libde265/image.h
+--- a/libde265/image.h	2023-11-23 12:43:05
++++ b/libde265/image.h	2026-10-05 12:58:39
+@@ -29,7 +29,7 @@
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <string.h>
+-#include <memory>
++#include <tr1/memory>
+ 
+ #include "libde265/de265.h"
+ #include "libde265/sps.h"
+@@ -222,7 +222,7 @@
+ 
+ 
+   de265_error alloc_image(int w,int h, enum de265_chroma c,
+-                          std::shared_ptr<const seq_parameter_set> sps,
++                          std::tr1::shared_ptr<const seq_parameter_set> sps,
+                           bool allocMetadata,
+                           decoder_context* dctx,
+                           //class encoder_context* ectx,
+@@ -235,9 +235,9 @@
+ 
+   void release();
+ 
+-  void set_headers(std::shared_ptr<video_parameter_set> _vps,
+-                   std::shared_ptr<seq_parameter_set>   _sps,
+-                   std::shared_ptr<pic_parameter_set>   _pps) {
++  void set_headers(std::tr1::shared_ptr<video_parameter_set> _vps,
++                   std::tr1::shared_ptr<seq_parameter_set>   _sps,
++                   std::tr1::shared_ptr<pic_parameter_set>   _pps) {
+     vps = _vps;
+     sps = _sps;
+     pps = _pps;
+@@ -388,10 +388,10 @@
+   bool has_sps() const { return (bool)sps; }
+   bool has_pps() const { return (bool)pps; }
+ 
+-  std::shared_ptr<const seq_parameter_set> get_shared_sps() { return sps; }
++  std::tr1::shared_ptr<const seq_parameter_set> get_shared_sps() { return sps; }
+ 
+-  //std::shared_ptr<const seq_parameter_set> get_shared_sps() const { return sps; }
+-  //std::shared_ptr<const pic_parameter_set> get_shared_pps() const { return pps; }
++  //std::tr1::shared_ptr<const seq_parameter_set> get_shared_sps() const { return sps; }
++  //std::tr1::shared_ptr<const pic_parameter_set> get_shared_pps() const { return pps; }
+ 
+   decoder_context*    decctx;
+   //class encoder_context*    encctx;
+@@ -402,9 +402,9 @@
+   // The image also keeps a reference to VPS/SPS/PPS, because when decoding is delayed,
+   // the currently active parameter sets in the decctx might already have been replaced
+   // with new parameters.
+-  std::shared_ptr<const video_parameter_set> vps;
+-  std::shared_ptr<const seq_parameter_set>   sps;  // the SPS used for decoding this image
+-  std::shared_ptr<const pic_parameter_set>   pps;  // the PPS used for decoding this image
++  std::tr1::shared_ptr<const video_parameter_set> vps;
++  std::tr1::shared_ptr<const seq_parameter_set>   sps;  // the SPS used for decoding this image
++  std::tr1::shared_ptr<const pic_parameter_set>   pps;  // the PPS used for decoding this image
+ 
+   MetaDataArray<CTB_info>    ctb_info;
+   MetaDataArray<CB_ref_info> cb_info;
+diff -ruN a/libde265/pps.cc b/libde265/pps.cc
+--- a/libde265/pps.cc	2022-10-19 09:34:13
++++ b/libde265/pps.cc	2026-10-05 12:58:39
+@@ -191,7 +191,7 @@
+ void pic_parameter_set::set_defaults(enum PresetSet)
+ {
+   pps_read = false;
+-  sps = NULL;
++  sps.reset();
+ 
+   pic_parameter_set_id = 0;
+   seq_parameter_set_id = 0;
+diff -ruN a/libde265/pps.h b/libde265/pps.h
+--- a/libde265/pps.h	2022-10-19 09:34:13
++++ b/libde265/pps.h	2026-10-05 12:58:39
+@@ -25,7 +25,7 @@
+ #include "libde265/sps.h" // for scaling list only
+ 
+ #include <vector>
+-#include <memory>
++#include <tr1/memory>
+ 
+ #define DE265_MAX_TILE_COLUMNS 10
+ #define DE265_MAX_TILE_ROWS    10
+@@ -73,7 +73,7 @@
+   void set_defaults(enum PresetSet = Preset_Default);
+ 
+   bool pps_read; // whether this pps has been read from bitstream
+-  std::shared_ptr<const seq_parameter_set> sps;
++  std::tr1::shared_ptr<const seq_parameter_set> sps;
+ 
+ 
+   char pic_parameter_set_id;
+diff -ruN a/libde265/slice.cc b/libde265/slice.cc
+--- a/libde265/slice.cc	2023-11-23 12:43:05
++++ b/libde265/slice.cc	2026-10-05 12:58:39
+@@ -244,7 +244,7 @@
+ 
+ void slice_segment_header::reset()
+ {
+-  pps = NULL;
++  pps.reset();
+ 
+   slice_index = 0;
+ 
+diff -ruN a/libde265/slice.h b/libde265/slice.h
+--- a/libde265/slice.h	2022-10-19 09:34:13
++++ b/libde265/slice.h	2026-10-05 12:58:39
+@@ -33,7 +33,7 @@
+ 
+ #include <vector>
+ #include <string.h>
+-#include <memory>
++#include <tr1/memory>
+ 
+ #define MAX_NUM_REF_PICS    16
+ 
+@@ -146,7 +146,7 @@
+ 
+ 
+   int  slice_index; // index through all slices in a picture  (internal only)
+-  std::shared_ptr<const pic_parameter_set> pps;
++  std::tr1::shared_ptr<const pic_parameter_set> pps;
+ 
+ 
+   char first_slice_segment_in_pic_flag;
+diff -ruN a/libde265/threads.h b/libde265/threads.h
+--- a/libde265/threads.h	2023-02-20 06:02:19
++++ b/libde265/threads.h	2026-10-05 12:58:39
+@@ -29,7 +29,6 @@
+ 
+ #include <deque>
+ #include <string>
+-#include <atomic>
+ 
+ #ifndef _WIN32
+ #include <pthread.h>
+diff -ruN a/libde265/util.h b/libde265/util.h
+--- a/libde265/util.h	2021-01-24 13:57:57
++++ b/libde265/util.h	2026-10-05 12:58:39
+@@ -93,8 +93,8 @@
+ 
+ #ifdef NEED_NULLPTR_FALLBACK
+ // Compilers with partial/incomplete support for C++11 don't know about
+-// "nullptr". A simple alias should be fine for our use case.
+-#define nullptr NULL
++// "NULL". A simple alias should be fine for our use case.
++#define NULL NULL
+ #endif
+ 
+ #ifdef _MSC_VER

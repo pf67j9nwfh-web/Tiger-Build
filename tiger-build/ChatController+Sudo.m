@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBSession.h"
 #import <Security/Security.h>
 #import <sys/socket.h>
 #import <sys/un.h>
@@ -6,22 +7,21 @@
 #import <unistd.h>
 
 /* Administrator (sudo) mode for Commander. The person turns it on here and types the administrator password
-   once; it is kept in the Keychain, readable only by this app. Commander runs in an SSH session, which cannot
-   open that Keychain, so when a command needs sudo it asks this app for the password over a socket only this
+   once; it is kept in the Keychain, readable only by this app. Commander runs as a separate program, which cannot
+   open that Keychain without asking, so when a command needs sudo it asks this app for the password over a socket only this
    account can use. The model never sees it. */
 
 static NSString *kSudoService = @"Tiger Build Commander administrator";
 
 static NSString *runCommander(NSString *flag)
 {
-    NSString *script = [NSHomeDirectory() stringByAppendingPathComponent:@"ppc-commander/ppc_commander.py"];
     NSTask *task = [[[NSTask alloc] init] autorelease];
     NSPipe *pipe = [NSPipe pipe];
     NSData *data;
-    if (![[NSFileManager defaultManager] fileExistsAtPath:script])
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:TBCommanderProgram()])
         return nil;
-    [task setLaunchPath:@"/usr/bin/python"];
-    [task setArguments:[NSArray arrayWithObjects:script, @"--sudo", flag, nil]];
+    [task setLaunchPath:TBCommanderProgram()];
+    [task setArguments:[NSArray arrayWithObjects:@"--sudo", flag, nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
     [task launch];
@@ -63,7 +63,7 @@ static BOOL savePassword(NSString *password)
 
 /* ---- handing the password to Commander ---- */
 
-/* The same path Commander uses (sudo_socket_path in ppc_commander.py). */
+/* The same path Commander uses (the sudo socket in CMProcess.m). */
 static NSString *brokerPath(void)
 {
     NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/commander/sudo.sock"];
@@ -121,6 +121,11 @@ static BOOL passwordAccepted(NSString *password)
 }
 
 @implementation ChatController (Sudo)
+
+- (BOOL)administratorPasswordSaved
+{
+    return passwordSaved();
+}
 
 - (void)sudoBrokerLoop:(NSNumber *)listener
 {
@@ -224,6 +229,7 @@ static BOOL passwordAccepted(NSString *password)
     [[panel contentView] addSubview:cancel];
     [panel setInitialFirstResponder:field];
     [panel center];
+    [panel setLevel:NSFloatingWindowLevel];
     result = [NSApp runModalForWindow:panel];
     [panel orderOut:nil];
     if (result == 1)

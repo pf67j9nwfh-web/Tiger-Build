@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0
+- **Commander is a native program** (Objective-C, inside the app), not Python. It starts with a chat that uses it, listens on no port, and runs only for Tiger Build on the same Mac unless you turn on **Commander → Allow Other Computers**. Nothing needs Remote Login unless you want another computer to use this one.
+- **Other computers** are added as MCP servers over SSH (user@address and a command), with *Commander on another computer* as a preset; Tiger Build's own key and a host list you confirm are used. Every MCP server can have a description or instructions for the model.
+- **Administrator (sudo)** is also a per-chat switch in the Tools menu; turning it on turns Commander on and asks for the password once.
+- **Appearance** has four tabs: Chat, Tool Calls, Status Text (with shadow or glow), and Interface (chat list, labels, buttons, menus, and the window look). All settings windows stay in front of the chat.
+- **Old Office files**: Word `.doc`, Excel `.xls` and PowerPoint `.ppt` (97 to 2003) are read as text. **AVIF** pictures are converted (libaom, with rotation, mirroring, colour and alpha), including on PowerPC.
+- **Messages for another chat** while one is working are queued and sent when it finishes. **System info** reports the displays (count, resolution, refresh rate, size). **Currency** and **US inflation** example servers, and **Gemini** can search with Google. ChatGPT video is gone because OpenAI closed its Videos API.
+- **Download tool** (off by default; Tool Settings → Web Search, then the Tools menu item per chat): a model can fetch a file over https (TLS 1.2/1.3, certificate checked, public addresses only, 50 MB cap) into the chat's files after you approve it. Tool steps per reply can be set up to 1000, or 0 for no limit.
+- **Security fixes**: `read_file` no longer reads `file:` or other non-web addresses; git options that run programs or write outside the workspace are refused (including abbreviated and `--opt=/path` forms); sudo is available only to a chat that ticks its Tools menu item.
+- No Python remains in the app, the installer or the build: helper tools are C, Objective-C or shell, and the test servers are native too.
+- **No relay.** Tiger Build now talks to the AI services itself, over TLS 1.3 and 1.2 from a built-in Mbed TLS 3.6 (patched for gcc 4.0 and the old SDKs, with the Mozilla certificate list). Tested on PowerPC and Intel, Tiger to Snow Leopard. Handshakes take about 0.1 to 0.25 s on a G4 or G3.
+- Everything the relay did is in the app: providers (Grok, ChatGPT, Claude, Gemini, Mistral, Muse, local), the tool loop with Stop, guidance, approvals, compaction and consulting other models, cost estimates, file conversion (Word, Excel, PowerPoint, OpenDocument, Pages, Numbers, Keynote, WebP, HEIC, AVIF and other pictures), dictation, picture and video making, files from the model (`.docx`, `.xlsx`, `.pdf`), web and picture search, and the agent toolbox.
+- **Keys are kept in the Keychain**; there is no relay token or address any more.
+- **MCP servers**: programs on the Mac, or `http://` and `https://` Streamable HTTP servers. The four example servers are built in.
+- Removed: the relay, its Mac, Windows and Linux apps and installers, "history on the relay", and the SSH link the relay used. The installer no longer turns on Remote Login.
+- Importing a 1.x settings backup brings the keys across.
+
 ## 1.5
 - **Appearance** (⌥⌘K): iChat-style bubble colours, text colours, fonts and chat background (solid, gradient or picture), with Reset to Default; iChat's thought cloud shows while a reply is starting.
 - **Administrator (sudo) mode** for Commander 0.5.0, off by default: tick it in Preferences, Commander and type the password once; it is kept in the Keychain and the model never sees it. Without the mode, commands containing `sudo` are refused.

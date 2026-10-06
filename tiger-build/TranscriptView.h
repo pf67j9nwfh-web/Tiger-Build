@@ -9,6 +9,7 @@
     NSDictionary *bodyAttrs;
     NSDictionary *userAttrs;
     NSDictionary *statusAttrs;
+    NSDictionary *toolAttrs;
     NSMutableArray *movieViews;
     NSMutableArray *moviePaths;
     NSMutableDictionary *imageCache;
@@ -41,3 +42,10 @@
 
 /* A chat title with its emoji as pictures, for the chat list; nil when it has none (or the system draws emoji itself). */
 NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font);
+
+/* A sample of tool-card text (mode 0) or status text (mode 1) on the chat background, for the Appearance tabs. */
+@interface TBThemeSampleView : NSView {
+    int mode;
+}
+- (id)initWithFrame:(NSRect)frame mode:(int)which;
+@end

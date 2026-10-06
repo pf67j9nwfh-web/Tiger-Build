@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import "TBCompat.h"
 
-@class RelayRequest;
+@class EngineRequest;
 @class TBStore;
 
 @interface ChatController : NSObject TB_PROTOCOLS(NSApplicationDelegate, NSWindowDelegate, NSSplitViewDelegate, NSTableViewDataSource,
@@ -20,7 +20,7 @@
     NSButton *retryButton;
     NSButton *attachButton;
     NSMutableArray *attachQueue;
-    RelayRequest *attachRequest;
+    EngineRequest *attachRequest;
     int attachGeneration;
     NSTextView *fieldEditor;
     id finder;
@@ -28,7 +28,7 @@
     unsigned long dictationRate;
     double dictationStarted;
     NSTimer *dictationTimer;
-    RelayRequest *dictationRequest;
+    EngineRequest *dictationRequest;
     NSString *dictationSaved;
     NSSpeechSynthesizer *voiceSynth;
     NSSpeechSynthesizer *voiceSample;
@@ -37,13 +37,14 @@
     double lastPartialSave;
     NSMutableArray *attachProblems;
     BOOL attachWorking;
-    NSString *relayVersion;
     NSTextField *thinkingField;
     NSString *runId;
     NSMutableDictionary *workspaceSettings;
     NSArray *toolCatalog;
     NSString *commanderProblem;
     NSString *commanderCode;
+    NSString *launchScreen;
+    int launchWaits;
     NSString *thinkingText;
     NSMutableArray *queuedGuidance;
     NSArray *editBackup;
@@ -55,7 +56,7 @@
     BOOL offeredSSH;
     int pulse;
     NSTimer *pulseTimer;
-    RelayRequest *sideRequest;
+    EngineRequest *sideRequest;
     NSDictionary *commanderCache;
     BOOL commanderStatusPending;
     NSPopUpButton *modelPopup;
@@ -77,10 +78,9 @@
     BOOL suppressSelection;
     BOOL busy;
     void *bodyStream;
+    id localTurn;                 /* the built-in engine's turn, when there is one (bodyStream then marks it) */
     double lastPaint;
     NSMutableData *frameBuffer;
-    NSMutableData *errorBody;
-    int httpStatus;
     NSString *streamingId;
     NSString *launchQuestion;
     NSTextField *contextField;
@@ -98,9 +98,12 @@
     NSTimer *relayTimer;
     BOOL relayReachable;
     double lastCatalog;
+    NSMutableArray *queuedSends;        /* messages typed in another chat while one was working: {chatId, text, notice} */
+    NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 
 - (void)setLaunchQuestion:(NSString *)text;
+- (void)setLaunchScreen:(NSString *)spec;
 - (void)layoutSubviews;
 
 @end

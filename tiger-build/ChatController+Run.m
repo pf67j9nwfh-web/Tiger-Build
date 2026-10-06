@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBTheme.h"
 #import "TranscriptView.h"
 #import <stdlib.h>
 
@@ -21,7 +22,7 @@ static NSString *newRunId(void)
 {
     static unsigned counter = 0;
     counter++;
-    return [NSString stringWithFormat:@"r%08x%04x%08x", (unsigned)CFAbsoluteTimeGetCurrent(), counter & 0xffff, (unsigned)random()];
+    return [NSString stringWithFormat:@"r%08x%04x%08x", (unsigned)CFAbsoluteTimeGetCurrent(), counter & 0xffff, (unsigned)arc4random()];
 }
 
 @implementation ChatController (Run)
@@ -239,6 +240,7 @@ static NSString *newRunId(void)
     [menu addItem:[self toolsItem:@"Tool Settings..." action:@selector(showIntegrations:) key:nil state:NO]];
     [menu addItem:[self toolsItem:@"Workspace Directory Restriction..." action:@selector(showWorkspaceSettings:) key:nil state:NO]];
     [toolsPopup selectItemAtIndex:0];
+    [self applyPopupTheme:toolsPopup];
 }
 
 - (void)toggleServer:(id)sender
@@ -246,7 +248,17 @@ static NSString *newRunId(void)
     NSString *key = [sender representedObject];
     if (!current || !key)
         return;
-    [self setServer:key enabled:![self serverEnabled:key chat:current] chat:current];
+    BOOL on = ![self serverEnabled:key chat:current];
+    if ([key isEqualToString:@"sudo"] && on) {
+        /* Administrator mode needs the password once, and Commander on to use it. */
+        if (![self administratorPasswordSaved] && ![self saveAdministratorPassword]) {
+            [self rebuildToolsMenu];
+            return;
+        }
+        [self setServer:@"commander" enabled:YES chat:current];
+    } else if ([key isEqualToString:@"commander"] && !on)
+        [self setServer:@"sudo" enabled:NO chat:current];
+    [self setServer:key enabled:on chat:current];
     [self rebuildToolsMenu];
     [self saveStore];
     [self updateContextReadout];
@@ -294,10 +306,10 @@ static NSString *newRunId(void)
 
 - (void)refreshToolCatalog
 {
-    [RelayRequest send:@"GET" path:@"/v1/tools" body:nil timeout:12 target:self action:@selector(toolCatalogArrived:) context:nil];
+    [EngineRequest send:@"GET" path:@"/v1/tools" body:nil timeout:12 target:self action:@selector(toolCatalogArrived:) context:nil];
 }
 
-- (void)toolCatalogArrived:(RelayRequest *)request
+- (void)toolCatalogArrived:(EngineRequest *)request
 {
     NSString *error = nil;
     NSDictionary *data;
@@ -321,7 +333,6 @@ static NSString *newRunId(void)
     commanderCode = [[data objectForKey:@"commander_code"] copy];
     [self rebuildToolsMenu];
     [self commanderProblemChanged];
-    [self maybeOfferSSH];
 }
 
 /* ---- usage, cost and context ---- */
@@ -358,7 +369,10 @@ static NSString *newRunId(void)
         shown = [[shown componentsSeparatedByString:@"\n"] componentsJoinedByString:@" "];
         [thinkingField setStringValue:[@"Thinking: " stringByAppendingString:shown]];
     }
+    /* the field draws no background over the textured window, so old words stay behind unless the pane under it is repainted (Tiger) */
+    [chatPane setNeedsDisplayInRect:NSInsetRect([thinkingField frame], -4, -4)];
     [self layoutPanes];
+    [chatPane displayIfNeededInRect:NSInsetRect([thinkingField frame], -4, -4)];
 }
 
 - (void)noteThinking:(NSString *)piece
@@ -383,6 +397,7 @@ static NSString *newRunId(void)
         return;
     }
     stopping = YES;
+    [self forgetQueuedSends];
     [self stopSpeaking:nil];
     if (sideRequest) {
         /* Still compacting, before the chat stream started. */
@@ -390,7 +405,7 @@ static NSString *newRunId(void)
         sideRequest = nil;
     }
     if (runId) {
-        [RelayRequest send:@"POST" path:@"/v1/run"
+        [EngineRequest send:@"POST" path:@"/v1/run"
             body:[NSString stringWithFormat:@"{\"id\":\"%@\",\"action\":\"stop\"}", TBJSONEscape(runId)]
             timeout:8 target:self action:@selector(runCommandDone:) context:nil];
     }
@@ -413,7 +428,7 @@ static NSString *newRunId(void)
         [self finishWithoutStream:chat];
 }
 
-- (void)runCommandDone:(RelayRequest *)request
+- (void)runCommandDone:(EngineRequest *)request
 {
     (void)request;
 }
@@ -436,12 +451,12 @@ static NSString *newRunId(void)
         queuedGuidance = [[NSMutableArray alloc] init];
     [queuedGuidance addObject:text];
     [self addStatus:[NSString stringWithFormat:@"%@ queued: %@", TBGuidanceMark, text] toChat:chat];
-    [RelayRequest send:@"POST" path:@"/v1/run"
+    [EngineRequest send:@"POST" path:@"/v1/run"
         body:[NSString stringWithFormat:@"{\"id\":\"%@\",\"action\":\"guide\",\"text\":\"%@\"}", TBJSONEscape(runId), TBJSONEscape(text)]
         timeout:10 target:self action:@selector(guidanceSent:) context:text];
 }
 
-- (void)guidanceSent:(RelayRequest *)request
+- (void)guidanceSent:(EngineRequest *)request
 {
     NSString *text = [request context];
     if ([request ok] || !text)
@@ -517,7 +532,7 @@ static NSString *newRunId(void)
         [self saveStore];
     } else
         decision = @"deny";
-    [RelayRequest send:@"POST" path:@"/v1/run"
+    [EngineRequest send:@"POST" path:@"/v1/run"
         body:[NSString stringWithFormat:@"{\"id\":\"%@\",\"action\":\"approve\",\"call\":\"%@\",\"decision\":\"%@\"}",
             TBJSONEscape(runId), TBJSONEscape([event objectForKey:@"id"]), decision]
         timeout:10 target:self action:@selector(runCommandDone:) context:nil];
@@ -560,6 +575,10 @@ static NSString *newRunId(void)
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];
         [sendButton setToolTip:@"Send the message (Return)"];
+    } else if (streamingId && current && ![[current objectForKey:@"id"] isEqualToString:streamingId]) {
+        [sendButton setTitle:@"Queue"];
+        [sendButton setEnabled:YES];
+        [sendButton setToolTip:@"Another chat is working. This message is sent when it has finished."];
     } else if (guide) {
         [sendButton setTitle:[NSString stringWithFormat:@"Guide %C", (unichar)((pulse % 2) ? 0x25CB : 0x25CF)]];
         [sendButton setEnabled:YES];
@@ -573,6 +592,11 @@ static NSString *newRunId(void)
     [retryButton setEnabled:!busy && [self lastUserIndex] >= 0 && ![self chatIsBusyElsewhere:current]];
     [attachButton setEnabled:!busy && current && ![self chatIsBusyElsewhere:current]];
     [editButton setTitle:editBackup ? @"Cancel Edit" : @"Edit Last"];
+    /* the titles above replace any coloured title Appearance gave these buttons */
+    if ([TBTheme interfaceColor:@"buttons"]) {
+        [self applyButtonTheme:sendButton];
+        [self applyButtonTheme:editButton];
+    }
 }
 
 /* ---- edit and retry the last message ---- */

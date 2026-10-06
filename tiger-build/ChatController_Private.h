@@ -1,5 +1,5 @@
 #import "ChatController.h"
-#import "RelayClient.h"
+#import "EngineRequest.h"
 #import "TBSupport.h"
 
 /* Methods the ChatController source files call on each other. They are
@@ -16,15 +16,14 @@
 - (void)setRelayProblem:(NSString *)text;
 - (float)relayStatusHeightForWidth:(float)width;
 - (void)relayStatusChanged;
-- (NSString *)relayProblemForRequest:(RelayRequest *)request;
+- (NSString *)relayProblemForRequest:(EngineRequest *)request;
 - (NSMutableDictionary *)blankChat;
 - (void)reloadTableSelect:(int)row show:(BOOL)show;
 - (NSData *)historyData;
 - (void)importHistoryData:(NSData *)data;
 - (void)clearAllHistory:(id)sender;
+- (IBAction)newChat:(id)sender;
 - (void)exportHistory:(id)sender;
-- (void)exportHistoryToRelay:(id)sender;
-- (void)importHistoryFromRelay:(id)sender;
 - (void)importHistory:(id)sender;
 - (void)reportUnconfigured;
 - (void)commanderStart:(id)sender;
@@ -32,6 +31,8 @@
 - (void)commanderAutostart:(id)sender;
 - (void)commanderIP:(id)sender;
 - (NSDictionary *)commanderCommand:(NSString *)command;
+- (BOOL)administratorPasswordSaved;
+- (BOOL)saveAdministratorPassword;
 - (void)showIntegrations:(id)sender;
 - (void)exportAllSettings:(id)sender;
 - (void)importAllSettings:(id)sender;
@@ -48,7 +49,6 @@
 - (void)collapseActivities:(id)sender;
 - (void)deleteWorkspace:(id)sender;
 - (void)showWorkspaceSettings:(id)sender;
-- (void)connectCommanderSSH:(id)sender;
 - (void)compactNow:(id)sender;
 - (void)setWorkspaceChoice:(NSString *)name;
 - (void)announceStoreChange;
@@ -58,6 +58,9 @@
 - (void)storeChanged:(NSNotification *)note;
 - (void)storesReplaced:(NSNotification *)note;
 - (void)startTurn;
+- (void)queueText:(NSString *)text inChat:(NSMutableDictionary *)chat;
+- (void)startQueuedSend;
+- (void)forgetQueuedSends;
 - (void)finishWithoutStream:(NSMutableDictionary *)chat;
 - (NSMutableDictionary *)chatWithId:(NSString *)chatId;
 - (void)addStatus:(NSString *)text toChat:(NSMutableDictionary *)chat;
@@ -73,8 +76,6 @@
 - (NSString *)defaultModelForProvider:(NSString *)provider;
 - (NSString *)providerNote:(NSString *)provider;
 - (NSArray *)workspaceNamesOnDisk;
-- (void)ensureCommanderInstalled;
-- (void)maybeOfferSSH;
 - (void)refreshCommanderStatus;
 @end
 
@@ -121,6 +122,10 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 
 @interface ChatController (Appearance)
 - (IBAction)showAppearance:(id)sender;
+- (void)applyInterfaceTheme;
+- (void)applyPopupTheme:(NSPopUpButton *)popup;
+- (void)applyButtonTheme:(NSButton *)button;
+- (void)interfaceThemeChanged:(NSNotification *)note;
 @end
 
 @interface ChatController (Dictation)
@@ -184,3 +189,4 @@ BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *
 - (IBAction)toggleTools:(id)sender;
 - (void)returnTextToField:(NSString *)text;
 @end
+

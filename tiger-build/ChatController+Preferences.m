@@ -1,12 +1,9 @@
 #import "ChatController_Private.h"
+#import "TBSession.h"
 
-/* Preferences.
-   Relay address, port, and token are kept on this Mac (server.txt and
-   token.txt). Provider keys and the local server are kept by the relay, which
-   only ever reports whether each key is saved, never the key itself.
-   Nothing here waits on the network; answers arrive via RelayRequest. */
+/* Preferences. Keys are kept in the Keychain by the engine, which only ever reports whether each key is saved, never the key itself.
+   Answers arrive through EngineRequest, which the engine serves from inside the app. */
 
-#define TB_DEFAULT_PORT @"8765"
 #define TB_LOCAL_EXAMPLE @"http://127.0.0.1:1234/v1"
 
 static NSString *trimmedValue(NSTextField *field)
@@ -14,33 +11,11 @@ static NSString *trimmedValue(NSTextField *field)
     return [[field stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
-/* "http://192.168.1.10:8765" -> host "192.168.1.10", port "8765".
-   *port is nil when the text has no port. */
-static NSString *splitBase(NSString *base, NSString **port)
-{
-    NSString *rest = base ? base : @"";
-    NSRange scheme = [rest rangeOfString:@"://"];
-    NSRange colon;
-    if (scheme.location != NSNotFound)
-        rest = [rest substringFromIndex:NSMaxRange(scheme)];
-    while ([rest hasSuffix:@"/"])
-        rest = [rest substringToIndex:[rest length] - 1];
-    colon = [rest rangeOfString:@":" options:NSBackwardsSearch];
-    *port = nil;
-    if (colon.location != NSNotFound) {
-        *port = [rest substringFromIndex:colon.location + 1];
-        rest = [rest substringToIndex:colon.location];
-    }
-    return rest;
-}
-
 @interface ChatController (PreferencesPrivate)
-- (void)requestSSHState;
-- (void)setSSHStatus:(NSString *)text;
+- (void)loadSSHFields;
 - (void)saveSSHFields;
 - (void)fillNewChatModelPopup;
 - (void)requestSettings;
-- (BOOL)saveRelayFields;
 - (void)refreshAfterPreferences;
 - (void)setPreferencesStatus:(NSString *)text;
 @end
@@ -52,45 +27,23 @@ static NSString *splitBase(NSString *base, NSString **port)
     [[prefsFields objectForKey:@"status"] setStringValue:text ? text : @""];
 }
 
-- (void)setRelayTestText:(NSString *)text
-{
-    [[prefsFields objectForKey:@"relay.status"] setStringValue:text ? text : @""];
-    [[prefsFields objectForKey:@"relay.status"] setToolTip:text];
-}
-
-/* Relay fields from disk; key fields blank; then ask the relay what it has. */
+/* Fields from the saved settings; key fields blank; then ask what is saved. */
 - (void)loadPreferenceForm
 {
-    NSString *port;
-    NSString *host = splitBase([RelayRequest serverBase], &port);
     NSEnumerator *names = [prefsFields keyEnumerator];
     NSString *name;
-    [[prefsFields objectForKey:@"relay_host"] setStringValue:host];
-    [[prefsFields objectForKey:@"relay_port"] setStringValue:port ? port : TB_DEFAULT_PORT];
-    [[prefsFields objectForKey:@"relay_token"] setStringValue:@""];
-    [[prefsFields objectForKey:@"relay_token.note"]
-        setStringValue:[[RelayRequest token] length] ? @"saved" : @""];
     while ((name = [names nextObject])) {
         if ([name hasPrefix:@"remove."])
             [[prefsFields objectForKey:name] setEnabled:NO];
     }
-    [self setRelayTestText:@""];
     [self fillNewChatModelPopup];
-    [self setSSHStatus:@""];
-    [prefsFields removeObjectForKey:@"ssh.loaded"];
-    [self requestSSHState];
+    [self loadSSHFields];
     [self requestSettings];
 }
 
 - (void)requestSettings
 {
-    if ([[RelayRequest serverBase] length] == 0) {
-        [self setPreferencesStatus:@"Enter the relay address and token, then Test Connection."];
-        [[prefsFields objectForKey:@"local.inuse"] setStringValue:@"Unknown until the relay is reachable."];
-        return;
-    }
-    [self setPreferencesStatus:@"Asking the relay..."];
-    [RelayRequest send:@"GET" path:@"/v1/settings" body:nil timeout:10
+    [EngineRequest send:@"GET" path:@"/v1/settings" body:nil timeout:10
         target:self action:@selector(preferencesArrived:) context:nil];
 }
 
@@ -108,7 +61,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     return [NSString stringWithFormat:@"In use: %@", url];
 }
 
-- (void)preferencesArrived:(RelayRequest *)request
+- (void)preferencesArrived:(EngineRequest *)request
 {
     NSMutableDictionary *values = [NSMutableDictionary dictionary];
     NSArray *lines;
@@ -118,10 +71,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     unsigned i;
     int saved = 0;
     if (![request ok]) {
-        NSString *problem = [self relayProblemForRequest:request];
-        [self setPreferencesStatus:@""];
-        [self setRelayTestText:problem];
-        [[prefsFields objectForKey:@"local.inuse"] setStringValue:@"Unknown until the relay is reachable."];
+        [self setPreferencesStatus:@"The saved settings could not be read."];
         return;
     }
     [self setPreferencesStatus:@""];
@@ -154,95 +104,7 @@ static NSString *splitBase(NSString *base, NSString **port)
             saved++;
     }
     if (saved == 0)
-        [self setPreferencesStatus:@"No provider keys yet. Add some or a configure a local LLM server connection to get started."];
-}
-
-/* Write the relay address, port, and token. NO (with an alert) if unusable. */
-- (BOOL)saveRelayFields
-{
-    NSString *host = trimmedValue([prefsFields objectForKey:@"relay_host"]);
-    NSString *port = trimmedValue([prefsFields objectForKey:@"relay_port"]);
-    NSString *token = trimmedValue([prefsFields objectForKey:@"relay_token"]);
-    NSString *typedPort;
-    NSString *base = nil;
-    int number;
-    if ([host length] > 0) {
-        /* Someone may paste http://192.168.1.10:8765 into the address box. */
-        host = splitBase(host, &typedPort);
-        if ([typedPort length])
-            port = typedPort;
-        if ([port length] == 0)
-            port = TB_DEFAULT_PORT;
-        number = [port intValue];
-        if (number < 1 || number > 65535 || ![[NSString stringWithFormat:@"%d", number] isEqualToString:port]) {
-            NSRunAlertPanel(@"Preferences", @"The port must be a number from 1 to 65535. The relay normally uses 8765.",
-                @"OK", nil, nil);
-            return NO;
-        }
-        if ([host rangeOfString:@" "].location != NSNotFound || [host rangeOfString:@"/"].location != NSNotFound) {
-            NSRunAlertPanel(@"Preferences", @"The relay address should be an IP address or name, such as 192.168.1.10.",
-                @"OK", nil, nil);
-            return NO;
-        }
-        base = [NSString stringWithFormat:@"http://%@:%d", host, number];
-        [[prefsFields objectForKey:@"relay_host"] setStringValue:host];
-        [[prefsFields objectForKey:@"relay_port"] setStringValue:[NSString stringWithFormat:@"%d", number]];
-    }
-    [relayVersion release];
-    relayVersion = nil;
-    if (![RelayRequest saveServerBase:base token:([token length] ? token : nil)]) {
-        NSRunAlertPanel(@"Preferences", @"Tiger Build could not save the relay address.", @"OK", nil, nil);
-        return NO;
-    }
-    if ([token length]) {
-        [[prefsFields objectForKey:@"relay_token"] setStringValue:@""];
-        [[prefsFields objectForKey:@"relay_token.note"] setStringValue:@"saved"];
-    }
-    return YES;
-}
-
-- (void)testConnection:(id)sender
-{
-    (void)sender;
-    if (![self saveRelayFields])
-        return;
-    if ([[RelayRequest serverBase] length] == 0) {
-        [self setRelayTestText:@"Enter the relay address first."];
-        return;
-    }
-    [self setRelayTestText:@"Testing..."];
-    [RelayRequest send:@"GET" path:@"/v1/models" body:nil timeout:10
-        target:self action:@selector(testArrived:) context:nil];
-}
-
-- (void)testArrived:(RelayRequest *)request
-{
-    NSArray *lines;
-    NSMutableArray *ready = [NSMutableArray array];
-    unsigned i;
-    int models = 0;
-    if (![request ok]) {
-        [self setRelayTestText:[self relayProblemForRequest:request]];
-        [self setRelayProblem:[self relayProblemForRequest:request]];
-        return;
-    }
-    lines = [[request text] componentsSeparatedByString:@"\n"];
-    for (i = 0; i < [lines count]; i++) {
-        NSArray *parts = [[lines objectAtIndex:i] componentsSeparatedByString:@"\t"];
-        if ([parts count] >= 4 && [[parts objectAtIndex:0] isEqualToString:@"provider"]
-            && [[parts objectAtIndex:3] isEqualToString:@"ok"]
-            && ![[parts objectAtIndex:1] isEqualToString:@"local"])
-            [ready addObject:[parts objectAtIndex:2]];
-        if ([parts count] >= 3 && [[parts objectAtIndex:0] isEqualToString:@"model"])
-            models++;
-    }
-    if ([ready count])
-        [self setRelayTestText:[NSString stringWithFormat:@"Connected. %d models ready: %@.",
-            models, [ready componentsJoinedByString:@", "]]];
-    else
-        [self setRelayTestText:@"Connected. No provider keys yet or local LLM server set."];
-    [self requestSettings];
-    [self refreshAfterPreferences];
+        [self setPreferencesStatus:@"No provider keys yet. Add a key or a local LLM server."];
 }
 
 - (void)showHelp:(id)sender
@@ -264,32 +126,31 @@ static NSString *splitBase(NSString *base, NSString **port)
         return;
     if ([setting isEqualToString:@"local_url"])
         body = @"{\"clear\":[\"local_url\"]}";
-    else if (NSRunAlertPanel(@"Remove this key?", @"The relay will forget it. You can add it again later.",
+    else if (NSRunAlertPanel(@"Remove this key?", @"Tiger Build will remove it from your Keychain. You can add it again later.",
                 @"Remove", @"Cancel", nil) != NSAlertDefaultReturn)
         return;
     else
         body = [NSString stringWithFormat:@"{\"clear\":[\"%@\"]}", TBJSONEscape(setting)];
     [self setPreferencesStatus:@"Saving..."];
-    [RelayRequest send:@"POST" path:@"/v1/settings" body:body timeout:15
+    [EngineRequest send:@"POST" path:@"/v1/settings" body:body timeout:15
         target:self action:@selector(removalSaved:) context:nil];
 }
 
 - (void)clearAllSettings:(id)sender
 {
     (void)sender;
-    if (NSRunAlertPanel(@"Clear all relay settings?", @"Remove every provider/search API key, workspace ID, local LLM server settings and custom MCP configuration? "
-        @"The relay connection and chat history are kept. This affects the relay GUI too.", @"Clear All", @"Cancel", nil)
+    if (NSRunAlertPanel(@"Clear all settings?", @"Remove every provider and search API key, the workspace ID, the local LLM server and your custom MCP servers? "
+        @"Chat history is kept.", @"Clear All", @"Cancel", nil)
         != NSAlertDefaultReturn) return;
-    [RelayRequest send:@"POST" path:@"/v1/settings" body:@"{\"clear_all\":true}" timeout:15
+    [EngineRequest send:@"POST" path:@"/v1/settings" body:@"{\"clear_all\":true}" timeout:15
         target:self action:@selector(removalSaved:) context:nil];
 }
 
-- (void)removalSaved:(RelayRequest *)request
+- (void)removalSaved:(EngineRequest *)request
 {
     if (![request ok]) {
         [self setPreferencesStatus:@""];
-        NSRunAlertPanel(@"Preferences", @"The relay did not remove it. %@", @"OK", nil, nil,
-            [self relayProblemForRequest:request] ? [self relayProblemForRequest:request] : [request text]);
+        NSRunAlertPanel(@"Preferences", @"It could not be removed. %@", @"OK", nil, nil, [request text]);
         return;
     }
     [self requestSettings];
@@ -314,8 +175,6 @@ static NSString *splitBase(NSString *base, NSString **port)
     unsigned i;
     BOOL first = YES;
     (void)sender;
-    if (![self saveRelayFields])
-        return;
     {
         NSString *choice = [[[prefsFields objectForKey:@"new_chat_model"] selectedItem] representedObject];
         if (choice)
@@ -344,25 +203,18 @@ static NSString *splitBase(NSString *base, NSString **port)
         [self refreshAfterPreferences];
         return;
     }
-    if ([[RelayRequest serverBase] length] == 0) {
-        NSRunAlertPanel(@"Preferences", @"Enter the relay address first. Keys are stored by the relay.",
-            @"OK", nil, nil);
-        return;
-    }
     [self setPreferencesStatus:@"Saving..."];
-    [RelayRequest send:@"POST" path:@"/v1/settings" body:body timeout:15
+    [EngineRequest send:@"POST" path:@"/v1/settings" body:body timeout:15
         target:self action:@selector(preferencesSaved:) context:nil];
 }
 
-- (void)preferencesSaved:(RelayRequest *)request
+- (void)preferencesSaved:(EngineRequest *)request
 {
     NSString *reason;
     if (![request ok]) {
-        reason = [self relayProblemForRequest:request];
-        if (!reason || [request status] == 400)
-            reason = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        reason = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         [self setPreferencesStatus:@""];
-        NSRunAlertPanel(@"Preferences", @"The relay did not save the settings. %@", @"OK", nil, nil, reason);
+        NSRunAlertPanel(@"Preferences", @"The settings were not saved. %@", @"OK", nil, nil, reason);
         return;
     }
     [prefsWindow orderOut:nil];
@@ -539,45 +391,6 @@ static NSString *splitBase(NSString *base, NSString **port)
     [tabs setFont:[NSFont systemFontOfSize:12]];
     [view addSubview:tabs];
 
-    /* ---- Relay ---- */
-    tab = [self preferencesTab:@"Relay" in:tabs];
-    y = 284;
-    field = [self preferencesRow:@"Relay address" key:@"relay_host" y:y secure:NO width:148
-        help:@"The IP address or name of the relay computer, such as 192.168.1.10 (the relay app shows it as Reachable address). "
-             @"The port goes in the Port box; the default is 8765."
-        removable:nil inView:tab];
-    [[field cell] setPlaceholderString:@"relay Mac address"];
-    [self preferencesLabel:@"Port" frame:NSMakeRect(356, y + 2, 32, 18) inView:tab];
-    field = [[NSTextField alloc] initWithFrame:NSMakeRect(388, y, 56, 22)];
-    [field setEditable:YES];
-    [field setBezeled:YES];
-    [field setFont:[NSFont systemFontOfSize:12]];
-    [[field cell] setPlaceholderString:@"8765"];
-    [field setToolTip:@"The relay's port. 8765 unless LISTEN_PORT was changed in the relay's config.sh."];
-    [tab addSubview:field];
-    [prefsFields setObject:field forKey:@"relay_port"];
-    [field release];
-    y -= 32;
-    [self preferencesRow:@"Relay token" key:@"relay_token" y:y secure:YES width:280
-        help:@"The shared secret that lets this Mac use the relay: see relay-token on the relay computer, or the output of setup.sh. "
-             @"Leave blank to keep the saved one."
-        removable:nil inView:tab];
-    y -= 36;
-    [self preferencesButton:@"Test Connection" frame:NSMakeRect(210, y, 130, 28)
-                     action:@selector(testConnection:) inView:tab];
-    note = [self preferencesLabel:@"" frame:NSMakeRect(346, y + 6, 200, 18) inView:tab];
-    [note setFont:[NSFont systemFontOfSize:11]];
-    [prefsFields setObject:note forKey:@"relay.status"];
-    y -= 56;
-    [self preferencesHeading:@"Settings backup" y:y inView:tab];
-    y -= 36;
-    [self preferencesButton:@"Export Settings..." frame:NSMakeRect(16, y, 150, 28) action:@selector(exportAllSettings:) inView:tab];
-    [self preferencesButton:@"Import Settings..." frame:NSMakeRect(172, y, 150, 28) action:@selector(importAllSettings:) inView:tab];
-    [self preferencesButton:@"Clear All Settings..." frame:NSMakeRect(328, y, 170, 28) action:@selector(clearAllSettings:) inView:tab];
-    y -= 22;
-    [self preferencesNote:@"Backups include API keys and the relay token in plain text. Keep them private."
-        frame:NSMakeRect(16, y - 10, 520, 28) inView:tab];
-
     /* ---- API keys ---- */
     tab = [self preferencesTab:@"API Keys" in:tabs];
     y = 304;
@@ -585,13 +398,13 @@ static NSString *splitBase(NSString *base, NSString **port)
         frame:NSMakeRect(16, y - 14, 520, 30) inView:tab];
     y -= 40;
     keys = [NSArray arrayWithObjects:
-        [NSArray arrayWithObjects:@"xAI (Grok)", @"xai_api_key", @"1", @"", nil],
+        [NSArray arrayWithObjects:@"SpaceXAI (Grok)", @"xai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"OpenAI (ChatGPT)", @"openai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Anthropic (Claude)", @"anthropic_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Workspace ID (optional)", @"anthropic_workspace_id", @"0",
             @"Only needed if your Anthropic key belongs to a workspace that requires its ID. Most keys do not.", nil],
         [NSArray arrayWithObjects:@"Mistral", @"mistral_api_key", @"1", @"", nil],
-        [NSArray arrayWithObjects:@"Muse", @"muse_api_key", @"1", @"", nil],
+        [NSArray arrayWithObjects:@"Meta (Muse)", @"muse_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Google (Gemini)", @"gemini_api_key", @"1", @"", nil],
         nil];
     for (i = 0; i < [keys count]; i++) {
@@ -607,7 +420,7 @@ static NSString *splitBase(NSString *base, NSString **port)
     tab = [self preferencesTab:@"Local LLM Server" in:tabs];
     y = 284;
     field = [self preferencesRow:@"Local LLM server address" key:@"local_url" y:y secure:NO width:190
-        help:@"LM Studio, Ollama or another OpenAI-compatible server, as the relay computer sees it. "
+        help:@"LM Studio, Ollama or another OpenAI-compatible server. "
              @"For example http://127.0.0.1:1234 (LM Studio), http://127.0.0.1:11434 (Ollama), or an address on another computer. Reset removes it."
         removable:@"Reset" inView:tab];
     [[field cell] setPlaceholderString:@"not set (e.g. " TB_LOCAL_EXAMPLE ")"];
@@ -622,7 +435,7 @@ static NSString *splitBase(NSString *base, NSString **port)
         removable:@"Remove" inView:tab];
 
     /* ---- New chats ---- */
-    tab = [self preferencesTab:@"New Chats" in:tabs];
+    tab = [self preferencesTab:@"General" in:tabs];
     y = 284;
     [self preferencesLabel:@"New chats start with" frame:NSMakeRect(16, y + 2, 150, 18) inView:tab];
     {
@@ -635,47 +448,49 @@ static NSString *splitBase(NSString *base, NSString **port)
     [self preferencesNote:@"\"The model last used\" starts a new chat with the model, tools and approvals of your most recent chat in the workspace. "
         @"Or pick one model for every new chat."
         frame:NSMakeRect(16, y - 24, 520, 44) inView:tab];
+    y -= 96;
+    [self preferencesHeading:@"Settings backup" y:y inView:tab];
+    y -= 36;
+    [self preferencesButton:@"Export Settings..." frame:NSMakeRect(16, y, 150, 28) action:@selector(exportAllSettings:) inView:tab];
+    [self preferencesButton:@"Import Settings..." frame:NSMakeRect(172, y, 150, 28) action:@selector(importAllSettings:) inView:tab];
+    [self preferencesButton:@"Clear All Settings..." frame:NSMakeRect(328, y, 170, 28) action:@selector(clearAllSettings:) inView:tab];
+    y -= 22;
+    [self preferencesNote:@"Backups include your API keys in plain text. Keep them private. Chat history is not included."
+        frame:NSMakeRect(16, y - 10, 520, 28) inView:tab];
 
     /* ---- Commander ---- */
     tab = [self preferencesTab:@"Commander" in:tabs];
     y = 292;
-    [self preferencesNote:@"The relay runs Commander's tools on the Mac you chat from, with one connection per Mac. "
-        @"These settings are for this Mac; Connect adds the relay's key here, so no password is needed."
-        frame:NSMakeRect(16, y - 28, 520, 46) inView:tab];
-    y -= 74;
-    [self preferencesRow:@"Mac's address" key:@"ssh_host" y:y secure:NO width:190
-        help:@"The IP address or name of the Mac whose files and shell the model uses, as the relay sees it. For this Mac, choose Connect below."
-        removable:nil inView:tab];
-    y -= 32;
-    [self preferencesRow:@"Account (short name)" key:@"ssh_user" y:y secure:NO width:190
-        help:@"The short user name Commander signs in as, such as thomas."
-        removable:nil inView:tab];
-    y -= 32;
-    [self preferencesRow:@"Home folder (optional)" key:@"ssh_home" y:y secure:NO width:190
-        help:@"Only needed if the account's home folder is not /Users/NAME."
-        removable:nil inView:tab];
-    y -= 40;
-    [self preferencesButton:@"Connect This Mac" frame:NSMakeRect(16, y, 150, 28) action:@selector(connectCommanderSSH:) inView:tab];
-    [self preferencesButton:@"Test" frame:NSMakeRect(172, y, 80, 28) action:@selector(testSSH:) inView:tab];
-    [self preferencesButton:@"Forget Host Key" frame:NSMakeRect(258, y, 130, 28) action:@selector(forgetSSHHostKey:) inView:tab];
-    [self preferencesButton:@"Disconnect" frame:NSMakeRect(394, y, 110, 28) action:@selector(disconnectCommander:) inView:tab];
-    note = [self preferencesNote:@"" frame:NSMakeRect(16, 76, 520, 34) inView:tab];
-    [prefsFields setObject:note forKey:@"ssh.status"];
-    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, 46, 400, 20)] autorelease];
+    [self preferencesNote:@"Commander is the part of Tiger Build that reads and edits files and runs commands on this Mac for a chat. It runs only while a chat uses it, "
+        @"and nothing listens on the network. To use another computer's files and shell, add it under Tool Settings, MCP Servers (Commander on another computer)."
+        frame:NSMakeRect(16, y - 40, 520, 58) inView:tab];
+    y -= 76;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Allow other computers to use Commander on this Mac"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [button setToolTip:@"Off by default. Another computer running Tiger Build can then start Commander here over SSH and read, change and run things as you. Needs Remote Login in System Preferences, Sharing."];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"remote.check"];
+    y -= 22;
+    [self preferencesNote:@"Turning this on allows other computers on the network to start Commander on this Mac, so it can be controlled by other copies of Tiger Build or other programs that speak MCP over SSH. Note: Remote Login must be on (System Preferences, Sharing) and the other computer's public SSH key must be in ~/.ssh/authorized_keys on this account; no password is used."
+        frame:NSMakeRect(34, y - 56, 502, 72) inView:tab];
+    y -= 100;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 400, 20)] autorelease];
     [button setButtonType:NSSwitchButton];
     [button setTitle:@"Let agents run administrator (sudo) commands on this Mac"];
     [button setFont:[NSFont systemFontOfSize:12]];
     [button setTarget:self];
     [button setAction:@selector(toggleSudoMode:)];
-    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain, so commands with sudo just work."];
+    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain. A chat can use sudo only when its Tools menu has the sudo item ticked."];
     [tab addSubview:button];
     [prefsFields setObject:button forKey:@"sudo.check"];
-    [self preferencesButton:@"Set Password..." frame:NSMakeRect(396, 42, 140, 28) action:@selector(setAdministratorPassword:) inView:tab];
-    note = [self preferencesLabel:@"" frame:NSMakeRect(34, 20, 502, 16) inView:tab];
+    [self preferencesButton:@"Set Password..." frame:NSMakeRect(396, y - 4, 140, 28) action:@selector(setAdministratorPassword:) inView:tab];
+    note = [self preferencesLabel:@"" frame:NSMakeRect(34, y - 26, 502, 16) inView:tab];
     [note setFont:[NSFont systemFontOfSize:11]];
     [prefsFields setObject:note forKey:@"sudo.status"];
 
-    note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 360, 18) inView:view];
+    note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
     button = [self preferencesButton:@"Save" frame:NSMakeRect(396, 16, 94, 30)
                               action:@selector(savePreferences:) inView:view];
@@ -685,119 +500,24 @@ static NSString *splitBase(NSString *base, NSString **port)
     [button setKeyEquivalent:@"\033"];
 }
 
-/* ---- Commander connection settings (kept by the relay) ---- */
+/* ---- Commander access ---- */
 
-- (void)setSSHStatus:(NSString *)text
+- (void)loadSSHFields
 {
-    [[prefsFields objectForKey:@"ssh.status"] setStringValue:text ? text : @""];
+    [[prefsFields objectForKey:@"remote.check"] setState:[[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0 ? NSOnState : NSOffState];
 }
 
-- (void)requestSSHState
-{
-    if ([[RelayRequest serverBase] length] == 0)
-        return;
-    [RelayRequest send:@"GET" path:@"/v1/ssh" body:nil timeout:10 target:self action:@selector(sshStateArrived:) context:nil];
-}
-
-- (void)sshStateArrived:(RelayRequest *)request
-{
-    NSMutableDictionary *values = [NSMutableDictionary dictionary];
-    NSArray *lines;
-    unsigned i;
-    if (![request ok])
-        return;
-    lines = [[request text] componentsSeparatedByString:@"\n"];
-    for (i = 0; i < [lines count]; i++) {
-        NSString *line = [lines objectAtIndex:i];
-        NSRange eq = [line rangeOfString:@"="];
-        if (eq.location != NSNotFound)
-            [values setObject:[line substringFromIndex:eq.location + 1] forKey:[line substringToIndex:eq.location]];
-    }
-    [[prefsFields objectForKey:@"ssh_host"] setStringValue:[values objectForKey:@"host"] ? [values objectForKey:@"host"] : @""];
-    [[prefsFields objectForKey:@"ssh_user"] setStringValue:[values objectForKey:@"user"] ? [values objectForKey:@"user"] : @""];
-    [[prefsFields objectForKey:@"ssh_home"] setStringValue:[values objectForKey:@"home"] ? [values objectForKey:@"home"] : @""];
-    [prefsFields setObject:[NSString stringWithFormat:@"%@\n%@\n%@", [[prefsFields objectForKey:@"ssh_host"] stringValue],
-        [[prefsFields objectForKey:@"ssh_user"] stringValue], [[prefsFields objectForKey:@"ssh_home"] stringValue]] forKey:@"ssh.loaded"];
-    if ([[values objectForKey:@"problem"] length])
-        [self setSSHStatus:[values objectForKey:@"problem"]];
-    else if ([[values objectForKey:@"commander"] isEqualToString:@"online"])
-        [self setSSHStatus:@"Commander is working."];
-    else
-        [self setSSHStatus:@""];
-}
-
-- (void)sshResultArrived:(RelayRequest *)request
-{
-    NSMutableDictionary *values = [NSMutableDictionary dictionary];
-    NSArray *lines;
-    unsigned i;
-    if (![request ok]) {
-        NSString *why = [[request text] length] ? [request text] : [self relayProblemForRequest:request];
-        [self setSSHStatus:why];
-        return;
-    }
-    lines = [[request text] componentsSeparatedByString:@"\n"];
-    for (i = 0; i < [lines count]; i++) {
-        NSString *line = [lines objectAtIndex:i];
-        NSRange eq = [line rangeOfString:@"="];
-        if (eq.location != NSNotFound)
-            [values setObject:[line substringFromIndex:eq.location + 1] forKey:[line substringToIndex:eq.location]];
-    }
-    [self setSSHStatus:[values objectForKey:@"message"]];
-    [self refreshToolCatalog];
-}
-
-- (void)testSSH:(id)sender
-{
-    (void)sender;
-    [self setSSHStatus:@"Testing..."];
-    [RelayRequest send:@"POST" path:@"/v1/ssh/test" body:@"{}" timeout:40 target:self action:@selector(sshResultArrived:) context:nil];
-}
-
-- (void)disconnectCommander:(id)sender
-{
-    (void)sender;
-    if (NSRunAlertPanel(@"Disconnect this Mac?", @"The relay stops running Commander for this Mac. Chats still work without tools. "
-        @"You can connect again at any time.", @"Disconnect", @"Cancel", nil) != NSAlertDefaultReturn)
-        return;
-    [self setSSHStatus:@"Working..."];
-    [RelayRequest send:@"POST" path:@"/v1/ssh/remove" body:@"{}" timeout:20 target:self action:@selector(sshResultArrived:) context:nil];
-}
-
-- (void)forgetSSHHostKey:(id)sender
-{
-    (void)sender;
-    if (NSRunAlertPanel(@"Forget the saved host key?", @"Use this when the Mac was reinstalled or replaced. The relay learns its key again "
-        @"the next time it connects.", @"Forget", @"Cancel", nil) != NSAlertDefaultReturn)
-        return;
-    [self setSSHStatus:@"Working..."];
-    [RelayRequest send:@"POST" path:@"/v1/ssh/forget" body:@"{\"relearn\":true}" timeout:40 target:self
-        action:@selector(sshResultArrived:) context:nil];
-}
-
-/* Send changed Commander connection fields to the relay. */
 - (void)saveSSHFields
 {
-    NSString *now = [NSString stringWithFormat:@"%@\n%@\n%@", trimmedValue([prefsFields objectForKey:@"ssh_host"]),
-        trimmedValue([prefsFields objectForKey:@"ssh_user"]), trimmedValue([prefsFields objectForKey:@"ssh_home"])];
-    NSString *body;
-    if (![prefsFields objectForKey:@"ssh.loaded"] || [now isEqualToString:[prefsFields objectForKey:@"ssh.loaded"]])
+    BOOL want = [[prefsFields objectForKey:@"remote.check"] state] == NSOnState;
+    BOOL have = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
+    if (want == have)
         return;
-    body = [NSString stringWithFormat:@"{\"host\":\"%@\",\"user\":\"%@\",\"home\":\"%@\",\"remember_host_key\":true}",
-        TBJSONEscape(trimmedValue([prefsFields objectForKey:@"ssh_host"])), TBJSONEscape(trimmedValue([prefsFields objectForKey:@"ssh_user"])),
-        TBJSONEscape(trimmedValue([prefsFields objectForKey:@"ssh_home"]))];
-    [prefsFields setObject:now forKey:@"ssh.loaded"];
-    [RelayRequest send:@"POST" path:@"/v1/ssh/settings" body:body timeout:60 target:self action:@selector(sshSavedFromPrefs:) context:nil];
-}
-
-- (void)sshSavedFromPrefs:(RelayRequest *)request
-{
-    NSString *text = [request text];
-    if (![request ok]) {
-        NSRunAlertPanel(@"Preferences", @"The relay did not save the Commander settings. %@", @"OK", nil, nil, [text length] ? text : @"");
+    if (want && NSRunAlertPanel(@"Allow other computers to use this Mac?",
+        @"Another computer that can sign in to this Mac over SSH will be able to read and change files and run commands here as you, through Commander. "
+        @"Turn it on only for computers you control.", @"Allow", @"Cancel", nil) != NSAlertDefaultReturn)
         return;
-    }
-    [self refreshToolCatalog];
+    [self commanderCommand:want ? @"remote-on" : @"remote-off"];
 }
 
 - (void)showPreferences:(id)sender
@@ -807,6 +527,7 @@ static NSString *splitBase(NSString *base, NSString **port)
         [self buildPreferencesWindow];
     [self loadPreferenceForm];
     [self refreshSudoStatus];
+    [prefsWindow setLevel:NSFloatingWindowLevel];
     [prefsWindow makeKeyAndOrderFront:nil];
 }
 

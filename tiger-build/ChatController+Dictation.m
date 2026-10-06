@@ -1,12 +1,12 @@
 #import "ChatController_Private.h"
 #import <CoreAudio/CoreAudio.h>
 
-/* Dictation: record from the Mac's microphone, send the clip to the relay, and put the words in the message box.
+/* Dictation: record from the Mac's microphone, send the clip to a speech service, and put the words in the message box.
    Optional and off the path of everything else: it runs only when Chat > Voice > Dictate is chosen.
 
    Recording uses Core Audio's hardware layer, which Tiger through Snow Leopard all have, in 32 and 64 bits. The sound
    is mixed to one channel and reduced to about 16,000 samples a second, so a minute is under 2 MB, then sent as a WAV
-   file. The relay turns it into text with whichever speech service has a key (OpenAI, Mistral or Google). */
+   file. It is turned into text with whichever speech service has a key (OpenAI, Mistral or Google). */
 
 #define DICTATION_MAX_SECONDS 90
 #define DICTATION_RATE 16000
@@ -167,7 +167,7 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
     if (!current)
         return;
     if (!TBConfirmOnce(@"dictation", @"Send recordings to a speech service?",
-        @"The clip goes to the relay, which sends it to a speech service (OpenAI, Mistral or Google) to turn it into text. "
+        @"The clip goes to a speech service (OpenAI, Mistral or Google) to turn it into text. "
         @"It is not kept. Say only what you are happy to share.", @"Dictate"))
         return;
     status = AudioHardwareGetProperty(kAudioHardwarePropertyDefaultInputDevice, &size, &device);
@@ -224,7 +224,7 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
         seconds / 60, seconds % 60]];
 }
 
-/* Stop the microphone. With `keep`, the clip goes to the relay; without it, it is thrown away. */
+/* Stop the microphone. With `keep`, the clip is sent; without it, it is thrown away. */
 - (void)finishDictation:(BOOL)keep
 {
     NSData *wav = nil;
@@ -258,11 +258,11 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
         return;
     }
     [self showDictationStatus:@"Turning your speech into text..."];
-    dictationRequest = [RelayRequest sendFile:wav name:@"speech.wav" path:@"/v1/transcribe" timeout:120 target:self
+    dictationRequest = [EngineRequest sendFile:wav name:@"speech.wav" path:@"/v1/transcribe" timeout:120 target:self
         action:@selector(dictationArrived:) context:nil];
 }
 
-- (void)dictationArrived:(RelayRequest *)request
+- (void)dictationArrived:(EngineRequest *)request
 {
     NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSText *editor;
@@ -271,10 +271,8 @@ static NSData *wavFromSamples(const short *samples, unsigned long count, unsigne
     [self clearDictationStatus];
     if (![request ok]) {
         NSString *why = text;
-        if ([request status] == 404 || [request status] == 405)
-            why = @"The relay is too old to transcribe speech. Update it to 1.4.";
-        else if ([request status] == 0)
-            why = [request timedOut] ? @"The relay took too long." : @"The relay could not be reached.";
+        if ([request status] == 0)
+            why = [request timedOut] ? @"It took too long." : @"The speech service could not be reached.";
         NSRunAlertPanel(@"Dictation", @"%@", @"OK", nil, nil, [why length] ? why : @"The speech could not be turned into text.");
         return;
     }

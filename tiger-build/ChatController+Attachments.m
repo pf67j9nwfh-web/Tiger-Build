@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBExtract.h"
 #import <unistd.h>
 
 /* Files attached to a chat. Each file becomes a message from the person, shown as
@@ -448,6 +449,14 @@ static unsigned pdfPageCount(NSString *path)
     if ([documents containsObject:ext]) {
         NSAttributedString *rich = [[[NSAttributedString alloc] initWithPath:path documentAttributes:NULL] autorelease];
         text = [rich string];
+        if ([text length] == 0 && [ext isEqualToString:@"doc"]) {
+            /* Cocoa could not read it (a newer Mac, or a file it dislikes): the converter reads Word 97 to 2003 files itself */
+            NS_DURING
+                text = [[TBExtract extractName:name data:[NSData dataWithContentsOfFile:path]] objectForKey:@"text"];
+            NS_HANDLER
+                text = nil;
+            NS_ENDHANDLER
+        }
         if ([text length] == 0) {
             *problem = [NSString stringWithFormat:@"%@ could not be read on this version of Mac OS X. Save it as text, RTF or PDF and attach that.", name];
             return nil;
@@ -457,7 +466,7 @@ static unsigned pdfPageCount(NSString *path)
     }
     text = TBReadTextFile(path, TB_ATTACH_TEXT_MAX, NULL);
     if (!text) {
-        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, RTF and HTML documents, and pictures (including HEIC and WebP) can be attached. Older .xls and .ppt files can be saved as .xlsx or .pptx first.", name];
+        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, RTF and HTML documents, and pictures (including HEIC and WebP) can be attached.", name];
         return nil;
     }
     one = [self textAttachmentWithText:text name:name size:size problem:problem];
@@ -901,15 +910,14 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
     }
 }
 
-/* ---- files the relay converts ----
-   Word, Excel and PowerPoint files, Pages, Numbers and Keynote files, and HEIC, WebP
-   and similar pictures cannot be read on these Macs. The relay (a modern computer)
-   turns them into text and JPEG pictures; see relay/extract.py. */
+/* ---- files the engine converts ----
+   Word, Excel and PowerPoint files, Pages, Numbers and Keynote files, and pictures in
+   newer formats cannot be read on these Macs. TBExtract turns them into text and JPEG pictures. */
 
 - (BOOL)relayConverts:(NSString *)path
 {
-    NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
-        @"heic", @"heif", @"webp", @"avif", @"jpg", @"jpeg", nil];
+    NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"ppt", @"xls", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
+        @"heic", @"heif", @"webp", @"avif", @"gif", @"jpg", @"jpeg", nil];
     return [kinds containsObject:[[path pathExtension] lowercaseString]];
 }
 
@@ -948,15 +956,15 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
         *problem = [NSString stringWithFormat:@"%@ could not be read.", name];
         return NO;
     }
-    [[job objectForKey:@"placeholder"] setObject:[NSString stringWithFormat:@"Converting %@ on the relay...", name] forKey:@"text"];
+    [[job objectForKey:@"placeholder"] setObject:[NSString stringWithFormat:@"Converting %@...", name] forKey:@"text"];
     [self refreshTranscriptIfCurrent:[job objectForKey:@"chat"]];
     info = [NSMutableDictionary dictionaryWithDictionary:job];
     [info setObject:[NSNumber numberWithDouble:size] forKey:@"size"];
-    attachRequest = [RelayRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
+    attachRequest = [EngineRequest sendFile:data name:name path:@"/v1/extract" timeout:240 target:self action:@selector(conversionArrived:) context:info];
     return YES;
 }
 
-- (void)conversionArrived:(RelayRequest *)request
+- (void)conversionArrived:(EngineRequest *)request
 {
     NSDictionary *info = [request context];
     if ([[info objectForKey:@"generation"] intValue] != attachGeneration)
@@ -980,12 +988,10 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
     if (!result) {
         NSString *why = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         NSString *ext = [[name pathExtension] lowercaseString];
-        if ([request status] == 404 || [request status] == 405)
-            why = @"The relay is too old to convert files. Update it to 1.4.";
-        else if ([request status] == 0)
-            why = [request timedOut] ? @"The relay took too long." : @"The relay could not be reached.";
+        if ([request status] == 0)
+            why = [request timedOut] ? @"It took too long." : @"The converter could not be reached.";
         if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) {
-            /* The relay only straightens photos; without it the picture is used as it is. */
+            /* The converter only straightens photos; without it the picture is used as it is. */
             NSMutableDictionary *plain = [self pictureAttachmentFromPath:path name:name pdf:NO problem:&problem];
             if (plain) {
                 [made addObject:plain];
@@ -1010,12 +1016,13 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
                 problem = why;
             }
         }
-        for (i = 0; [pictures isKindOfClass:[NSArray class]] && i < [pictures count] && i < 3; i++) {
+        for (i = 0; [pictures isKindOfClass:[NSArray class]] && i < [pictures count] && i < 4; i++) {
             NSData *jpeg = [pictures objectAtIndex:i];
             NSString *why = nil;
             NSString *temp = [self savedPathForName:name extension:@"jpg"];
             NSMutableDictionary *attachment = nil;
-            NSString *shownName = ([text length] > 0 || [pictures count] > 1) ? [name stringByAppendingString:@" (preview)"] : name;
+            NSString *shownName = ([note hasPrefix:@"An animated"] && [pictures count] > 1) ? [name stringByAppendingFormat:@" (frame %u)", i + 1]
+                : (([text length] > 0 || [pictures count] > 1) ? [name stringByAppendingString:@" (preview)"] : name);
             if ([jpeg isKindOfClass:[NSData class]] && [jpeg writeToFile:temp atomically:YES]) {
                 attachment = [self pictureAttachmentFromPath:temp name:shownName pdf:NO problem:&why];
                 [[NSFileManager defaultManager] removeFileAtPath:temp handler:nil];
