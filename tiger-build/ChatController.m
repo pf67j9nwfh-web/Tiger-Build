@@ -925,6 +925,7 @@ static NSMutableArray *allControllers = nil;
     if (!NSEqualRects([stopButton frame], chatLayout.stop)) {
         [stopButton setFrame:chatLayout.stop];
         [chatPane setNeedsDisplayInRect:NSInsetRect(chatLayout.stop, -4, -4)];
+        moved = YES;
     }
     if (!NSEqualRects([thinkingField frame], chatLayout.thinking)) {
         NSRect oldThinking = [thinkingField frame];

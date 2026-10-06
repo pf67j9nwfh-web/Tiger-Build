@@ -142,3 +142,8 @@ NSString *TBImageMime(NSString *path);
 - (BOOL)providerUsable:(NSString *)provider;
 - (int)checkingCount;
 @end
+
+/* A number as short text: whole numbers without a decimal point, others with up to 12 digits. */
+NSString *TBNumberText(double value);
+/* The calendar date of a day count since 1970-01-01. */
+void TBCivilFromDays(long long unixDays, int *year, int *month, int *day);

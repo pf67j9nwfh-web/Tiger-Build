@@ -931,3 +931,22 @@ static NSMutableDictionary *openStores = nil;
 }
 
 @end
+
+NSString *TBNumberText(double v)
+{
+    char text[40];
+    if (v == (double)(long long)v && v < 1e15 && v > -1e15)
+        snprintf(text, sizeof text, "%lld", (long long)v);
+    else
+        snprintf(text, sizeof text, "%.12g", v);
+    return [NSString stringWithUTF8String:text];
+}
+
+void TBCivilFromDays(long long unixDays, int *year, int *month, int *day)
+{
+    long long z = unixDays + 719468, era = (z >= 0 ? z : z - 146096) / 146097, doe = z - era * 146097;
+    long long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365, doy = doe - (365 * yoe + yoe / 4 - yoe / 100), mp = (5 * doy + 2) / 153;
+    *day = (int)(doy - (153 * mp + 2) / 5 + 1);
+    *month = (int)(mp < 10 ? mp + 3 : mp - 9);
+    *year = (int)(yoe + era * 400) + (*month <= 2);
+}

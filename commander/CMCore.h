@@ -17,6 +17,7 @@ long long CMInteger(NSDictionary *args, NSString *key);
 long long CMOptInteger(NSDictionary *args, NSString *key, long long fallback);
 BOOL CMOptBool(NSDictionary *args, NSString *key, BOOL fallback);
 NSArray *CMStringList(id value);
+NSString *CMSwap(NSString *text, NSString *from, NSString *to);   /* every occurrence replaced (stringByReplacingOccurrencesOfString: is 10.5 and later) */
 NSString *CMClip(NSString *text, unsigned limit);
 NSString *CMCap(NSString *text);                   /* the reply cut at 180,000 characters */
 

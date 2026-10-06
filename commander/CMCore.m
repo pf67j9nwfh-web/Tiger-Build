@@ -398,7 +398,7 @@ NSString *CMCheckWritable(NSString *path)
 /* ---- shell commands: what may run ---- */
 
 /* stringByReplacingOccurrencesOfString: is 10.5 and later */
-static NSString *swap(NSString *text, NSString *from, NSString *to)
+NSString *CMSwap(NSString *text, NSString *from, NSString *to)
 {
     return [[text componentsSeparatedByString:from] componentsJoinedByString:to];
 }
@@ -449,7 +449,7 @@ NSArray *CMCommandWords(NSString *command)
         @"osascript", @"perl", @"python", @"ruby", @"sh", @"bash", @"zsh", @"csh", @"tcsh", @"ksh", @"dash", @"source", @".", nil];
     unsigned s, t;
     for (s = 0; s < [segments count]; s++) {
-        NSString *flat = swap(swap([segments objectAtIndex:s], @"\t", @" "), @"\n", @" ");
+        NSString *flat = CMSwap(CMSwap([segments objectAtIndex:s], @"\t", @" "), @"\n", @" ");
         NSArray *tokens = [flat componentsSeparatedByString:@" "];
         BOOL wrapped = NO, first = YES;
         for (t = 0; t < [tokens count]; t++) {
@@ -484,7 +484,7 @@ static BOOL matches(const char *pattern, NSString *text)
 
 NSString *CMWhyBlocked(NSString *command)
 {
-    NSString *flat = swap(normalizeCommand(command), separator(), @" ; ");
+    NSString *flat = CMSwap(normalizeCommand(command), separator(), @" ; ");
     NSArray *texts = [NSArray arrayWithObjects:command, flat, nil];
     NSArray *words = CMCommandWords(command), *blocked;
     unsigned i;
@@ -612,7 +612,7 @@ NSString *CMInstructions(void)
         @"Disk-erase commands stay blocked. blockedCommands, allowedDirectories, and defaultShell are locked, and the file tools cannot edit ppc-commander itself. "
         @"Prefer edit_block for small changes. start_process returns when output goes idle or timeout_ms elapses (capped at 120s) and leaves the process running. "
         @"GUI apps are allowed. start_process with detach true runs them outside this session so they stay open after the chat moves on.",
-        CMSystemInfo(@"uname"), swap(CMSystemInfo(@"sw_vers"), @"\n", @"; "), CMSystemInfo(@"model"), CMSystemInfo(@"mem"),
+        CMSystemInfo(@"uname"), CMSwap(CMSystemInfo(@"sw_vers"), @"\n", @"; "), CMSystemInfo(@"model"), CMSystemInfo(@"mem"),
         [config objectForKey:@"defaultShell"]];
 }
 
@@ -728,7 +728,7 @@ id CMToolGetConfig(NSDictionary *args)
         TBJSONString([config objectForKey:@"blockedCommands"]), [config objectForKey:@"defaultShell"], rootText, [config objectForKey:@"fileReadLineLimit"],
         [config objectForKey:@"fileWriteLineLimit"], [[config objectForKey:@"telemetryEnabled"] boolValue] ? @"true" : @"false",
         CMSudoEnabled() ? @"on (commands with sudo run as administrator)" : @"off", CMSystemInfo(@"model"), CMSystemInfo(@"mem"), CMSystemInfo(@"uname"),
-        swap(CMSystemInfo(@"sw_vers"), @"\n", @"; "), CM_VERSION];
+        CMSwap(CMSystemInfo(@"sw_vers"), @"\n", @"; "), CM_VERSION];
 }
 
 id CMToolSetConfig(NSDictionary *args)

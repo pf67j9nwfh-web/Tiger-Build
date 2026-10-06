@@ -11,11 +11,6 @@
 
 #define MAX_FILE_BYTES (8 * 1024 * 1024)
 
-static NSString *swap(NSString *text, NSString *from, NSString *to)
-{
-    return [[text componentsSeparatedByString:from] componentsJoinedByString:to];
-}
-
 static unsigned lineCount(NSString *content)
 {
     unsigned n = 0, i;
@@ -384,19 +379,19 @@ id CMToolEditBlock(NSDictionary *args)
     used = text;
     count = countOf(text, old);
     if (count == 0) {
-        NSString *norm = swap(swap(text, @"\r\n", @"\n"), @"\r", @"\n"), *oldNorm = swap(swap(old, @"\r\n", @"\n"), @"\r", @"\n");
+        NSString *norm = CMSwap(CMSwap(text, @"\r\n", @"\n"), @"\r", @"\n"), *oldNorm = CMSwap(CMSwap(old, @"\r\n", @"\n"), @"\r", @"\n");
         count = countOf(norm, oldNorm);
         if (count) {
             used = norm;
             old = oldNorm;
-            new = swap(swap(new, @"\r\n", @"\n"), @"\r", @"\n");
+            new = CMSwap(CMSwap(new, @"\r\n", @"\n"), @"\r", @"\n");
         }
     }
     if (count == 0)
         CMFail(@"%@", editHint(old, text));
     if ((long long)count != expected)
         CMFail(@"found %u matches, expected %lld. Set expected_replacements to replace all of them.", count, expected);
-    updated = swap(used, old, new);
+    updated = CMSwap(used, old, new);
     out = [updated dataUsingEncoding:[encoding isEqualToString:@"latin-1"] ? NSISOLatin1StringEncoding : NSUTF8StringEncoding allowLossyConversion:NO];
     if (!out) {
         out = [updated dataUsingEncoding:NSUTF8StringEncoding];
@@ -768,7 +763,6 @@ static NSString *readURL(NSString *url)
     NSString *text, *encoding = nil;
     /* redirects may only lead to http, https or ftp; curl before 7.19.4 (Tiger) has no such option, so there redirects are not followed */
     int code = CMRunProgram([NSArray arrayWithObjects:@"/usr/bin/curl", @"-sSL", @"--proto", @"=http,https,ftp", @"--proto-redir", @"=http,https,ftp", @"--max-time", @"20", @"--max-filesize", @"200000", @"-A", @"ppc-commander", @"--", url, nil], nil, 25, nil, &out);
-    (void)swap;
     if (code == 2 || (code != 0 && [out rangeOfString:@"proto"].location != NSNotFound && [out rangeOfString:@"option"].location != NSNotFound))
         code = CMRunProgram([NSArray arrayWithObjects:@"/usr/bin/curl", @"-sS", @"--max-time", @"20", @"--max-filesize", @"200000", @"-A", @"ppc-commander", @"--", url, nil], nil, 25, nil, &out);
     if (code != 0 && ![out length])

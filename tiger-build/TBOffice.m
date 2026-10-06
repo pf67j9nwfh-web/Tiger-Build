@@ -1,6 +1,7 @@
 #import "TBOffice.h"
 #import "TBExtract.h"
 #import "TBEngine.h"
+#import "TBSupport.h"
 
 #define MAX_TEXT 300000
 #ifndef NSUTF16LittleEndianStringEncoding
@@ -370,17 +371,6 @@ static NSString *docText(TBCompound *cfb)
 
 /* ---- Excel (BIFF8) ---- */
 
-static NSString *numberText(double v)
-{
-    char text[40];
-    if (v == (double)(long long)v && v < 1e15 && v > -1e15)
-        snprintf(text, sizeof text, "%lld", (long long)v);
-    else {
-        snprintf(text, sizeof text, "%.15g", v);
-    }
-    return [NSString stringWithUTF8String:text];
-}
-
 static double rkValue(unsigned rk)
 {
     double v;
@@ -417,24 +407,13 @@ static BOOL customDateFormat(NSString *format)
 
 static NSString *dateText(double serial, BOOL mode1904)
 {
-    long days = (long)serial, unixDay, era, doe, yoe, doy, mp;
+    long days = (long)serial;
     double frac = serial - days;
     int y, m, d;
     if (serial < 0 || serial > 2958465)
-        return numberText(serial);
+        return TBNumberText(serial);
     /* day 0 of the 1904 system is 1904-01-01; in the 1900 system serial 61 is 1900-03-01, because Excel counts a 29 February 1900 */
-    unixDay = mode1904 ? days - 24107 : (days >= 61 ? days - 25569 : days - 25568);
-    unixDay += 719468;
-    era = (unixDay >= 0 ? unixDay : unixDay - 146096) / 146097;
-    doe = unixDay - era * 146097;
-    yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    y = (int)(yoe + era * 400);
-    doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    mp = (5 * doy + 2) / 153;
-    d = (int)(doy - (153 * mp + 2) / 5 + 1);
-    m = (int)(mp < 10 ? mp + 3 : mp - 9);
-    if (m <= 2)
-        y++;
+    TBCivilFromDays(mode1904 ? days - 24107 : (days >= 61 ? days - 25569 : days - 25568), &y, &m, &d);
     if (frac > 0.00001) {
         long secs = (long)(frac * 86400 + 0.5);
         if (days == 0)
@@ -643,7 +622,7 @@ static NSString *xlsText(TBCompound *cfb)
                 {
                     unsigned fmt = xf < [xfFormats count] ? [[xfFormats objectAtIndex:xf] unsignedIntValue] : 0;
                     NSString *custom = [formats objectForKey:[NSNumber numberWithUnsignedInt:fmt]];
-                    value = (custom ? customDateFormat(custom) : builtinDateFormat(fmt)) ? dateText(v, mode1904) : numberText(v);
+                    value = (custom ? customDateFormat(custom) : builtinDateFormat(fmt)) ? dateText(v, mode1904) : TBNumberText(v);
                 }
             } else if (type == 0x00BD && len >= 6) {
                 unsigned first = u16(d + 2), k, count = (len - 6) / 6;
@@ -658,7 +637,7 @@ static NSString *xlsText(TBCompound *cfb)
                         r = [NSMutableDictionary dictionary];
                         [rows setObject:r forKey:[NSNumber numberWithInt:row]];
                     }
-                    [r setObject:(custom ? customDateFormat(custom) : builtinDateFormat(fmt)) ? dateText(v, mode1904) : numberText(v) forKey:[NSNumber numberWithInt:first + k]];
+                    [r setObject:(custom ? customDateFormat(custom) : builtinDateFormat(fmt)) ? dateText(v, mode1904) : TBNumberText(v) forKey:[NSNumber numberWithInt:first + k]];
                 }
                 row = -1;
             } else if (type == 0x0204 && len >= 8) {
@@ -685,7 +664,7 @@ static NSString *xlsText(TBCompound *cfb)
                     unsigned fmt = xf < [xfFormats count] ? [[xfFormats objectAtIndex:xf] unsignedIntValue] : 0;
                     NSString *custom = [formats objectForKey:[NSNumber numberWithUnsignedInt:fmt]];
                     memcpy(&v, &bits, 8);
-                    value = (custom ? customDateFormat(custom) : builtinDateFormat(fmt)) ? dateText(v, mode1904) : numberText(v);
+                    value = (custom ? customDateFormat(custom) : builtinDateFormat(fmt)) ? dateText(v, mode1904) : TBNumberText(v);
                 }
             } else if (type == 0x0207 && pendingRow >= 0 && len >= 3) {
                 unsigned used;

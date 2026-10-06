@@ -369,7 +369,10 @@ static NSString *newRunId(void)
         shown = [[shown componentsSeparatedByString:@"\n"] componentsJoinedByString:@" "];
         [thinkingField setStringValue:[@"Thinking: " stringByAppendingString:shown]];
     }
+    /* the field draws no background over the textured window, so old words stay behind unless the pane under it is repainted (Tiger) */
+    [chatPane setNeedsDisplayInRect:NSInsetRect([thinkingField frame], -4, -4)];
     [self layoutPanes];
+    [chatPane displayIfNeededInRect:NSInsetRect([thinkingField frame], -4, -4)];
 }
 
 - (void)noteThinking:(NSString *)piece

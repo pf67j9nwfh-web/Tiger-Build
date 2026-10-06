@@ -8,6 +8,7 @@
 #import "webp/demux.h"
 #import "TBHEIC.h"
 #import "TBOffice.h"
+#import "TBSupport.h"
 
 NSString *TBExtractError = @"TBExtractError";
 
@@ -1241,33 +1242,13 @@ static NSDictionary *stringList(NSDictionary *objects, NSNumber *identifier)
     return out;
 }
 
-static NSString *plainNumber(double v)
-{
-    char text[40];
-    if (v == (double)(long long)v && v < 1e15 && v > -1e15)
-        snprintf(text, sizeof text, "%lld", (long long)v);
-    else
-        snprintf(text, sizeof text, "%.12g", v);
-    return [NSString stringWithUTF8String:text];
-}
-
 /* seconds after 1 January 2001 as a date (and a time when there is one) */
 static NSString *numbersDate(double seconds)
 {
-    long long days = (long long)floor(seconds / 86400.0), era, doe, yoe, doy, mp;
+    long long days = (long long)floor(seconds / 86400.0);
     long secs = (long)(seconds - days * 86400.0 + 0.5);
     int y, m, d;
-    days += 11323 + 719468;               /* 2001-01-01 is 11323 days after 1970-01-01 */
-    era = (days >= 0 ? days : days - 146096) / 146097;
-    doe = days - era * 146097;
-    yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    y = (int)(yoe + era * 400);
-    doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    mp = (5 * doy + 2) / 153;
-    d = (int)(doy - (153 * mp + 2) / 5 + 1);
-    m = (int)(mp < 10 ? mp + 3 : mp - 9);
-    if (m <= 2)
-        y++;
+    TBCivilFromDays(days + 11323, &y, &m, &d);   /* 2001-01-01 is 11323 days after 1970-01-01 */
     if (secs)
         return [NSString stringWithFormat:@"%04d-%02d-%02d %02ld:%02ld", y, m, d, secs / 3600, (secs / 60) % 60];
     return [NSString stringWithFormat:@"%04d-%02d-%02d", y, m, d];
@@ -1317,11 +1298,11 @@ static NSString *numbersCell(const unsigned char *b, unsigned long n, NSDictiona
         offset += 4;
     }
     switch (type) {
-    case 2: case 10: return haveDecimal ? plainNumber(decimal) : nil;
+    case 2: case 10: return haveDecimal ? TBNumberText(decimal) : nil;
     case 3: return stringId >= 0 ? [strings objectForKey:[NSNumber numberWithUnsignedInt:(unsigned)stringId]] : nil;
     case 5: return haveSeconds ? numbersDate(seconds) : nil;
     case 6: return haveNumber ? (number > 0 ? @"TRUE" : @"FALSE") : nil;
-    case 7: return haveNumber ? plainNumber(number) : nil;
+    case 7: return haveNumber ? TBNumberText(number) : nil;
     case 8: return @"#ERROR";
     }
     return nil;
