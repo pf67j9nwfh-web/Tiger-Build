@@ -140,8 +140,8 @@ static NSArray *validated(id list, BOOL forceOff)
         if (v && (CFGetTypeID(v) != CFBooleanGetTypeID()))
             TBFail(@"%@ must be true or false.", [flagNames() objectAtIndex:i]);
     }
-    if (steps && (![steps isKindOfClass:[NSNumber class]] || [steps intValue] < 1 || [steps intValue] > 1000))
-        TBFail(@"Tool steps per reply must be a whole number from 1 to 1000.");
+    if (steps && (![steps isKindOfClass:[NSNumber class]] || [steps intValue] < 0 || [steps intValue] > 1000))
+        TBFail(@"Tool steps per reply must be a whole number from 1 to 1000, or 0 for no limit.");
     if ([provider length] && !([provider isEqualToString:@"brave"] || [provider isEqualToString:@"tavily"]))
         TBFail(@"Search provider must be brave or tavily.");
     servers = validated(TBValue(incoming, @"servers"), NO);

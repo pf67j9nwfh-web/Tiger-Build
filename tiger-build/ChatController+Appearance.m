@@ -28,6 +28,7 @@
 }
 + (TBAppearance *)shared;
 - (void)show;
+- (void)selectTab:(int)n;
 @end
 
 static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
@@ -350,6 +351,11 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
     }
 }
 
+- (void)selectTab:(int)n
+{
+    [tabs selectTabViewItemAtIndex:n];
+}
+
 - (void)show
 {
     if (!panel)
@@ -621,6 +627,12 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
 {
     (void)note;
     [self applyInterfaceTheme];
+}
+
+- (void)showAppearanceTab:(NSNumber *)n
+{
+    [[TBAppearance shared] show];
+    [[TBAppearance shared] selectTab:[n intValue]];
 }
 
 - (IBAction)showAppearance:(id)sender

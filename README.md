@@ -145,7 +145,7 @@ Skip this section if you don't want an ultra detailed description of this app's 
   - Nothing runs through a shell. Force pushes, deleting remote branches, skipping hooks, passwords on the command line, interactive rebase and commits without `-m` are refused, and paths must stay in the allowed folders. A repository can contain hooks that run code, so use trusted ones.
 - **Ask other models.** `consult_model` asks another working model for a second opinion; its usage counts in the chat's cost.
 - **Download tool.** Off by default (Tool Settings → Web Search, then the per-chat Tools menu item). A model may download a file over https only (certificate checked, public addresses, 50 MB limit); you are asked first, and it lands in the chat's files.
-- **Tool steps.** A reply may use up to 40 tool steps (1 to 1000 in Tools settings); then Tiger Build stops it and you can say "continue".
+- **Tool steps.** A reply may use up to 40 tool steps (1 to 1000 in Tools settings; 0 turns the limit off, at your own risk); then Tiger Build stops it and you can say "continue".
 
 **Voice** (optional, off until switched on, under Chat → Voice)
 - **Speaking.** Speak Last Reply (⌥⌘S), Stop Speaking (⌥⌘.), Speak Replies Automatically (⇧⌥⌘J) and Choose Voice (⌥⌘V) use the Mac's own voices ("Alex" needs 10.5). Code and tables are not read out.

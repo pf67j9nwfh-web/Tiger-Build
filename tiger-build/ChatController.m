@@ -268,7 +268,7 @@ static NSMutableArray *allControllers = nil;
     launchScreen = [spec copy];
 }
 
-/* "prefs:N" or "tools:N": that window on its Nth tab (from 0). */
+/* "prefs:N", "tools:N" or "appearance:N": that window on its Nth tab (from 0). */
 - (void)openLaunchScreen
 {
     NSArray *parts = [launchScreen componentsSeparatedByString:@":"];
@@ -276,6 +276,10 @@ static NSMutableArray *allControllers = nil;
     NSWindow *shown;
     NSArray *views;
     unsigned i;
+    if ([[parts objectAtIndex:0] isEqualToString:@"appearance"]) {
+        [self performSelector:@selector(showAppearanceTab:) withObject:[NSNumber numberWithInt:tab]];
+        return;
+    }
     if ([[parts objectAtIndex:0] isEqualToString:@"prefs"]) {
         [self showPreferences:nil];
         shown = prefsWindow;

@@ -142,7 +142,7 @@
         [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=40;
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
         NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
-        [steps setToolTip:@"A reply may use this many tool steps (1 to 1000) before Tiger Build stops it and says so. Say continue to go on."];
+        [steps setToolTip:@"A reply may use this many tool steps (1 to 1000; 0 means no limit, which can run up cost) before Tiger Build stops it and says so. Say continue to go on."];
         [tab addSubview:steps];[fields setObject:steps forKey:@"max_tool_steps"];y-=30;
         [self integrationLabel:@"Each chat can switch these on or off from the Tools button, and choose which ones must ask first. "
             @"The switches here apply to all your chats." frame:NSMakeRect(16,y-20,524,44) view:tab];
@@ -222,7 +222,7 @@
     unsigned i;
     for(i=0;i<[keys count];i++)[[fields objectForKey:[keys objectAtIndex:i]] setState:[[data objectForKey:[keys objectAtIndex:i]] boolValue]?NSOnState:NSOffState];
     [(TBServerSource *)[fields objectForKey:@"source"] setServers:[data objectForKey:@"servers"]];
-    [[fields objectForKey:@"max_tool_steps"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"max_tool_steps"] intValue]>0?[[data objectForKey:@"max_tool_steps"] intValue]:40]];
+    [[fields objectForKey:@"max_tool_steps"] setStringValue:[NSString stringWithFormat:@"%d",[data objectForKey:@"max_tool_steps"]?[[data objectForKey:@"max_tool_steps"] intValue]:40]];
     [[fields objectForKey:@"table"] reloadData];
     [[fields objectForKey:@"search_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_search_key"] setState:NSOffState];
     [[fields objectForKey:@"tavily_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_tavily_key"] setState:NSOffState];
@@ -455,7 +455,7 @@ static NSString *trimmedText(NSString *text)
     [data setObject:[[fields objectForKey:@"search_api_key"] stringValue] forKey:@"search_api_key"];
     [data setObject:[[fields objectForKey:@"tavily_api_key"] stringValue] forKey:@"tavily_api_key"];
     [data setObject:[[fields objectForKey:@"search_provider"] indexOfSelectedItem]==1?@"tavily":@"brave" forKey:@"search_provider"];
-    {int steps=[[[fields objectForKey:@"max_tool_steps"] stringValue] intValue];if(steps<1)steps=40;if(steps>1000)steps=1000;
+    {NSString *text=[[fields objectForKey:@"max_tool_steps"] stringValue];int steps=[text length]?[text intValue]:40;if(steps<0)steps=40;if(steps>1000)steps=1000;
         [data setObject:[NSNumber numberWithInt:steps] forKey:@"max_tool_steps"];}
     [data setObject:[(TBServerSource *)[fields objectForKey:@"source"] servers] forKey:@"servers"];return data;
 }

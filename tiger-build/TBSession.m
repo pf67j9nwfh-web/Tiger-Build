@@ -1,4 +1,6 @@
+#include <limits.h>
 #import "TBSession.h"
+#include <limits.h>
 #import "TBIntegrations.h"
 #import "TBExtras.h"
 #import "TBOutputs.h"
@@ -427,7 +429,9 @@ static NSArray *withoutPictures(NSArray *messages)
 {
     NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:@"TBTool.max_tool_steps"];
     int steps = saved ? [saved intValue] : 40;
-    return steps < 1 ? 1 : (steps > 1000 ? 1000 : steps);
+    if (steps == 0)
+        return INT_MAX;   /* 0 turns the limit off */
+    return steps < 1 ? 40 : (steps > 1000 ? 1000 : steps);
 }
 
 - (NSString *)mediaRoot
