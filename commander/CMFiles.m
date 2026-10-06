@@ -77,8 +77,12 @@ id CMToolReadFile(NSDictionary *args)
     unsigned total, start, end;
     BOOL pathIsURL = [path hasPrefix:@"http://"] || [path hasPrefix:@"https://"] || [path hasPrefix:@"ftp://"];
     if (isURL || pathIsURL) {
+        NSString *low = [path lowercaseString];
         if (![path length])
             CMFail(@"missing path");
+        /* a URL is never a way around the path checks: no file:, no other schemes, no options for curl */
+        if (!([low hasPrefix:@"http://"] || [low hasPrefix:@"https://"] || [low hasPrefix:@"ftp://"]))
+            CMFail(@"only http://, https:// and ftp:// addresses can be fetched. Use a plain path for a file on this Mac.");
         return readURL(path);
     }
     if (![path length])
@@ -762,8 +766,11 @@ static NSString *readURL(NSString *url)
     NSString *out = nil;
     NSData *data;
     NSString *text, *encoding = nil;
-    int code = CMRunProgram([NSArray arrayWithObjects:@"/usr/bin/curl", @"-sSL", @"--max-time", @"20", @"--max-filesize", @"200000", @"-A", @"ppc-commander", url, nil], nil, 25, nil, &out);
+    /* redirects may only lead to http, https or ftp; curl before 7.19.4 (Tiger) has no such option, so there redirects are not followed */
+    int code = CMRunProgram([NSArray arrayWithObjects:@"/usr/bin/curl", @"-sSL", @"--proto", @"=http,https,ftp", @"--proto-redir", @"=http,https,ftp", @"--max-time", @"20", @"--max-filesize", @"200000", @"-A", @"ppc-commander", @"--", url, nil], nil, 25, nil, &out);
     (void)swap;
+    if (code == 2 || (code != 0 && [out rangeOfString:@"proto"].location != NSNotFound && [out rangeOfString:@"option"].location != NSNotFound))
+        code = CMRunProgram([NSArray arrayWithObjects:@"/usr/bin/curl", @"-sS", @"--max-time", @"20", @"--max-filesize", @"200000", @"-A", @"ppc-commander", @"--", url, nil], nil, 25, nil, &out);
     if (code != 0 && ![out length])
         CMFail(@"fetch failed (curl exit %d). Old versions of curl cannot make modern HTTPS connections.", code);
     data = [out dataUsingEncoding:NSUTF8StringEncoding];

@@ -84,6 +84,21 @@ int main(int argc, char **argv)
         [g release];
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBSearchURL.gemini-search"];
     }
+    {
+        TBExtras *dl = [[TBExtras alloc] initWithRun:run];
+        NSDictionary *r1, *r2;
+        BOOL offeredOff;
+        offeredOff = [[[dl definitionsForProvider:@"claude" skip:[NSSet set]] description] rangeOfString:@"agent_download_file"].location == NSNotFound;
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"TBTool.download_enabled"];
+        [dl definitionsForProvider:@"claude" skip:[NSSet set]];
+        r1 = [dl call:@"agent_download_file" arguments:[NSDictionary dictionaryWithObject:@"http://example.com/a.zip" forKey:@"url"]];
+        r2 = [dl call:@"agent_download_file" arguments:[NSDictionary dictionaryWithObject:@"https://127.0.0.1/a.zip" forKey:@"url"]];
+        expectThat(offeredOff, @"the download tool is not offered until it is switched on");
+        expectThat([[r1 objectForKey:@"failed"] boolValue] && [[r1 objectForKey:@"output"] rangeOfString:@"https"].location != NSNotFound, @"a plain http download is refused");
+        expectThat([[r2 objectForKey:@"failed"] boolValue] && [[r2 objectForKey:@"output"] rangeOfString:@"public"].location != NSNotFound, @"a download from this Mac's own network is refused");
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBTool.download_enabled"];
+        [dl release];
+    }
     a = [NSDictionary dictionaryWithObjectsAndKeys:@"x.md", @"name", @"# hi", @"content", nil];
     {
         TBExtras *extras = [[TBExtras alloc] initWithRun:run];

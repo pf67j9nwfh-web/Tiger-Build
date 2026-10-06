@@ -13,5 +13,7 @@ NSString *TBSaveMedia(NSData *data, NSString *extension); /* a new file in the f
 + (NSData *)buildName:(NSString *)name content:(NSString *)content base64:(NSString *)encoded cleanName:(NSString **)clean;
 /* Writes it into the media folder for the chat to fetch; returns the stored name. */
 + (NSString *)saveName:(NSString *)name content:(NSString *)content base64:(NSString *)encoded;
++ (NSString *)cleanFileName:(NSString *)name;
++ (NSString *)storeData:(NSData *)data name:(NSString *)name;   /* a download, kept in the media folder under a safe name */
 + (NSData *)zipFiles:(NSArray *)namesAndData; /* [name, NSData, name, NSData...] */
 @end

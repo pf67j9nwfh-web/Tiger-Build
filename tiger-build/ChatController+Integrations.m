@@ -163,7 +163,8 @@
         [[tavily cell] setPlaceholderString:@"blank keeps the saved key"];
         [tab addSubview:tavily];[fields setObject:tavily forKey:@"tavily_api_key"];y-=28;
         NSButton *clearT=[[[NSButton alloc] initWithFrame:NSMakeRect(190,y,350,22)] autorelease];
-        [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];
+        [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];y-=40;
+        [self integrationSwitch:@"Let models download files over https (off by default; each chat chooses, and it asks first)" key:@"download_enabled" y:y in:tab];
 
         tab=[self integrationTab:@"MCP Servers" in:tabs];
         [self integrationLabel:@"Custom servers are programs on this Mac, programs on another computer over SSH, or http:// and https:// addresses. Only add ones you trust."
@@ -217,7 +218,7 @@
 - (void)loadIntegrationForm:(NSDictionary *)data
 {
     NSMutableDictionary *fields=[self integrationFields];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"claude_thinking",nil];
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"download_enabled",@"claude_thinking",nil];
     unsigned i;
     for(i=0;i<[keys count];i++)[[fields objectForKey:[keys objectAtIndex:i]] setState:[[data objectForKey:[keys objectAtIndex:i]] boolValue]?NSOnState:NSOffState];
     [(TBServerSource *)[fields objectForKey:@"source"] setServers:[data objectForKey:@"servers"]];
@@ -449,7 +450,7 @@ static NSString *trimmedText(NSString *text)
 - (NSDictionary *)integrationFormData
 {
     NSMutableDictionary *fields=[self integrationFields];NSMutableDictionary *data=[NSMutableDictionary dictionary];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"download_enabled",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
     for(i=0;i<[keys count];i++)[data setObject:[NSNumber numberWithBool:[[fields objectForKey:[keys objectAtIndex:i]] state]==NSOnState] forKey:[keys objectAtIndex:i]];
     [data setObject:[[fields objectForKey:@"search_api_key"] stringValue] forKey:@"search_api_key"];
     [data setObject:[[fields objectForKey:@"tavily_api_key"] stringValue] forKey:@"tavily_api_key"];

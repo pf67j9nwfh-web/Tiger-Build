@@ -450,6 +450,8 @@ static NSArray *withoutPictures(NSArray *messages)
         [skip addObject:@"consult"];
     if ((CFBooleanRef)[servers objectForKey:@"sudo"] != kCFBooleanTrue)
         [skip addObject:@"sudo"];
+    if ((CFBooleanRef)[servers objectForKey:@"download"] != kCFBooleanTrue)
+        [skip addObject:@"download"];
     return skip;
 }
 

@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     r = call(client, @"read_multiple_files", D1([NSArray arrayWithObjects:file, @"/etc/hosts", @"/no/such", nil], @"paths"));
     expectThat([TEXT(r) rangeOfString:@"line 1"].location != NSNotFound && [TEXT(r) rangeOfString:@"localhost"].location != NSNotFound, @"read_multiple_files reads several and survives a bad one");
     r = call(client, @"read_file", [NSDictionary dictionaryWithObjectsAndKeys:[@"file://" stringByAppendingString:file], @"path", [NSNumber numberWithBool:YES], @"isUrl", nil]);
-    expectThat([TEXT(r) rangeOfString:@"line 1"].location != NSNotFound, @"read_file fetches a URL");
+    expectThat(FAILED(r) && [TEXT(r) rangeOfString:@"line 1"].location == NSNotFound, @"a file: address is not a way around the path checks");
 
     /* writing, moving, listing, info */
     r = call(client, @"write_file", [NSDictionary dictionaryWithObjectsAndKeys:file, @"path", @"appended\n", @"content", @"append", @"mode", nil]);
@@ -158,6 +158,17 @@ int main(int argc, char **argv)
         expectThat(FAILED(r), @"a force push is refused");
         r = call(client, @"git_write", [NSDictionary dictionaryWithObjectsAndKeys:[NSArray arrayWithObjects:@"log", @"--output=/tmp/cmfull-out", nil], @"args", repo, @"path", nil]);
         expectThat(FAILED(r), @"--output is refused");
+        {
+            NSArray *bad = [NSArray arrayWithObjects:[NSArray arrayWithObjects:@"rebase", @"-x", @"touch /tmp/cm-x", @"HEAD", nil], [NSArray arrayWithObjects:@"rebase", @"-xtouch /tmp/cm-x", @"HEAD", nil],
+                [NSArray arrayWithObjects:@"rebase", @"--ex=touch /tmp/cm-x", @"HEAD", nil], [NSArray arrayWithObjects:@"clone", @"--no-local", @"-u", @"touch /tmp/cm-x", @".", @"d2", nil],
+                [NSArray arrayWithObjects:@"clone", @"--upload-p=touch /tmp/cm-x", @".", @"d3", nil], [NSArray arrayWithObjects:@"commit", @"--file=/etc/hosts", nil], nil];
+            unsigned k;
+            BOOL all = YES;
+            for (k = 0; k < [bad count]; k++)
+                if (!FAILED(call(client, @"git_write", [NSDictionary dictionaryWithObjectsAndKeys:[bad objectAtIndex:k], @"args", repo, @"path", nil])))
+                    all = NO;
+            expectThat(all && ![[NSFileManager defaultManager] fileExistsAtPath:@"/tmp/cm-x"], @"short and abbreviated options that run programs, and paths in --option=value, are refused");
+        }
         r = call(client, @"git_read", [NSDictionary dictionaryWithObjectsAndKeys:[NSArray arrayWithObjects:@"-c", @"core.pager=sh", @"log", nil], @"args", repo, @"path", nil]);
         expectThat(FAILED(r), @"a sub-command that is not on the list is refused");
     }

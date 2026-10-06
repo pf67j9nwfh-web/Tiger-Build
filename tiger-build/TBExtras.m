@@ -359,6 +359,10 @@ static NSString *imageSearch(NSString *query, TBRun *run)
         [tools addObject:function(@"agent_show_image", @"Download a picture from a web address (an image_url from agent_image_search, or any direct link to a JPEG, PNG or GIF) and show it to the person in the chat. Each call shows one picture.",
             [NSArray arrayWithObject:@"url"], [NSArray arrayWithObject:@""], [NSArray arrayWithObject:@"url"])];
     }
+    if ([TBSettings flag:@"download_enabled"] && [skip containsObject:@"download"] == NO)
+        [tools addObject:function(@"agent_download_file", @"Download a file from an https address on the internet (up to 50 MB) and give it to the person with a Save As button. The connection uses TLS and the server's certificate is checked. "
+            "Say where it came from and its SHA-256 afterwards. Only download what the person asked for.",
+            [NSArray arrayWithObjects:@"url", @"name", nil], [NSArray arrayWithObjects:@"The https address of the file.", @"Optional file name to save it as.", nil], [NSArray arrayWithObject:@"url"])];
     return tools;
 }
 
@@ -383,7 +387,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     unsigned i, t;
     for (i = 0; i < [tools count]; i++) {
         NSString *n = TBString([tools objectAtIndex:i], @"name");
-        [owners setObject:([n isEqualToString:@"agent_web_search"] || [n isEqualToString:@"agent_image_search"] || [n isEqualToString:@"agent_show_image"]) ? @"search" : @"toolbox" forKey:n];
+        [owners setObject:([n isEqualToString:@"agent_web_search"] || [n isEqualToString:@"agent_image_search"] || [n isEqualToString:@"agent_show_image"]) ? @"search" : ([n isEqualToString:@"agent_download_file"] ? @"download" : @"toolbox") forKey:n];
     }
     for (i = 0; i < [servers count]; i++) {
         NSDictionary *server = [servers objectAtIndex:i];
@@ -501,6 +505,12 @@ static NSString *imageSearch(NSString *query, TBRun *run)
         if ([name isEqualToString:@"agent_save_file"]) {
             NSString *stored = [TBOutputs saveName:TBString(args, @"name") content:TBValue(args, @"content") base64:TBValue(args, @"content_base64")];
             return result(@"The file is now in the chat with a Save As button. Do not paste it again.", NO, [@"file " stringByAppendingString:stored]);
+        }
+        if ([name isEqualToString:@"agent_download_file"]) {
+            NSDictionary *got = [TBMedia downloadURL:TBString(args, @"url") name:TBString(args, @"name") run:run];
+            return result([NSString stringWithFormat:@"Downloaded %@ (%lu bytes, %@) from %@. SHA-256 %@. The file is now in the chat with a Save As button.",
+                [got objectForKey:@"name"], [[got objectForKey:@"size"] unsignedLongValue], [[got objectForKey:@"type"] length] ? [got objectForKey:@"type"] : @"unknown type", [got objectForKey:@"url"], [got objectForKey:@"sha256"]],
+                NO, [@"file " stringByAppendingString:[got objectForKey:@"stored"]]);
         }
         if ([name isEqualToString:@"agent_show_image"]) {
             NSString *file = [TBMedia fetchImage:TBString(args, @"url")];

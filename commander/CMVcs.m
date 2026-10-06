@@ -53,12 +53,25 @@ static NSArray *argumentList(NSDictionary *args)
     return items;
 }
 
+/* git and svn take any unique start of a long option (--upload-p, --ex), and a short option can have its value attached (-xCMD), so a name
+   is refused when it starts a blocked one, and the short forms that run programs are listed here too */
 static void checkOptions(NSArray *items, NSArray *bad, NSString *program)
 {
-    unsigned i;
-    for (i = 0; i < [items count]; i++) {
+    unsigned i, b;
+    NSString *sub = [items objectAtIndex:0];
+    for (i = 1; i < [items count]; i++) {
         NSString *item = [items objectAtIndex:i], *name = [[item componentsSeparatedByString:@"="] objectAtIndex:0];
-        if ([bad containsObject:name])
+        BOOL refuse = [bad containsObject:name];
+        if ([item isEqualToString:@"--"])
+            break;
+        if (!refuse && [name hasPrefix:@"--"] && [name length] >= 4)
+            for (b = 0; b < [bad count]; b++)
+                if ([[bad objectAtIndex:b] hasPrefix:name])
+                    refuse = YES;
+        if (!refuse && [program isEqualToString:@"git"] && ([sub isEqualToString:@"rebase"] || [sub isEqualToString:@"clone"]) && [item hasPrefix:@"-"] && ![item hasPrefix:@"--"]
+            && ([item hasPrefix:@"-x"] || [item hasPrefix:@"-u"] || [item hasPrefix:@"-c"] || [item hasPrefix:@"-o"]))
+            refuse = YES;
+        if (refuse)
             CMFail(@"%@ is not allowed with this tool (%@). Ask the person to run it themselves.", item, program);
     }
 }
@@ -74,8 +87,21 @@ static void checkPaths(NSArray *items, NSString *cwd)
             after = YES;
             continue;
         }
-        if ([item hasPrefix:@"-"] && !after)
+        if ([item hasPrefix:@"-"] && !after) {
+            /* --option=/path: the path part is checked like any other */
+            NSRange eq = [item rangeOfString:@"="];
+            if (eq.location != NSNotFound && ([item hasPrefix:@"--"])) {
+                NSString *value = [item substringFromIndex:eq.location + 1], *full;
+                if ([value hasPrefix:@"/"] || [value hasPrefix:@"~"] || [value rangeOfString:@".."].location != NSNotFound) {
+                    full = [value stringByExpandingTildeInPath];
+                    if (![full isAbsolutePath])
+                        full = [cwd stringByAppendingPathComponent:full];
+                    if (!CMPathAllowed(CMResolve(full)))
+                        CMFail(@"%@ is outside the directories this chat may use", item);
+                }
+            }
             continue;
+        }
         if ([item rangeOfString:@"/"].location == NSNotFound && [item rangeOfString:@".."].location == NSNotFound)
             continue;
         if ([item hasPrefix:@"http:"] || [item hasPrefix:@"https:"] || [item rangeOfString:@"://"].location != NSNotFound || [item rangeOfString:@"@"].location != NSNotFound)
@@ -206,6 +232,8 @@ id CMToolGit(NSDictionary *args, BOOL writing)
     if (!program)
         CMFail(@"%@", missing(@"git"));
     [full addObject:program];
+    [full addObject:@"-c"];
+    [full addObject:@"protocol.ext.allow=never"];   /* ext:: addresses run programs */
     [full addObject:sub];
     if ([list(@"diff log show whatchanged") containsObject:sub])
         [full addObject:@"--no-ext-diff"];

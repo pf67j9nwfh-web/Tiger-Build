@@ -733,13 +733,12 @@ static NSData *makePdf(NSString *text)
     return out;
 }
 
-+ (NSData *)buildName:(NSString *)name content:(NSString *)content base64:(NSString *)encoded cleanName:(NSString **)cleanOut
++ (NSString *)cleanFileName:(NSString *)name
 {
     NSMutableString *clean = [NSMutableString string];
-    NSString *base, *ext;
+    NSString *base;
     unsigned i;
     BOOL lastUnderscore = NO;
-    NSData *data;
     if (![name isKindOfClass:[NSString class]])
         TBFail(@"Give a file name.");
     base = TBTrim([[swapText(name, @"\\", @"/") componentsSeparatedByString:@"/"] lastObject]);
@@ -764,6 +763,22 @@ static NSData *makePdf(NSString *text)
         [clean setString:[clean substringToIndex:80]];
     if ([clean rangeOfString:@"."].location == NSNotFound)
         [clean appendString:@".txt"];
+    return clean;
+}
+
+/* Stores bytes a download fetched under a safe name; returns the stored name. */
++ (NSString *)storeData:(NSData *)data name:(NSString *)name
+{
+    NSString *stored = [NSString stringWithFormat:@"%@-%@", randomName(), [self cleanFileName:name]];
+    if (![data writeToFile:[TBMediaFolder() stringByAppendingPathComponent:stored] atomically:NO])
+        TBFail(@"The file could not be stored.");
+    return stored;
+}
+
++ (NSData *)buildName:(NSString *)name content:(NSString *)content base64:(NSString *)encoded cleanName:(NSString **)cleanOut
+{
+    NSString *clean = [self cleanFileName:name], *ext;
+    NSData *data;
     ext = [[clean pathExtension] lowercaseString];
     *cleanOut = clean;
     if (encoded) {

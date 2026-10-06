@@ -186,6 +186,8 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"sudo", @"id", @"Administrator (sudo) for Commander", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
     if ([TBSettings flag:@"toolbox_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"toolbox", @"id", @"Agent toolbox", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
+    if ([TBSettings flag:@"download_enabled"])
+        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"download", @"id", @"Download files from the web (https)", @"title", [NSNumber numberWithBool:YES], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
     if ([TBSettings flag:@"search_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"search", @"id", @"Web search", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
     if ([TBSettings flag:@"consult_enabled"])

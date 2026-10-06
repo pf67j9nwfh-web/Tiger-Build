@@ -6,7 +6,7 @@ static NSString *kServers = @"mcp_servers";
 
 static NSArray *flagNames(void)
 {
-    return [NSArray arrayWithObjects:@"ppc_approval", @"consult_enabled", @"ppc_enabled", @"toolbox_enabled", @"search_enabled", @"grok_native_search", @"gemini_native_search", @"claude_thinking", nil];
+    return [NSArray arrayWithObjects:@"ppc_approval", @"consult_enabled", @"ppc_enabled", @"toolbox_enabled", @"search_enabled", @"grok_native_search", @"gemini_native_search", @"download_enabled", @"claude_thinking", nil];
 }
 
 static BOOL validServerId(NSString *name)

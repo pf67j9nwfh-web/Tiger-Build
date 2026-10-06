@@ -4,6 +4,7 @@
 #import "TBJSON.h"
 #import "TBSupport.h"
 #import "TBOutputs.h"
+#import "mbedtls/sha256.h"
 #import <sys/socket.h>
 #import <netdb.h>
 #import <arpa/inet.h>
@@ -430,6 +431,112 @@ static void checkPictureURL(NSString *url)
         if ([data length] > 6 && (!memcmp(b, "GIF87a", 6) || !memcmp(b, "GIF89a", 6)))
             return TBSaveMedia(data, @"gif");
         TBFail(@"That address is not a JPEG, PNG or GIF picture. Try another result.");
+    }
+    TBFail(@"Too many redirects.");
+    return nil;
+}
+
+@end
+
+/* collects a download, and stops it when it grows past the limit */
+@interface TBDownloadSink : NSObject {
+@public
+    NSMutableData *bytes;
+    unsigned long limit;
+    BOOL tooBig;
+}
+@end
+
+@implementation TBDownloadSink
+- (id)init
+{
+    self = [super init];
+    bytes = [[NSMutableData alloc] init];
+    return self;
+}
+- (void)dealloc
+{
+    [bytes release];
+    [super dealloc];
+}
+- (BOOL)http:(TBHTTP *)http gotData:(NSData *)data
+{
+    (void)http;
+    if ([bytes length] + [data length] > limit) {
+        tooBig = YES;
+        return YES;
+    }
+    [bytes appendData:data];
+    return NO;
+}
+@end
+
+#define DOWNLOAD_LIMIT (50UL * 1024 * 1024)
+
+@implementation TBMedia (Download)
+
+/* A file at an https address on the public internet, over TLS 1.2 or 1.3 with the certificate checked, kept in the media folder.
+   Returns {stored, name, size, sha256, type, url}. */
++ (NSDictionary *)downloadURL:(NSString *)url name:(NSString *)requested run:(TBRun *)run
+{
+    NSString *current = TBTrim(url);
+    int hop;
+    if (![url isKindOfClass:[NSString class]] || [current length] > 2000)
+        TBFail(@"Give the https address of the file.");
+    for (hop = 0; hop < 6; hop++) {
+        NSURL *parsed = [NSURL URLWithString:current];
+        TBHTTP *http;
+        TBDownloadSink *sink = [[[TBDownloadSink alloc] init] autorelease];
+        int result;
+        NSString *type, *disposition, *fileName;
+        unsigned char digest[32];
+        NSMutableString *hex = [NSMutableString string];
+        int i;
+        if (!parsed || ![[[parsed scheme] lowercaseString] isEqualToString:@"https"] || ![[parsed host] length])
+            TBFail(@"Only https addresses can be downloaded, so the connection is encrypted and the server's certificate is checked.");
+        if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowLocalPictures"] && !publicHost([parsed host]))
+            TBFail(@"Files can only be downloaded from public web addresses.");
+        http = [TBHTTP request:@"GET" url:current];
+        [http setHeader:@"User-Agent" value:userAgent];
+        [http setIdleTimeout:30];
+        sink->limit = DOWNLOAD_LIMIT;
+        [http setDelegate:sink];
+        [run attach:http];
+        result = [http perform];
+        [run detach:http];
+        [run check];
+        if (sink->tooBig)
+            TBFail(@"That file is larger than 50 MB.");
+        if (result != TBNET_OK)
+            TBFail(@"%@", [http error]);
+        if ([http status] >= 301 && [http status] <= 308 && [[http responseHeader:@"Location"] length]) {
+            current = [[NSURL URLWithString:[http responseHeader:@"Location"] relativeToURL:parsed] absoluteString];
+            continue;
+        }
+        if ([http status] < 200 || [http status] >= 300)
+            TBFail(@"The server answered HTTP %d.", [http status]);
+        if (![sink->bytes length])
+            TBFail(@"The server sent an empty file.");
+        type = [http responseHeader:@"Content-Type"];
+        disposition = [http responseHeader:@"Content-Disposition"];
+        fileName = TBTrim(requested);
+        if (![fileName length] && [disposition length]) {
+            NSRange at = [[disposition lowercaseString] rangeOfString:@"filename="];
+            if (at.location != NSNotFound) {
+                NSString *rest = [disposition substringFromIndex:NSMaxRange(at)];
+                rest = [[rest componentsSeparatedByString:@";"] objectAtIndex:0];
+                fileName = [rest stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@" \"'"]];
+            }
+        }
+        if (![fileName length])
+            fileName = [[parsed path] lastPathComponent];
+        if (![fileName length] || [fileName isEqualToString:@"/"])
+            fileName = @"download";
+        mbedtls_sha256([sink->bytes bytes], [sink->bytes length], digest, 0);
+        for (i = 0; i < 32; i++)
+            [hex appendFormat:@"%02x", digest[i]];
+        return [NSDictionary dictionaryWithObjectsAndKeys:[TBOutputs storeData:sink->bytes name:fileName], @"stored", [TBOutputs cleanFileName:fileName], @"name",
+            [NSNumber numberWithUnsignedLong:[sink->bytes length]], @"size", hex, @"sha256", type ? type : @"", @"type", current, @"url", nil];
     }
     TBFail(@"Too many redirects.");
     return nil;
