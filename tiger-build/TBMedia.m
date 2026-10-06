@@ -333,14 +333,16 @@ static BOOL publicHost(NSString *host)
     return ok;
 }
 
-static void checkPictureURL(NSString *url)
+static void checkPictureURL(NSString *url, BOOL httpsOnly)
 {
     NSURL *parsed = [NSURL URLWithString:url];
     NSString *scheme = [[parsed scheme] lowercaseString];
+    if (httpsOnly && ![scheme isEqualToString:@"https"])
+        TBFail(@"Only https addresses can be downloaded, so the connection is encrypted and the server's certificate is checked.");
     if (!parsed || !([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) || ![[parsed host] length])
-        TBFail(@"Give a full http or https picture address.");
+        TBFail(@"Give a full http or https address.");
     if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowLocalPictures"] && !publicHost([parsed host]))
-        TBFail(@"Pictures can only come from public web addresses.");
+        TBFail(@"Only public web addresses can be used.");
 }
 
 @implementation TBMedia
@@ -406,7 +408,7 @@ static void checkPictureURL(NSString *url)
         int result;
         const unsigned char *b;
         NSData *data;
-        checkPictureURL(current);
+        checkPictureURL(current, NO);
         http = [TBHTTP request:@"GET" url:current];
         [http setHeader:@"User-Agent" value:userAgent];
         [http setHeader:@"Accept" value:@"image/jpeg,image/png,image/gif,*/*;q=0.5"];
@@ -492,10 +494,7 @@ static void checkPictureURL(NSString *url)
         unsigned char digest[32];
         NSMutableString *hex = [NSMutableString string];
         int i;
-        if (!parsed || ![[[parsed scheme] lowercaseString] isEqualToString:@"https"] || ![[parsed host] length])
-            TBFail(@"Only https addresses can be downloaded, so the connection is encrypted and the server's certificate is checked.");
-        if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowLocalPictures"] && !publicHost([parsed host]))
-            TBFail(@"Files can only be downloaded from public web addresses.");
+        checkPictureURL(current, YES);
         http = [TBHTTP request:@"GET" url:current];
         [http setHeader:@"User-Agent" value:userAgent];
         [http setIdleTimeout:30];

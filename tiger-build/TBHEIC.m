@@ -202,6 +202,19 @@ static Matrix matrixFor(int coefficients, BOOL full)
     return m;
 }
 
+/* video range is 16 to 235 for luma and 16 to 240 for chroma */
+static void yuvToRGB(Matrix matrix, int Y, int Cb, int Cr, int *r, int *g, int *b)
+{
+    if (!matrix.full) {
+        Y = ((Y - 16) * 255 + 109) / 219;
+        Cb = 128 + ((Cb - 128) * 255 + 112) / 224;
+        Cr = 128 + ((Cr - 128) * 255 + 112) / 224;
+    }
+    *r = clamp8(Y + ((matrix.rv * (Cr - 128) + 32768) >> 16));
+    *g = clamp8(Y - ((matrix.gu * (Cb - 128) + matrix.gv * (Cr - 128) + 32768) >> 16));
+    *b = clamp8(Y + ((matrix.bu * (Cb - 128) + 32768) >> 16));
+}
+
 /* Decodes one hvc1 item to the canvas at (x, y). The tile's size on the canvas is `cw` by `ch` (the part inside the picture). */
 static NSString *decodeItem(Item *item, NSData *hvcC, const uint8_t *file, unsigned long long fileLength, uint8_t *canvas, unsigned canvasWidth, unsigned canvasHeight, unsigned x, unsigned y, Matrix matrix)
 {
@@ -298,18 +311,7 @@ static NSString *decodeItem(Item *item, NSData *hvcC, const uint8_t *file, unsig
                         Cr = ((const uint16_t *)(p2 + o2))[col >> cx] >> shift;
                     }
                 }
-                if (!matrix.full) {
-                    /* video range: 16 to 235 for luma, 16 to 240 for chroma */
-                    Y = ((Y - 16) * 255 + 109) / 219;
-                    Cb = 128 + ((Cb - 128) * 255 + 112) / 224;
-                    Cr = 128 + ((Cr - 128) * 255 + 112) / 224;
-                }
-                r = Y + ((matrix.rv * (Cr - 128) + 32768) >> 16);
-                g = Y - ((matrix.gu * (Cb - 128) + matrix.gv * (Cr - 128) + 32768) >> 16);
-                b = Y + ((matrix.bu * (Cb - 128) + 32768) >> 16);
-                r = clamp8(r);
-                g = clamp8(g);
-                b = clamp8(b);
+                yuvToRGB(matrix, Y, Cb, Cr, &r, &g, &b);
                 if (matrix.p3)
                     fromP3(&r, &g, &b);
                 out[0] = r;
@@ -581,18 +583,8 @@ static NSString *paintAV1(const aom_image_t *img, const aom_image_t *alpha, uint
                 b = Cb;
                 r = Cr;
             } else {
-                if (!matrix.full) {
-                    Y = ((Y - 16) * 255 + 109) / 219;
-                    Cb = 128 + ((Cb - 128) * 255 + 112) / 224;
-                    Cr = 128 + ((Cr - 128) * 255 + 112) / 224;
-                }
-                r = Y + ((matrix.rv * (Cr - 128) + 32768) >> 16);
-                g = Y - ((matrix.gu * (Cb - 128) + matrix.gv * (Cr - 128) + 32768) >> 16);
-                b = Y + ((matrix.bu * (Cb - 128) + 32768) >> 16);
+                yuvToRGB(matrix, Y, Cb, Cr, &r, &g, &b);
             }
-            r = clamp8(r);
-            g = clamp8(g);
-            b = clamp8(b);
             if (hdr)
                 hdrToSDR(&r, &g, &b, primaries == 9);
             else if (matrix.p3)

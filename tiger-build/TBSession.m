@@ -427,7 +427,7 @@ static NSArray *withoutPictures(NSArray *messages)
 {
     NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:@"TBTool.max_tool_steps"];
     int steps = saved ? [saved intValue] : 40;
-    return steps < 1 ? 1 : (steps > 200 ? 200 : steps);
+    return steps < 1 ? 1 : (steps > 1000 ? 1000 : steps);
 }
 
 - (NSString *)mediaRoot
