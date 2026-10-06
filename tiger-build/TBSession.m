@@ -869,8 +869,7 @@ NSString *TBCommanderProgram(void)
         TBFail(@"Commander is missing from the Tiger Build application. Reinstall Tiger Build.");
     if ([root length])
         [env setObject:root forKey:@"TB_WORKSPACE_ROOT"];
-    if (![[self skipKeys] containsObject:@"sudo"])
-        [env setObject:@"1" forKey:@"TB_SUDO"];
+    [env setObject:[[self skipKeys] containsObject:@"sudo"] ? @"0" : @"1" forKey:@"TB_SUDO"];
     started = [TBMCPClient clientWithPath:TBCommanderProgram() arguments:[NSArray array] environment:env label:@"Commander"];
     [run attach:started];
     @try {

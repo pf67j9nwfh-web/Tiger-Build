@@ -482,7 +482,7 @@ static NSString *trimmedValue(NSTextField *field)
     [button setFont:[NSFont systemFontOfSize:12]];
     [button setTarget:self];
     [button setAction:@selector(toggleSudoMode:)];
-    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain, so commands with sudo just work. A chat can also switch it on from its Tools menu."];
+    [button setToolTip:@"Off by default. Asks for your password once and keeps it in the Keychain. A chat can use sudo only when its Tools menu has the sudo item ticked."];
     [tab addSubview:button];
     [prefsFields setObject:button forKey:@"sudo.check"];
     [self preferencesButton:@"Set Password..." frame:NSMakeRect(396, y - 4, 140, 28) action:@selector(setAdministratorPassword:) inView:tab];

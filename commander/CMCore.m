@@ -555,6 +555,9 @@ NSString *CMWorkspaceCommandProblem(NSString *command)
 BOOL CMSudoEnabled(void)
 {
     const char *env = getenv("TB_SUDO");
+    /* Tiger Build says for each chat: "1" on, "0" off. Only a run without it (another computer, a terminal) goes by the saved setting. */
+    if (env && !strcmp(env, "0"))
+        return NO;
     if (env && !strcmp(env, "1")) {
         /* a root-owned policy that keeps administrator mode off wins over the chat's switch */
         struct stat info;
