@@ -31,6 +31,10 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 | --- | --- | --- |
 | ![Preferences, Commander tab](docs/screenshots/client-preferences-commander.png) | ![Preferences, Local LLM Server tab](docs/screenshots/client-preferences-llm.png) | ![MCP Servers tab](docs/screenshots/client-mcp-servers.png) |
 
+**Appearance** (Tiger Build menu) changes the chat, tool-call boxes, status text and interface, and the window look (brushed metal, gray, pinstripes, gradient or a solid colour), with a live sample on top:
+
+![Appearance, Interface tab](docs/screenshots/client-appearance.png)
+
 *Screenshots use example addresses, accounts and servers.*
 
 ## Contents
