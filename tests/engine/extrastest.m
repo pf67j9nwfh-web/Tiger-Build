@@ -96,6 +96,10 @@ int main(int argc, char **argv)
         expectThat(offeredOff, @"the download tool is not offered until it is switched on");
         expectThat([[r1 objectForKey:@"failed"] boolValue] && [[r1 objectForKey:@"output"] rangeOfString:@"https"].location != NSNotFound, @"a plain http download is refused");
         expectThat([[r2 objectForKey:@"failed"] boolValue] && [[r2 objectForKey:@"output"] rangeOfString:@"public"].location != NSNotFound, @"a download from this Mac's own network is refused");
+        if (getenv("TB_LIVE_DOWNLOAD")) {
+            NSDictionary *r3 = [dl call:@"agent_download_file" arguments:[NSDictionary dictionaryWithObject:[NSString stringWithUTF8String:getenv("TB_LIVE_DOWNLOAD")] forKey:@"url"]];
+            printf("live download: %s\n", [[r3 description] UTF8String]);
+        }
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBTool.download_enabled"];
         [dl release];
     }
