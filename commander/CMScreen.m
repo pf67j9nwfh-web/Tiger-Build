@@ -68,7 +68,7 @@ static void shortPause(void)
 static void keyPress(CGKeyCode code, unichar ch, BOOL down)
 {
     CGPostKeyboardEvent((CGCharCode)ch, code, down);
-    pause();
+    shortPause();
 }
 
 static CGPoint pointFrom(NSDictionary *args, NSString *xKey, NSString *yKey)
@@ -83,7 +83,7 @@ static CGPoint pointFrom(NSDictionary *args, NSString *xKey, NSString *yKey)
 static void mouseMove(CGPoint p)
 {
     CGPostMouseEvent(p, true, 1, false);
-    pause();
+    shortPause();
 }
 
 id CMToolScreenInfo(NSDictionary *args)
@@ -112,9 +112,9 @@ id CMToolScreenClick(NSDictionary *args)
     mouseMove(p);
     for (i = 0; i < clicks; i++) {
         CGPostMouseEvent(p, true, 2, right ? false : true, right ? true : false);
-        pause();
+        shortPause();
         CGPostMouseEvent(p, true, 2, false, false);
-        pause();
+        shortPause();
     }
     return [NSString stringWithFormat:@"clicked %@ x%lld at %d, %d", button, clicks, (int)p.x, (int)p.y];
 }
@@ -132,14 +132,14 @@ id CMToolScreenDrag(NSDictionary *args)
     int step;
     mouseMove(from);
     CGPostMouseEvent(from, true, 1, true);
-    pause();
+    shortPause();
     for (step = 1; step <= 10; step++) {
         CGPoint p = CGPointMake(from.x + (to.x - from.x) * step / 10, from.y + (to.y - from.y) * step / 10);
         CGPostMouseEvent(p, true, 1, true);
         usleep(20000);
     }
     CGPostMouseEvent(to, true, 1, false);
-    pause();
+    shortPause();
     return [NSString stringWithFormat:@"dragged from %d, %d to %d, %d", (int)from.x, (int)from.y, (int)to.x, (int)to.y];
 }
 
@@ -151,7 +151,7 @@ id CMToolScreenScroll(NSDictionary *args)
     if ([args objectForKey:@"x"] && [args objectForKey:@"y"])
         mouseMove(pointFrom(args, @"x", @"y"));
     CGPostScrollWheelEvent(1, (int32_t)amount);
-    pause();
+    shortPause();
     return [NSString stringWithFormat:@"scrolled %lld", amount];
 }
 
