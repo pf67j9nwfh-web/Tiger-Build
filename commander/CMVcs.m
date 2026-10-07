@@ -71,6 +71,9 @@ static void checkOptions(NSArray *items, NSArray *bad, NSString *program)
         if (!refuse && [program isEqualToString:@"git"] && ([sub isEqualToString:@"rebase"] || [sub isEqualToString:@"clone"]) && [item hasPrefix:@"-"] && ![item hasPrefix:@"--"]
             && ([item hasPrefix:@"-x"] || [item hasPrefix:@"-u"] || [item hasPrefix:@"-c"] || [item hasPrefix:@"-o"]))
             refuse = YES;
+        /* git grep -O<command> runs the command as the pager; the letter can sit inside a bundle of short options (-nOcmd) */
+        if (!refuse && [program isEqualToString:@"git"] && [sub isEqualToString:@"grep"] && [item hasPrefix:@"-"] && ![item hasPrefix:@"--"] && [item rangeOfString:@"O"].location != NSNotFound)
+            refuse = YES;
         if (refuse)
             CMFail(@"%@ is not allowed with this tool (%@). Ask the person to run it themselves.", item, program);
     }

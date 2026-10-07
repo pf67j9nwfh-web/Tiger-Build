@@ -72,6 +72,15 @@ static NSString *brokerPath(void)
     return path;
 }
 
+/* Open only while a reply is running in a chat that ticked the sudo item. Anything else on this account (a model's own shell
+   included) that connects to the socket at another time is refused. */
+static volatile BOOL brokerOpen = NO;
+
+void TBSudoBrokerOpen(BOOL open)
+{
+    brokerOpen = open;
+}
+
 static void answerCommander(int client)
 {
     char request[40];
@@ -87,6 +96,11 @@ static void answerCommander(int client)
     request[got] = 0;
     if (strcmp(request, "password\n") != 0)
         return;
+    if (!brokerOpen) {
+        const char *closed = "error: administrator mode is not switched on for the chat that is running.\n";
+        write(client, closed, strlen(closed));
+        return;
+    }
     if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL) == noErr) {
         write(client, data, length);
         write(client, "\n", 1);

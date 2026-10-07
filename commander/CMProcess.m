@@ -554,6 +554,13 @@ id CMToolInteract(NSDictionary *args)
     unsigned start, end, total;
     NSString *body;
     BOOL done;
+    NSString *why = CMWhyBlocked(input);
+    if (!why)
+        why = CMWorkspaceCommandProblem(input);
+    if (why)
+        CMFail(@"blocked: %@. The same rules apply to what is typed into a running program as to a new command.", why);
+    if ([CMCommandWords(input) containsObject:@"sudo"] && !CMSudoEnabled())
+        CMFail(@"administrator (sudo) commands are off. A person can turn them on in Tiger Build: the Tools menu of the chat, Administrator (sudo). Do not try to work around this.");
     if (timeout < 0) timeout = 0;
     if (timeout > 120000) timeout = 120000;
     pthread_mutex_lock(&s->lock);

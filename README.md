@@ -121,7 +121,7 @@ Note: Pricing estimates on model usage are provided as a convenience and may not
 Skip this section if you don't want an ultra detailed description of this app's functionality.
 
 **Chats**
-- **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander to one folder.
+- **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander's file tools to one folder and checks the paths in shell commands; the shell check is a guard against mistakes, not a sandbox, because a shell can always build a path another way. Only give Commander to models and documents you trust.
 - **Chat list.** Hover a chat to see its full title. Each service shows its own icon in the provider popup and the Model menu.
 - **Models.** The popups under the chat list pick service and model. A new chat starts with the last chat's model, tools and approvals, or a fixed model chosen in Preferences. Services with no key or no working model are dimmed with the reason.
 - **Stop and guidance.** Stop (⌘.) ends a reply at once, even mid-command. While a model uses tools, Send becomes **Guide**: a note typed then reaches the model between steps (Grok, ChatGPT, Claude, Gemini, Mistral).

@@ -12,10 +12,24 @@
 #define TB_EMBED_LIMIT (30 * 1024 * 1024)
 #define TB_FILE_PREFIX @"tbfile:"
 
+void TBSanitizeImportedChat(NSMutableDictionary *chat)
+{
+    NSDictionary *servers = [chat objectForKey:@"servers"];
+    [chat removeObjectForKey:@"approve"];
+    if ([servers isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *safe = [NSMutableDictionary dictionaryWithDictionary:servers];
+        [safe removeObjectForKey:@"sudo"];
+        [safe removeObjectForKey:@"download"];
+        [chat setObject:safe forKey:@"servers"];
+    } else
+        [chat removeObjectForKey:@"servers"];
+}
+
 @interface ChatController (ChatFilePrivate)
 - (NSDictionary *)portableChat:(NSDictionary *)chat;
 - (NSDictionary *)historyRoot;
 - (void)embedFilesInChat:(NSMutableDictionary *)copy into:(NSMutableDictionary *)files budget:(double *)budget;
+
 - (void)restoreFilesInChat:(NSMutableDictionary *)chat from:(NSDictionary *)files;
 - (NSString *)readableChat:(NSDictionary *)chat markdown:(BOOL)markdown;
 - (NSString *)restoredPathForEmbedded:(NSData *)data name:(NSString *)name directory:(NSString *)directory;
@@ -365,6 +379,7 @@ static NSString *safeFileStem(NSString *title)
         return;
     }
     files = [[root objectForKey:@"files"] isKindOfClass:[NSDictionary class]] ? [root objectForKey:@"files"] : [NSDictionary dictionary];
+    TBSanitizeImportedChat(chat);
     [self restoreFilesInChat:chat from:files];
     [chat setObject:[NSString stringWithFormat:@"%d", [store takeNextId]] forKey:@"id"];
     [chat removeObjectForKey:@"ctxTokens"];

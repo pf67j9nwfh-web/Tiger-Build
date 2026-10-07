@@ -160,7 +160,8 @@ int main(int argc, char **argv)
         expectThat(FAILED(r), @"--output is refused");
         {
             NSArray *bad = [NSArray arrayWithObjects:[NSArray arrayWithObjects:@"rebase", @"-x", @"touch /tmp/cm-x", @"HEAD", nil], [NSArray arrayWithObjects:@"rebase", @"-xtouch /tmp/cm-x", @"HEAD", nil],
-                [NSArray arrayWithObjects:@"rebase", @"--ex=touch /tmp/cm-x", @"HEAD", nil], [NSArray arrayWithObjects:@"clone", @"--no-local", @"-u", @"touch /tmp/cm-x", @".", @"d2", nil],
+                [NSArray arrayWithObjects:@"rebase", @"--ex=touch /tmp/cm-x", @"HEAD", nil],
+                [NSArray arrayWithObjects:@"grep", @"-Otouch /tmp/cm-x;", @"-e", @"x", nil], [NSArray arrayWithObjects:@"grep", @"-nOtouch /tmp/cm-x;", @"-e", @"x", nil], [NSArray arrayWithObjects:@"clone", @"--no-local", @"-u", @"touch /tmp/cm-x", @".", @"d2", nil],
                 [NSArray arrayWithObjects:@"clone", @"--upload-p=touch /tmp/cm-x", @".", @"d3", nil], [NSArray arrayWithObjects:@"commit", @"--file=/etc/hosts", nil], nil];
             unsigned k;
             BOOL all = YES;

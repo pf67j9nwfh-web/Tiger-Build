@@ -147,6 +147,7 @@
         unsigned j;
         if (![c isKindOfClass:[NSMutableDictionary class]])
             continue;
+        TBSanitizeImportedChat(c);
         [c setObject:[NSString stringWithFormat:@"%d", number++] forKey:@"id"];
         if (![[c objectForKey:@"title"] isKindOfClass:[NSString class]])
             [c setObject:@"Imported Chat" forKey:@"title"];

@@ -113,6 +113,10 @@
 /* Ask once and remember (see ChatController+Attachments.m). */
 BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle);
 
+void TBSudoBrokerOpen(BOOL open);
+/* A chat from a file keeps no approval choices and no administrator or download switch: a file must not pre-approve tools. */
+void TBSanitizeImportedChat(NSMutableDictionary *chat);
+
 @interface ChatController (Sudo)
 - (void)startSudoBroker;
 - (void)refreshSudoStatus;
