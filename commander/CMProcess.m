@@ -1,4 +1,5 @@
 #import "CMCore.h"
+#import <ApplicationServices/ApplicationServices.h>
 #import <sys/stat.h>
 #import <sys/ioctl.h>
 #import <sys/socket.h>
@@ -669,6 +670,15 @@ void CMShutdownSessions(void)
 
 /* ---- pictures ---- */
 
+/* a scratch file name in a folder only this account can use (not the shared /tmp, where a name can be guessed and replaced by a link) */
+static NSString *scratchPath(NSString *extension)
+{
+    NSString *folder = [CMStateFolder() stringByAppendingPathComponent:@"tmp"];
+    NSDictionary *private = [NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0700] forKey:NSFilePosixPermissions];
+    [[NSFileManager defaultManager] createDirectoryAtPath:folder attributes:private];
+    return [folder stringByAppendingPathComponent:[NSString stringWithFormat:@"%08x%08x.%@", arc4random(), arc4random(), extension]];
+}
+
 static NSData *fileBytes(NSString *path)
 {
     return [NSData dataWithContentsOfFile:path];
@@ -677,7 +687,7 @@ static NSData *fileBytes(NSString *path)
 id CMToolScreenshot(NSDictionary *args)
 {
     long long width = CMOptInteger(args, @"max_width", 1024);
-    NSString *stamp = [NSString stringWithFormat:@"%d-%d", (int)getpid(), (int)time(NULL)], *png = [NSString stringWithFormat:@"/tmp/ppc-shot-%@.png", stamp], *jpg = [NSString stringWithFormat:@"/tmp/ppc-shot-%@.jpg", stamp];
+    NSString *png = scratchPath(@"png"), *jpg = scratchPath(@"jpg");
     NSData *data;
     int code;
     struct stat st;
@@ -691,6 +701,13 @@ id CMToolScreenshot(NSDictionary *args)
         data = fileBytes(jpg);
         if (![data length])
             CMFail(@"could not shrink the screenshot");
+        {
+            CGRect bounds = CGDisplayBounds(CGMainDisplayID());
+            double picture = (double)CGDisplayPixelsWide(CGMainDisplayID()), longPixels = picture > CGDisplayPixelsHigh(CGMainDisplayID()) ? picture : CGDisplayPixelsHigh(CGMainDisplayID());
+            if (longPixels > width)
+                picture = picture * width / longPixels;
+            CMScreenSetScale(bounds.size.width / picture);
+        }
         return [NSDictionary dictionaryWithObjectsAndKeys:[NSString stringWithFormat:@"Screenshot of the main display (%u bytes, JPEG).", (unsigned)[data length]], @"text", CMBase64(data), @"image", @"image/jpeg", @"mime", nil];
     } @finally {
         unlink([png fileSystemRepresentation]);
@@ -703,7 +720,7 @@ id CMToolViewImage(NSDictionary *args)
 {
     NSString *path = CMCheckPath(CMOptString(args, @"path", @""));
     long long width = CMOptInteger(args, @"max_width", 1280);
-    NSString *jpg = [NSString stringWithFormat:@"/tmp/ppc-view-%d-%d.jpg", (int)getpid(), (int)time(NULL)];
+    NSString *jpg = scratchPath(@"jpg");
     struct stat st;
     NSData *data;
     if (stat([path fileSystemRepresentation], &st) != 0 || !S_ISREG(st.st_mode))

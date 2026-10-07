@@ -116,6 +116,19 @@ static void endSessions(void)
     }
 }
 
+/* The login item: Tiger Build starts hidden when this person logs in, so other computers can use Commander without anyone opening it.
+   It is a normal entry in System Preferences, Accounts, Login Items. */
+static NSString *loginItemPath(void)
+{
+    return [[NSBundle mainBundle] bundlePath];
+}
+
+static NSArray *loginItems(void)
+{
+    id list = [(id)CFPreferencesCopyValue(CFSTR("AutoLaunchedApplicationDictionary"), CFSTR("loginwindow"), kCFPreferencesCurrentUser, kCFPreferencesAnyHost) autorelease];
+    return [list isKindOfClass:[NSArray class]] ? list : [NSArray array];
+}
+
 @implementation ChatController (Commander)
 
 /* start, stop, remote-on, remote-off, status. Returns enabled, remote, ip as strings. */
@@ -132,9 +145,36 @@ static void endSessions(void)
     else if ([command isEqualToString:@"remote-off"]) {
         setMarker(@"remote-access", NO);
         endSessions();
+        [self setLoginLaunch:NO];
     }
     return [NSDictionary dictionaryWithObjectsAndKeys:[fm fileExistsAtPath:marker(@"disabled")] ? @"0" : @"1", @"enabled",
         [fm fileExistsAtPath:marker(@"remote-access")] ? @"1" : @"0", @"remote", addresses(), @"ip", nil];
+}
+
+- (BOOL)loginLaunchOn
+{
+    NSArray *items = loginItems();
+    unsigned i;
+    for (i = 0; i < [items count]; i++)
+        if ([[[items objectAtIndex:i] objectForKey:@"Path"] isEqualToString:loginItemPath()])
+            return YES;
+    return NO;
+}
+
+- (void)setLoginLaunch:(BOOL)on
+{
+    NSMutableArray *items = [NSMutableArray array];
+    NSArray *old = loginItems();
+    unsigned i;
+    if (on == [self loginLaunchOn])
+        return;
+    for (i = 0; i < [old count]; i++)
+        if (![[[old objectAtIndex:i] objectForKey:@"Path"] isEqualToString:loginItemPath()])
+            [items addObject:[old objectAtIndex:i]];
+    if (on)
+        [items addObject:[NSDictionary dictionaryWithObjectsAndKeys:loginItemPath(), @"Path", [NSNumber numberWithBool:YES], @"Hide", nil]];
+    CFPreferencesSetValue(CFSTR("AutoLaunchedApplicationDictionary"), items, CFSTR("loginwindow"), kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    CFPreferencesSynchronize(CFSTR("loginwindow"), kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 }
 
 - (void)refreshCommanderStatus

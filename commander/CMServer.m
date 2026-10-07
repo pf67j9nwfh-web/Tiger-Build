@@ -94,11 +94,36 @@ static NSArray *toolDefs(void)
     [t addObject:def(@"get_usage_stats", @"Local counts of tool calls made to this server. Nothing is uploaded.", NONE, NONE)];
     [t addObject:def(@"get_recent_tool_calls", @"Recent local tool-call history with truncated arguments and output.",
         P(@"maxResults", @"number", @"How many calls, default 20, max 100", @"toolName", @"string", @"Optional tool name filter", @"since", @"string", @"Optional ISO timestamp; return calls at or after it"), NONE)];
+    if (CMScreenEnabled()) {
+        NSString *where = @"Coordinates are pixels of the picture from the last take_screenshot (or screen points if none was taken). Take a screenshot first, act, then take another to see the result.";
+        [t addObject:def(@"screen_info", @"Screen size, mouse position and the coordinate scale for the other screen_* tools.", NONE, NONE)];
+        [t addObject:def(@"screen_click", [@"Click the mouse on the screen. " stringByAppendingString:where],
+            P(@"x", @"number", @"Across", @"y", @"number", @"Down", @"button", @"string", @"left (default) or right", @"clicks", @"number", @"1 (default), 2 or 3"), P(@"x", @"y"))];
+        [t addObject:def(@"screen_move", [@"Move the mouse pointer. " stringByAppendingString:where], P(@"x", @"number", @"Across", @"y", @"number", @"Down"), P(@"x", @"y"))];
+        [t addObject:def(@"screen_drag", [@"Press at x,y, drag to to_x,to_y and release. " stringByAppendingString:where],
+            P(@"x", @"number", @"Start across", @"y", @"number", @"Start down", @"to_x", @"number", @"End across", @"to_y", @"number", @"End down"), P(@"x", @"y", @"to_x", @"to_y"))];
+        [t addObject:def(@"screen_scroll", @"Scroll with the mouse wheel, optionally after moving the pointer to x,y. Positive scrolls up.",
+            P(@"amount", @"number", @"Lines, -50 to 50", @"x", @"number", @"Optional across", @"y", @"number", @"Optional down"), P(@"amount"))];
+        [t addObject:def(@"screen_type", @"Type text into whatever has the keyboard focus (US keyboard characters only).", P(@"text", @"string", @"Up to 2000 characters"), P(@"text"))];
+        [t addObject:def(@"screen_key", @"Press one key, with optional modifiers, in whatever has the keyboard focus, for example key \"w\" with modifiers [\"cmd\"].",
+            P(@"key", @"string", @"One character, or return, tab, space, delete, escape, left, right, up, down, home, end, pageup, pagedown, forwarddelete, f1 to f12", @"modifiers", @"strings", @"cmd, shift, option, control"), P(@"key"))];
+    }
     return t;
 }
 
 static id callHandler(NSString *name, NSDictionary *a)
 {
+    if ([name hasPrefix:@"screen_"]) {
+        if (!CMScreenEnabled())
+            CMFail(@"screen control is off. A person can turn it on in Tiger Build: the Tools menu of the chat, Screen control.");
+        if ([name isEqualToString:@"screen_info"]) return CMToolScreenInfo(a);
+        if ([name isEqualToString:@"screen_click"]) return CMToolScreenClick(a);
+        if ([name isEqualToString:@"screen_move"]) return CMToolScreenMove(a);
+        if ([name isEqualToString:@"screen_drag"]) return CMToolScreenDrag(a);
+        if ([name isEqualToString:@"screen_scroll"]) return CMToolScreenScroll(a);
+        if ([name isEqualToString:@"screen_type"]) return CMToolScreenType(a);
+        if ([name isEqualToString:@"screen_key"]) return CMToolScreenKey(a);
+    }
     if ([name isEqualToString:@"get_config"]) return CMToolGetConfig(a);
     if ([name isEqualToString:@"set_config_value"]) return CMToolSetConfig(a);
     if ([name isEqualToString:@"read_file"]) return CMToolReadFile(a);

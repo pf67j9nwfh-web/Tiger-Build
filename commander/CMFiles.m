@@ -132,6 +132,129 @@ id CMToolReadMultiple(NSDictionary *args)
     return CMCap([parts componentsJoinedByString:@"\n\n"]);
 }
 
+/* ---- what changed ---- */
+
+/* A unified diff of two texts, three lines of context, for the person and the model to see what a write did. Common start and end are
+   cut off first; a middle part too big to compare line by line is shown as one removed block and one added block. nil when equal. */
+static NSString *unifiedDiff(NSString *before, NSString *after, NSString *path)
+{
+    NSArray *a = [before length] ? CMSplitLines(before) : [NSArray array], *b = [after length] ? CMSplitLines(after) : [NSArray array];
+    unsigned na = (unsigned)[a count], nb = (unsigned)[b count], head = 0, tail = 0, ma, mb, i, j, k, shown = 0;
+    unsigned short *table;
+    NSMutableArray *ops = [NSMutableArray array];   /* " line", "-line", "+line" */
+    NSMutableString *out = [NSMutableString string];
+    while (head < na && head < nb && [[a objectAtIndex:head] isEqualToString:[b objectAtIndex:head]])
+        head++;
+    while (tail < na - head && tail < nb - head && [[a objectAtIndex:na - 1 - tail] isEqualToString:[b objectAtIndex:nb - 1 - tail]])
+        tail++;
+    ma = na - head - tail;
+    mb = nb - head - tail;
+    if (!ma && !mb)
+        return nil;
+    for (i = 0; i < head; i++)
+        [ops addObject:[@" " stringByAppendingString:[a objectAtIndex:i]]];
+    if ((unsigned long long)ma * mb <= 400000 && ma < 65000 && mb < 65000) {
+        table = calloc((size_t)(ma + 1) * (mb + 1), sizeof(unsigned short));
+        if (table) {
+            for (i = ma; i-- > 0;)
+                for (j = mb; j-- > 0;) {
+                    unsigned short down = table[(size_t)(i + 1) * (mb + 1) + j], right = table[(size_t)i * (mb + 1) + j + 1];
+                    table[(size_t)i * (mb + 1) + j] = [[a objectAtIndex:head + i] isEqualToString:[b objectAtIndex:head + j]] ? table[(size_t)(i + 1) * (mb + 1) + j + 1] + 1 : (down > right ? down : right);
+                }
+            i = j = 0;
+            while (i < ma && j < mb) {
+                if ([[a objectAtIndex:head + i] isEqualToString:[b objectAtIndex:head + j]]) {
+                    [ops addObject:[@" " stringByAppendingString:[a objectAtIndex:head + i]]];
+                    i++;
+                    j++;
+                } else if (table[(size_t)(i + 1) * (mb + 1) + j] >= table[(size_t)i * (mb + 1) + j + 1])
+                    [ops addObject:[@"-" stringByAppendingString:[a objectAtIndex:head + i++]]];
+                else
+                    [ops addObject:[@"+" stringByAppendingString:[b objectAtIndex:head + j++]]];
+            }
+            for (; i < ma; i++)
+                [ops addObject:[@"-" stringByAppendingString:[a objectAtIndex:head + i]]];
+            for (; j < mb; j++)
+                [ops addObject:[@"+" stringByAppendingString:[b objectAtIndex:head + j]]];
+            free(table);
+        } else
+            ma = mb = 0;
+    }
+    if ([ops count] == head) {
+        for (i = 0; i < ma; i++)
+            [ops addObject:[@"-" stringByAppendingString:[a objectAtIndex:head + i]]];
+        for (j = 0; j < mb; j++)
+            [ops addObject:[@"+" stringByAppendingString:[b objectAtIndex:head + j]]];
+    }
+    for (i = 0; i < tail; i++)
+        [ops addObject:[@" " stringByAppendingString:[a objectAtIndex:na - tail + i]]];
+    [out appendFormat:@"--- %@\n+++ %@\n", path, path];
+    /* hunks: every changed line with three lines of context either side */
+    {
+        unsigned count = (unsigned)[ops count], from = 0, oldLine = 1, newLine = 1;
+        unsigned *oldAt = malloc(sizeof(unsigned) * (count + 1)), *newAt = malloc(sizeof(unsigned) * (count + 1));
+        BOOL *keep = calloc(count + 1, sizeof(BOOL));
+        if (!oldAt || !newAt || !keep) {
+            free(oldAt);
+            free(newAt);
+            free(keep);
+            return out;
+        }
+        for (k = 0; k < count; k++) {
+            unichar c = [[ops objectAtIndex:k] characterAtIndex:0];
+            oldAt[k] = oldLine;
+            newAt[k] = newLine;
+            if (c != '+')
+                oldLine++;
+            if (c != '-')
+                newLine++;
+            if (c != ' ')
+                for (j = (k > 3 ? k - 3 : 0); j <= k + 3 && j < count; j++)
+                    keep[j] = YES;
+        }
+        for (k = 0; k < count && shown < 200;) {
+            unsigned end, oldCount = 0, newCount = 0;
+            if (!keep[k]) {
+                k++;
+                continue;
+            }
+            from = k;
+            for (end = k; end < count && keep[end]; end++) {
+                unichar c = [[ops objectAtIndex:end] characterAtIndex:0];
+                if (c != '+')
+                    oldCount++;
+                if (c != '-')
+                    newCount++;
+            }
+            [out appendFormat:@"@@ -%u,%u +%u,%u @@\n", oldAt[from], oldCount, newAt[from], newCount];
+            for (; k < end && shown < 200; k++, shown++)
+                [out appendFormat:@"%@\n", [ops objectAtIndex:k]];
+        }
+        if (shown >= 200)
+            [out appendString:@"... (diff cut at 200 lines)\n"];
+        free(oldAt);
+        free(newAt);
+        free(keep);
+    }
+    return out;
+}
+
+/* what the file said before a write, as text, or nil when there is nothing sensible to compare */
+static NSString *textBefore(NSString *path)
+{
+    struct stat info;
+    NSData *data;
+    if (stat([path fileSystemRepresentation], &info) != 0 || !S_ISREG(info.st_mode) || info.st_size > 1000000)
+        return nil;
+    data = [NSData dataWithContentsOfFile:path];
+    if (!data || memchr([data bytes], 0, [data length]))
+        return nil;
+    {
+        NSString *encoding = nil;
+        return CMDecode(data, &encoding);
+    }
+}
+
 id CMToolWriteFile(NSDictionary *args)
 {
     NSString *path = CMCheckWritable(CMCheckPath(CMString(args, @"path"))), *content = CMString(args, @"content"), *mode = CMOptString(args, @"mode", @"rewrite");
@@ -141,18 +264,22 @@ id CMToolWriteFile(NSDictionary *args)
     NSString *parent = [path stringByDeletingLastPathComponent];
     BOOL isDir = NO;
     FILE *f;
+    NSString *before = nil, *changes;
     if (![mode isEqualToString:@"rewrite"] && ![mode isEqualToString:@"append"])
         CMFail(@"mode must be rewrite or append");
     if ((long long)n > limit)
         CMFail(@"content has %u lines and fileWriteLineLimit is %lld. Use mode \"append\" in chunks, or raise the limit with set_config_value.", n, limit);
     if ([parent length] && !([[NSFileManager defaultManager] fileExistsAtPath:parent isDirectory:&isDir] && isDir))
         CMFail(@"parent directory does not exist: %@", parent);
+    if (CMDiffsEnabled())
+        before = textBefore(path);
     f = fopen([path fileSystemRepresentation], [mode isEqualToString:@"append"] ? "ab" : "wb");
     if (!f)
         CMFail(@"cannot write %@: %s", path, strerror(errno));
     fwrite([bytes bytes], 1, [bytes length], f);
     fclose(f);
-    return [NSString stringWithFormat:@"wrote %u bytes (%u lines, %@) to %@", (unsigned)[bytes length], n, mode, path];
+    changes = CMDiffsEnabled() ? unifiedDiff(before ? before : @"", [mode isEqualToString:@"append"] && before ? [before stringByAppendingString:content] : content, path) : nil;
+    return [NSString stringWithFormat:@"wrote %u bytes (%u lines, %@) to %@%@", (unsigned)[bytes length], n, mode, path, changes ? [@"\n\n" stringByAppendingString:changes] : @""];
 }
 
 id CMToolCreateDirectory(NSDictionary *args)
@@ -399,7 +526,10 @@ id CMToolEditBlock(NSDictionary *args)
     }
     if (![out writeToFile:path atomically:NO])
         CMFail(@"cannot write %@", path);
-    return [NSString stringWithFormat:@"replaced %lld match(es) in %@ (%@, %u bytes)", expected, path, encoding, (unsigned)[out length]];
+    {
+        NSString *changes = CMDiffsEnabled() ? unifiedDiff(used, updated, path) : nil;
+        return [NSString stringWithFormat:@"replaced %lld match(es) in %@ (%@, %u bytes)%@", expected, path, encoding, (unsigned)[out length], changes ? [@"\n\n" stringByAppendingString:changes] : @""];
+    }
 }
 
 /* ---- search ---- */

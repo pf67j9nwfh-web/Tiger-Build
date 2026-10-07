@@ -231,7 +231,7 @@ static NSString *decodeItem(Item *item, NSData *hvcC, const uint8_t *file, unsig
         return @"The picture's settings are damaged.";
     lengthSize = (c[21] & 3) + 1;
     arrays = c[22];
-    if (item->offset + item->length > fileLength)
+    if (item->length > fileLength || item->offset > fileLength - item->length)
         return @"The picture data is cut short.";
     decoder = lib.newDecoder();
     if (!decoder)
@@ -457,7 +457,7 @@ static NSString *decodeAV1(Item *item, NSData *av1C, const uint8_t *file, unsign
 {
     NSMutableData *buffer = [NSMutableData data];
     aom_codec_iter_t iterator = NULL;
-    if (item->constructionMethod != 0 || item->offset + item->length > fileLength)
+    if (item->constructionMethod != 0 || item->length > fileLength || item->offset > fileLength - item->length)
         return @"The picture data is cut short.";
     if ([av1C length] > 4)
         [buffer appendBytes:(const uint8_t *)[av1C bytes] + 4 length:[av1C length] - 4];
@@ -846,9 +846,9 @@ static NSString *decodeAV1Item(Item *item, NSData *av1C, Item *alphaItem, NSData
             unsigned rows, cols, outW, outH, tile = 0;
             NSMutableArray *tiles = [NSMutableArray array];
             /* the grid's own few bytes are kept in the idat box by most encoders, or in the file */
-            if (primaryItem->constructionMethod == 1 && idat && idat->start + primaryItem->offset + primaryItem->length <= idat->end)
+            if (primaryItem->constructionMethod == 1 && idat && idat->start <= idat->end && primaryItem->offset <= idat->end - idat->start && primaryItem->length <= idat->end - idat->start - primaryItem->offset)
                 g = d + idat->start + primaryItem->offset;
-            else if (primaryItem->constructionMethod == 0 && primaryItem->offset + primaryItem->length <= total)
+            else if (primaryItem->constructionMethod == 0 && primaryItem->length <= total && primaryItem->offset <= total - primaryItem->length)
                 g = d + primaryItem->offset;
             else
                 g = NULL;

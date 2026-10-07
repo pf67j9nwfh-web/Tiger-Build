@@ -60,6 +60,11 @@ static const char *kRoots = NULL;
     body = [data retain];
 }
 
+- (void)setPublicOnly:(BOOL)flag
+{
+    publicOnly = flag;
+}
+
 - (void)setIdleTimeout:(int)seconds
 {
     idleTimeout = seconds;
@@ -147,6 +152,7 @@ static int bodyArrived(void *context, const unsigned char *bytes, size_t length)
     request.bodyLength = body ? [body length] : 0;
     request.connectTimeout = connectTimeout;
     request.idleTimeout = idleTimeout;
+    request.publicOnly = publicOnly;
     request.cancel = &cancelled;
     request.context = self;
     request.onHeaders = headersArrived;

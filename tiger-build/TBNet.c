@@ -114,7 +114,29 @@ static int waitFor(int fd, int writing, double deadline, volatile int *cancel)
     }
 }
 
-static int dial(const char *host, const char *port, int timeout, volatile int *cancel, char *errorText, size_t errorSize)
+/* Whether a socket address is on the public internet: not loopback, private, link-local, carrier-grade NAT, multicast or unspecified. */
+static int publicAddress(const struct sockaddr *address)
+{
+    if (address->sa_family == AF_INET) {
+        const unsigned char *b = (const unsigned char *)&((const struct sockaddr_in *)address)->sin_addr;
+        return !(b[0] == 10 || b[0] == 127 || b[0] == 0 || b[0] >= 224 || (b[0] == 169 && b[1] == 254) || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 100 && b[1] >= 64 && b[1] <= 127));
+    }
+    if (address->sa_family == AF_INET6) {
+        const unsigned char *b = ((const struct sockaddr_in6 *)address)->sin6_addr.s6_addr;
+        int zeros = 1, i;
+        for (i = 0; i < 15; i++)
+            if (b[i])
+                zeros = 0;
+        if ((zeros && (b[15] == 0 || b[15] == 1)) || (b[0] & 0xfe) == 0xfc || (b[0] == 0xfe && (b[1] & 0xc0) == 0x80) || b[0] == 0xff)
+            return 0;
+        if (b[10] == 0xff && b[11] == 0xff && !b[0] && !b[1] && !b[2] && !b[3] && !b[4] && !b[5] && !b[6] && !b[7] && !b[8] && !b[9])
+            return !(b[12] == 10 || b[12] == 127 || b[12] == 0 || b[12] >= 224 || (b[12] == 192 && b[13] == 168) || (b[12] == 172 && b[13] >= 16 && b[13] <= 31) || (b[12] == 169 && b[13] == 254) || (b[12] == 100 && b[13] >= 64 && b[13] <= 127));
+        return 1;
+    }
+    return 0;
+}
+
+static int dial(const char *host, const char *port, int timeout, volatile int *cancel, int publicOnly, char *errorText, size_t errorSize)
 {
     struct addrinfo hints, *list = NULL, *a;
     int pass, fd = -1, rc;
@@ -131,6 +153,8 @@ static int dial(const char *host, const char *port, int timeout, volatile int *c
         for (a = list; a && fd < 0; a = a->ai_next) {
             int s, flags, wait;
             if ((pass == 0) != (a->ai_family == AF_INET))
+                continue;
+            if (publicOnly && !publicAddress(a->ai_addr))
                 continue;
             s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
             if (s < 0)
@@ -168,7 +192,7 @@ static int dial(const char *host, const char *port, int timeout, volatile int *c
     }
     freeaddrinfo(list);
     if (fd < 0) {
-        say(errorText, errorSize, "Cannot connect to %s.", host);
+        say(errorText, errorSize, publicOnly ? "Cannot connect to %s (only public web addresses are allowed here)." : "Cannot connect to %s.", host);
         return TBNET_ERR_CONNECT;
     }
     return fd;
@@ -486,7 +510,7 @@ int tbnet_perform(const TBNetRequest *req, char *errorText, size_t errorSize)
         say(errorText, errorSize, "Not a web address: %s", req->url);
         return TBNET_ERR_URL;
     }
-    fd = dial(url.host, url.port, connectTimeout, req->cancel, errorText, errorSize);
+    fd = dial(url.host, url.port, connectTimeout, req->cancel, req->publicOnly, errorText, errorSize);
     if (fd < 0)
         return fd;
     c.link.fd = fd;

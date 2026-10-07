@@ -34,6 +34,8 @@ NSMutableDictionary *CMConfig(void);               /* blockedCommands, defaultSh
 void CMLoadSettings(void);
 void CMSaveConfig(void);
 BOOL CMSudoEnabled(void);
+BOOL CMDiffsEnabled(void);                         /* write_file and edit_block show what changed */
+BOOL CMScreenEnabled(void);                        /* the screen_* tools are offered */
 NSString *CMNow(void);
 void CMLog(NSString *format, ...);
 NSString *CMSystemInfo(NSString *key);             /* uname, sw_vers, model, mem */
@@ -54,6 +56,14 @@ NSArray *CMCommandWords(NSString *command);
 void CMRecord(NSString *tool, NSDictionary *args, NSString *text, BOOL ok, int millis);
 
 /* The tools. Each returns an NSString, or an NSDictionary {text, image (base64), mime} for a picture. */
+id CMToolScreenInfo(NSDictionary *args);
+id CMToolScreenClick(NSDictionary *args);
+id CMToolScreenMove(NSDictionary *args);
+id CMToolScreenDrag(NSDictionary *args);
+id CMToolScreenScroll(NSDictionary *args);
+id CMToolScreenType(NSDictionary *args);
+id CMToolScreenKey(NSDictionary *args);
+void CMScreenSetScale(double scale);
 id CMToolReadFile(NSDictionary *args);
 id CMToolReadMultiple(NSDictionary *args);
 id CMToolWriteFile(NSDictionary *args);

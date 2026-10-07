@@ -1,0 +1,13 @@
+# Third-party components
+
+| Folder | What | Licence | Used for |
+| --- | --- | --- | --- |
+| `mbedtls/` | mbedTLS 3.6.7 | Apache-2.0 | TLS 1.2 and 1.3 for every HTTPS connection |
+| `libwebp/` | libwebp 1.5.0 (decoder) | BSD-3-Clause | WebP pictures |
+| `libde265/` | libde265 1.0.15 | LGPL-3.0 (separate dylib) | HEIC pictures |
+| `libaom/` | libaom 3.11.0 (AV1 decoder) | BSD-2-Clause + patent grant | AVIF pictures |
+
+Each folder has its own `README.md` (what it is for, where the source comes from, what was changed, how it is linked and rebuilt), its licence text,
+and `fetch.sh` / `build-mac.sh` to download, verify (SHA-256) and rebuild it. The built libraries and headers are kept in git.
+
+Two data files that ship with the app are not code and live beside it in `tiger-build/`: see `tiger-build/THIRD-PARTY.md`.

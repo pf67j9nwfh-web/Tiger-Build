@@ -256,8 +256,12 @@ static NSString *newRunId(void)
             return;
         }
         [self setServer:@"commander" enabled:YES chat:current];
-    } else if ([key isEqualToString:@"commander"] && !on)
+    } else if ([key isEqualToString:@"screen"] && on)
+        [self setServer:@"commander" enabled:YES chat:current];
+    else if ([key isEqualToString:@"commander"] && !on) {
         [self setServer:@"sudo" enabled:NO chat:current];
+        [self setServer:@"screen" enabled:NO chat:current];
+    }
     [self setServer:key enabled:on chat:current];
     [self rebuildToolsMenu];
     [self saveStore];

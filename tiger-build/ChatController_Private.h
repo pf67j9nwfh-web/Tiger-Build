@@ -31,6 +31,8 @@
 - (void)commanderAutostart:(id)sender;
 - (void)commanderIP:(id)sender;
 - (NSDictionary *)commanderCommand:(NSString *)command;
+- (BOOL)loginLaunchOn;
+- (void)setLoginLaunch:(BOOL)on;
 - (BOOL)administratorPasswordSaved;
 - (BOOL)saveAdministratorPassword;
 - (void)showIntegrations:(id)sender;

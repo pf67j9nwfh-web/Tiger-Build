@@ -80,7 +80,7 @@ static unsigned u32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2] 
     nmini = u32(h + 0x40);
     difatSector = u32(h + 0x44);
     ndifat = u32(h + 0x48);
-    sectors = ([data length] - sectorSize) / sectorSize + 1;
+    sectors = [data length] >= sectorSize ? ([data length] - sectorSize) / sectorSize + 1 : 0;
     {
         /* the FAT sectors: 109 in the header, then more through the DIFAT chain */
         NSMutableArray *list = [NSMutableArray array];
@@ -271,7 +271,7 @@ static NSString *docText(TBCompound *cfb)
     const unsigned char *w, *t;
     unsigned flags, csw, cslw, cb, lcbOffset, ccpText, ccpFtn, ccpHdd = 0, ccpAtn = 0, ccpEdn = 0, ccpTxbx = 0, fcClx, lcbClx, p, n, i;
     NSMutableString *raw = [NSMutableString string];
-    unsigned long total, wanted;
+    unsigned long long total, wanted;
     if ([word length] < 0x200)
         fail(@"This Word file could not be read.");
     w = [word bytes];
@@ -320,16 +320,16 @@ static NSString *docText(TBCompound *cfb)
     {
         unsigned lcb = u32(t + p + 1), pieces;
         const unsigned char *plc = t + p + 5;
-        if (p + 5 + lcb > [table length] || lcb < 16)
+        if (lcb < 16 || p + 5 > [table length] || lcb > [table length] - (p + 5))
             fail(@"This Word file could not be read.");
         pieces = (lcb - 4) / 12;
         total = 0;
-        wanted = (unsigned long)ccpText + ccpFtn + ccpHdd + ccpAtn + ccpEdn + ccpTxbx;
+        wanted = (unsigned long long)ccpText + ccpFtn + ccpHdd + ccpAtn + ccpEdn + ccpTxbx;
         for (i = 0; i < pieces && total < wanted && [raw length] < MAX_TEXT * 2; i++) {
             unsigned cpStart = u32(plc + i * 4), cpEnd = u32(plc + (i + 1) * 4);
             const unsigned char *pcd = plc + (pieces + 1) * 4 + i * 8;
             unsigned fc = u32(pcd + 2);
-            unsigned long count, offset;
+            unsigned long long count, offset;
             if (cpEnd <= cpStart || cpStart >= wanted)
                 continue;
             if (cpEnd > wanted)
@@ -722,7 +722,7 @@ static void pptCollect(const unsigned char *b, unsigned long start, unsigned lon
     while (p + 8 <= end) {
         unsigned verInst = u16(b + p), type = u16(b + p + 2);
         unsigned long len = u32(b + p + 4);
-        if (p + 8 + len > end)
+        if (len > end - p - 8)
             len = end - p - 8;
         if ((verInst & 0x0F) == 0x0F && depth < 12)
             pptCollect(b, p + 8, p + 8 + len, lines, depth + 1, sawText);

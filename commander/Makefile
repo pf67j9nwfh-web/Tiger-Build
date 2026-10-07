@@ -6,9 +6,9 @@ CC32 ?= $(if $(wildcard /usr/bin/gcc-4.0),gcc-4.0,gcc)
 CC64 ?= $(if $(wildcard /usr/bin/gcc-4.2),gcc-4.2,gcc)
 ARCHS64 ?= $(if $(wildcard $(SDK64)),ppc64 x86_64,)
 TB ?= ../tiger-build
-SRC := CMCore.m CMFiles.m CMProcess.m CMVcs.m CMServer.m $(TB)/TBJSON.m
+SRC := CMCore.m CMFiles.m CMProcess.m CMVcs.m CMScreen.m CMServer.m $(TB)/TBJSON.m
 HDR := CMCore.h $(TB)/TBJSON.h $(TB)/TBCompat.h
-FLAGS := -Wall -Wno-deprecated-declarations -O2 -fobjc-exceptions -I. -I$(TB) -framework Foundation
+FLAGS := -Wall -Wno-deprecated-declarations -O2 -fobjc-exceptions -I. -I$(TB) -framework Foundation -framework ApplicationServices
 
 ppc-commander: $(SRC) $(HDR)
 	mkdir -p build
@@ -19,7 +19,7 @@ ppc-commander: $(SRC) $(HDR)
 	rm -rf build
 
 host: $(SRC) $(HDR)
-	clang -Wno-deprecated-declarations -O1 -g -fobjc-exceptions -I. -I../tiger-build -framework Foundation -o ppc-commander-host $(SRC)
+	clang -Wno-deprecated-declarations -O1 -g -fobjc-exceptions -I. -I../tiger-build -framework Foundation -framework ApplicationServices -o ppc-commander-host $(SRC)
 
 clean:
 	rm -rf build ppc-commander ppc-commander-host

@@ -184,6 +184,8 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
             [NSNumber numberWithBool:YES], @"default", nil]];
     if ([TBSettings flag:@"ppc_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"sudo", @"id", @"Administrator (sudo) for Commander", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
+    if ([TBSettings flag:@"ppc_enabled"])
+        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"screen", @"id", @"Screen control (mouse and keyboard)", @"title", [NSNumber numberWithBool:YES], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
     if ([TBSettings flag:@"toolbox_enabled"])
         [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"toolbox", @"id", @"Agent toolbox", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
     if ([TBSettings flag:@"download_enabled"])

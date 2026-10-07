@@ -44,6 +44,13 @@ NSData *TBFetch(NSString *method, NSString *url, NSArray *headers, NSData *body,
             NSString *next = [http responseHeader:@"Location"];
             NSURL *base = [NSURL URLWithString:url];
             NSURL *resolved = [NSURL URLWithString:next relativeToURL:base];
+            /* a key or token goes only to the host it was meant for, and never over plain http */
+            if (![[[resolved host] lowercaseString] isEqualToString:[[base host] lowercaseString]] || ([[[resolved scheme] lowercaseString] isEqualToString:@"http"] && [[[base scheme] lowercaseString] isEqualToString:@"https"]))
+                headers = nil;
+            if ([[[base scheme] lowercaseString] isEqualToString:@"https"] && ![[[resolved scheme] lowercaseString] isEqualToString:@"https"]) {
+                *status = 0;
+                return [@"refused a redirect from https to plain http" dataUsingEncoding:NSUTF8StringEncoding];
+            }
             url = [resolved absoluteString];
             if (*status == 303) {
                 method = @"GET";
@@ -410,6 +417,7 @@ static void checkPictureURL(NSString *url, BOOL httpsOnly)
         NSData *data;
         checkPictureURL(current, NO);
         http = [TBHTTP request:@"GET" url:current];
+        [http setPublicOnly:![[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowLocalPictures"]];
         [http setHeader:@"User-Agent" value:userAgent];
         [http setHeader:@"Accept" value:@"image/jpeg,image/png,image/gif,*/*;q=0.5"];
         [http setIdleTimeout:25];
@@ -496,6 +504,7 @@ static void checkPictureURL(NSString *url, BOOL httpsOnly)
         int i;
         checkPictureURL(current, YES);
         http = [TBHTTP request:@"GET" url:current];
+        [http setPublicOnly:![[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowLocalPictures"]];
         [http setHeader:@"User-Agent" value:userAgent];
         [http setIdleTimeout:30];
         sink->limit = DOWNLOAD_LIMIT;

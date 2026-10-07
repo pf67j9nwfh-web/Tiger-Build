@@ -234,7 +234,9 @@ static NSMutableDictionary *defaults(void)
         [NSNumber numberWithInt:1000], @"fileReadLineLimit",
         [NSNumber numberWithInt:1000], @"fileWriteLineLimit",
         [NSNumber numberWithBool:NO], @"telemetryEnabled",
-        [NSNumber numberWithBool:NO], @"sudoMode", nil];
+        [NSNumber numberWithBool:NO], @"sudoMode",
+        [NSNumber numberWithBool:NO], @"showDiffs",
+        [NSNumber numberWithBool:NO], @"screenControl", nil];
 }
 
 void CMSaveConfig(void)
@@ -552,6 +554,27 @@ NSString *CMWorkspaceCommandProblem(NSString *command)
     return nil;
 }
 
+/* Tiger Build says "1" or "0" for each chat; a run without it (another computer) goes by the person's saved setting. */
+static BOOL chatFlag(const char *name, NSString *key)
+{
+    const char *env = getenv(name);
+    if (env && !strcmp(env, "0"))
+        return NO;
+    if (env && !strcmp(env, "1"))
+        return YES;
+    return [[config objectForKey:key] boolValue];
+}
+
+BOOL CMDiffsEnabled(void)
+{
+    return chatFlag("TB_DIFFS", @"showDiffs");
+}
+
+BOOL CMScreenEnabled(void)
+{
+    return chatFlag("TB_SCREEN", @"screenControl");
+}
+
 BOOL CMSudoEnabled(void)
 {
     const char *env = getenv("TB_SUDO");
@@ -640,6 +663,19 @@ void CMLoadSettings(void)
                     [config setObject:[data objectForKey:key] forKey:key];
         }
         applyPolicy();
+    }
+    /* commands the person asked Tiger Build to block as well (Preferences, Commander Options); the model cannot change the environment */
+    if (getenv("TB_BLOCKED")) {
+        NSString *list = CMSwap(CMSwap([NSString stringWithUTF8String:getenv("TB_BLOCKED")], @",", @" "), @"\n", @" ");
+        NSArray *words = [list componentsSeparatedByString:@" "];
+        NSMutableArray *merged = [NSMutableArray arrayWithArray:[config objectForKey:@"blockedCommands"]];
+        unsigned w;
+        for (w = 0; w < [words count]; w++) {
+            NSString *word = [[words objectAtIndex:w] lastPathComponent];
+            if ([word length] && ![merged containsObject:word])
+                [merged addObject:word];
+        }
+        [config setObject:merged forKey:@"blockedCommands"];
     }
     root = [NSString stringWithUTF8String:getenv("TB_WORKSPACE_ROOT") ? getenv("TB_WORKSPACE_ROOT") : ""];
     root = [root stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -740,7 +776,7 @@ id CMToolSetConfig(NSDictionary *args)
     if (![args objectForKey:@"value"])
         CMFail(@"missing value");
     value = [args objectForKey:@"value"];
-    if ([[NSArray arrayWithObjects:@"blockedCommands", @"allowedDirectories", @"defaultShell", @"sudoMode", nil] containsObject:key])
+    if ([[NSArray arrayWithObjects:@"blockedCommands", @"allowedDirectories", @"defaultShell", @"sudoMode", @"showDiffs", @"screenControl", nil] containsObject:key])
         CMFail(@"%@ is locked. It controls what tools may run and touch, so only a person can change it, by editing %@ on this Mac (or %@ as an administrator).",
             key, [CMStateFolder() stringByAppendingPathComponent:@"config.json"], CMPolicyPath());
     if ([key isEqualToString:@"fileReadLineLimit"] || [key isEqualToString:@"fileWriteLineLimit"]) {

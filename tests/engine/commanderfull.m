@@ -201,6 +201,36 @@ int main(int argc, char **argv)
         expectThat([TEXT(r) rangeOfString:@"/sub"].location != NSNotFound, @"commands start in the workspace folder");
         [w close];
     }
+    /* diffs on writes, an extra blocklist, screen tools only when switched on */
+    {
+        NSString *file = [dir stringByAppendingString:@"/diff.txt"];
+        NSDictionary *on = [NSDictionary dictionaryWithObjectsAndKeys:@"1", @"TB_DIFFS", @"1", @"TB_SCREEN", @"curl, wget", @"TB_BLOCKED", nil];
+        TBMCPClient *d = start(on);
+        NSString *tools;
+        r = call(d, @"write_file", [NSDictionary dictionaryWithObjectsAndKeys:file, @"path", @"one\ntwo\nthree\nfour\n", @"content", nil]);
+        expectThat([TEXT(r) rangeOfString:@"+two"].location != NSNotFound, @"a new file's write shows its lines as added");
+        r = call(d, @"edit_block", [NSDictionary dictionaryWithObjectsAndKeys:file, @"file_path", @"two", @"old_string", @"2", @"new_string", nil]);
+        expectThat([TEXT(r) rangeOfString:@"-two"].location != NSNotFound && [TEXT(r) rangeOfString:@"+2"].location != NSNotFound && [TEXT(r) rangeOfString:@"@@"].location != NSNotFound, @"edit_block shows a diff");
+        r = call(d, @"write_file", [NSDictionary dictionaryWithObjectsAndKeys:file, @"path", @"one\n2\nthree\n", @"content", nil]);
+        expectThat([TEXT(r) rangeOfString:@"-four"].location != NSNotFound, @"a rewrite shows the removed line");
+        r = call(d, @"start_process", [NSDictionary dictionaryWithObjectsAndKeys:@"curl --version", @"command", [NSNumber numberWithInt:1000], @"timeout_ms", nil]);
+        expectThat(FAILED(r) && [TEXT(r) rangeOfString:@"blocked"].location != NSNotFound, @"a command from the person's blocklist is refused");
+        r = call(d, @"screen_info", [NSDictionary dictionary]);
+        expectThat(!FAILED(r) && [TEXT(r) rangeOfString:@"screen:"].location != NSNotFound, @"screen_info works when screen control is on");
+        r = call(d, @"screen_click", [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:999999], @"x", [NSNumber numberWithInt:5], @"y", nil]);
+        expectThat(FAILED(r), @"a click outside the screen is refused");
+        r = call(d, @"screen_type", D1(@"caf\u00e9", @"text"));
+        expectThat(FAILED(r), @"text that cannot be typed is refused before anything is typed");
+        [d close];
+        d = start([NSDictionary dictionaryWithObjectsAndKeys:@"0", @"TB_DIFFS", @"0", @"TB_SCREEN", nil]);
+        r = call(d, @"edit_block", [NSDictionary dictionaryWithObjectsAndKeys:file, @"file_path", @"2", @"old_string", @"two", @"new_string", nil]);
+        expectThat([TEXT(r) rangeOfString:@"@@"].location == NSNotFound, @"no diff when it is off");
+        r = call(d, @"screen_info", [NSDictionary dictionary]);
+        expectThat(FAILED(r), @"screen tools are refused when screen control is off");
+        tools = [[d request:@"tools/list" params:[NSDictionary dictionary] timeout:10] description];
+        expectThat([tools rangeOfString:@"screen_click"].location == NSNotFound, @"and are not listed");
+        [d close];
+    }
     run([NSString stringWithFormat:@"rm -rf %@", dir]);
     [pool release];
     fprintf(stderr, failures ? "%d failed\n" : "all passed\n", failures);

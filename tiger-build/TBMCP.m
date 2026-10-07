@@ -338,6 +338,17 @@ NSArray *TBMCPFunctionTools(id listed)
 
 #import "TBHTTP.h"
 
+/* a dotted-quad address on a private network (10.x, 172.16 to 31, 192.168.x); a name that merely starts with those digits is not */
+static BOOL privateNetworkAddress(NSString *host)
+{
+    int a, b, c, d, used = 0;
+    if (sscanf([host UTF8String], "%d.%d.%d.%d%n", &a, &b, &c, &d, &used) != 4 || used != (int)strlen([host UTF8String]))
+        return NO;
+    if (a < 0 || a > 255 || b < 0 || b > 255 || c < 0 || c > 255 || d < 0 || d > 255)
+        return NO;
+    return a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168);
+}
+
 @implementation TBMCPHTTPClient
 
 + (TBMCPHTTPClient *)clientWithURL:(NSString *)u token:(NSString *)t
@@ -453,7 +464,7 @@ NSArray *TBMCPFunctionTools(id listed)
     if (!parsed || ![host length])
         TBFail(@"Specify a valid Streamable HTTP MCP URL.");
     if ([lower hasPrefix:@"http://"] && !([host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"] || [host isEqualToString:@"::1"] || [host hasSuffix:@".local"] || [host hasSuffix:@".lan"] || [host hasSuffix:@".home"]
-        || [host hasPrefix:@"192.168."] || [host hasPrefix:@"10."] || [[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowPlainMCP"]))
+        || privateNetworkAddress(host) || [[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowPlainMCP"]))
         TBFail(@"MCP servers outside your own network must use HTTPS.");
     [self request:@"initialize" params:[NSDictionary dictionaryWithObjectsAndKeys:@"2025-06-18", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
         [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.0", @"version", nil], @"clientInfo", nil] timeout:45];

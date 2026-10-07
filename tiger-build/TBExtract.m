@@ -108,7 +108,7 @@ static unsigned le32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2]
 {
     NSArray *entry = [entries objectForKey:name];
     const unsigned char *p = [data bytes];
-    unsigned long offset, packed, size, start;
+    unsigned long long offset, packed, size, start;
     unsigned method;
     if (!entry)
         fail(@"%@ is missing from the file.", name);
@@ -118,10 +118,10 @@ static unsigned le32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2]
     method = [[entry objectAtIndex:3] unsignedIntValue];
     if (size > MAX_PART)
         fail(@"A part of this file is too large to read (%@).", name);
-    if (offset + 30 > [data length] || le32(p + offset) != 0x04034b50)
+    if (offset + 30 > (unsigned long long)[data length] || le32(p + offset) != 0x04034b50)
         fail(@"This file is damaged.");
     start = offset + 30 + le16(p + offset + 26) + le16(p + offset + 28);
-    if (start + packed > [data length])
+    if (start > (unsigned long long)[data length] || packed > (unsigned long long)[data length] - start)
         fail(@"This file is damaged.");
     if (method == 0)
         return [NSData dataWithBytes:p + start length:packed];

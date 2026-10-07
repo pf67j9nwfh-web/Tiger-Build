@@ -456,6 +456,8 @@ static NSArray *withoutPictures(NSArray *messages)
         [skip addObject:@"sudo"];
     if ((CFBooleanRef)[servers objectForKey:@"download"] != kCFBooleanTrue)
         [skip addObject:@"download"];
+    if ((CFBooleanRef)[servers objectForKey:@"screen"] != kCFBooleanTrue)
+        [skip addObject:@"screen"];
     return skip;
 }
 
@@ -508,6 +510,8 @@ static NSArray *withoutPictures(NSArray *messages)
         return @"consult";
     if ([extras ownerOf:name])
         return [extras ownerOf:name];
+    if ([name hasPrefix:@"screen_"])
+        return @"screen";
     return @"commander";
 }
 
@@ -522,6 +526,8 @@ static NSArray *withoutPictures(NSArray *messages)
         return [value boolValue];
     if ([key isEqualToString:@"commander"])
         return [TBSettings flag:@"ppc_approval"];
+    if ([key isEqualToString:@"screen"])
+        return YES;
     if ([key hasPrefix:@"mcp_"])
         return [TBIntegrations serverApprovalForKey:key];
     return NO;
@@ -869,6 +875,11 @@ NSString *TBCommanderProgram(void)
 
 - (TBMCPClient *)startCommanderWithRoot:(NSString *)root
 {
+    return [self startCommanderWithRoot:root screen:![[self skipKeys] containsObject:@"screen"]];
+}
+
+- (TBMCPClient *)startCommanderWithRoot:(NSString *)root screen:(BOOL)screen
+{
     NSMutableDictionary *env = [NSMutableDictionary dictionaryWithObjectsAndKeys:@"C", @"LANG", @"C", @"LC_ALL", @"1", @"TB_LOCAL", nil];
     TBMCPClient *started;
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:TBCommanderProgram()])
@@ -876,6 +887,10 @@ NSString *TBCommanderProgram(void)
     if ([root length])
         [env setObject:root forKey:@"TB_WORKSPACE_ROOT"];
     [env setObject:[[self skipKeys] containsObject:@"sudo"] ? @"0" : @"1" forKey:@"TB_SUDO"];
+    [env setObject:screen ? @"1" : @"0" forKey:@"TB_SCREEN"];
+    [env setObject:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBCommanderDiffs"] ? @"1" : @"0" forKey:@"TB_DIFFS"];
+    if ([[[NSUserDefaults standardUserDefaults] stringForKey:@"TBCommanderBlocked"] length])
+        [env setObject:[[NSUserDefaults standardUserDefaults] stringForKey:@"TBCommanderBlocked"] forKey:@"TB_BLOCKED"];
     started = [TBMCPClient clientWithPath:TBCommanderProgram() arguments:[NSArray array] environment:env label:@"Commander"];
     [run attach:started];
     @try {
@@ -887,6 +902,18 @@ NSString *TBCommanderProgram(void)
         TBFail(@"Commander could not run: %@ %@", [exception reason], [started stderrText]);
     }
     return started;
+}
+
+- (NSArray *)withoutScreenToolsIfOff:(NSArray *)tools
+{
+    NSMutableArray *kept = [NSMutableArray array];
+    unsigned i;
+    if (![[self skipKeys] containsObject:@"screen"])
+        return tools;
+    for (i = 0; i < [tools count]; i++)
+        if (![TBString([tools objectAtIndex:i], @"name") hasPrefix:@"screen_"])
+            [kept addObject:[tools objectAtIndex:i]];
+    return kept;
 }
 
 - (NSArray *)commanderDefinitions
@@ -906,7 +933,7 @@ NSString *TBCommanderProgram(void)
         NSString *problem = @"";
         TBMCPClient *probe = nil;
         @try {
-            probe = [self startCommanderWithRoot:@""];
+            probe = [self startCommanderWithRoot:@"" screen:YES];   /* the list holds every tool; a chat without the Screen control item has the screen_ ones left out below */
             tools = TBMCPFunctionTools([probe request:@"tools/list" params:[NSDictionary dictionary] timeout:30]);
         } @catch (NSException *exception) {
             if ([[exception name] isEqualToString:TBStoppedException])
@@ -921,7 +948,7 @@ NSString *TBCommanderProgram(void)
         }
     }
     [commanderTools release];
-    commanderTools = [[entry objectForKey:@"tools"] retain];
+    commanderTools = [[self withoutScreenToolsIfOff:[entry objectForKey:@"tools"]] retain];
     [offline release];
     offline = [[entry objectForKey:@"offline"] copy];
     return commanderTools;

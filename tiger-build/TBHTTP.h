@@ -10,6 +10,7 @@
     NSData *body;
     int connectTimeout;
     int idleTimeout;
+    BOOL publicOnly;
     volatile int cancelled;
     id delegate;
     NSMutableData *received;
@@ -26,6 +27,8 @@
 - (void)setHeader:(NSString *)name value:(NSString *)value;
 - (void)setBody:(NSData *)data;
 - (void)setIdleTimeout:(int)seconds;
+/* Connect only to public internet addresses; the address that is actually dialled is checked, so a name that changes its answer cannot get past it. */
+- (void)setPublicOnly:(BOOL)flag;
 - (void)setConnectTimeout:(int)seconds;
 /* Optional. Told of each piece of the body with -http:gotData: (return YES to stop). Without a delegate the body is kept. */
 - (void)setDelegate:(id)object;

@@ -31,6 +31,7 @@ typedef struct {
     void (*onHeaders)(void *context, int status, const char *headerText);
     /* Called for each piece of the body, already unchunked. Return non-zero to stop. */
     int (*onBody)(void *context, const unsigned char *data, size_t length);
+    int publicOnly;                     /* non-zero: connect only to public internet addresses (checked on the address actually used) */
 } TBNetRequest;
 
 /* The trusted root certificates, as the PEM text of the bundle. Call once, before the first request. Returns the number of

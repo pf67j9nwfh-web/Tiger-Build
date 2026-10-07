@@ -14,6 +14,9 @@ static NSString *trimmedValue(NSTextField *field)
 @interface ChatController (PreferencesPrivate)
 - (void)loadSSHFields;
 - (void)saveSSHFields;
+- (void)loadCommanderOptions;
+- (void)saveCommanderOptions;
+- (void)remoteBoxChanged:(id)sender;
 - (void)fillNewChatModelPopup;
 - (void)requestSettings;
 - (void)refreshAfterPreferences;
@@ -38,6 +41,7 @@ static NSString *trimmedValue(NSTextField *field)
     }
     [self fillNewChatModelPopup];
     [self loadSSHFields];
+    [self loadCommanderOptions];
     [self requestSettings];
 }
 
@@ -181,6 +185,7 @@ static NSString *trimmedValue(NSTextField *field)
             [[NSUserDefaults standardUserDefaults] setObject:choice forKey:@"TigerBuildNewChatModel"];
     }
     [self saveSSHFields];
+    [self saveCommanderOptions];
     keys = [NSArray arrayWithObjects:
         @"xai_api_key", @"openai_api_key", @"anthropic_api_key",
         @"anthropic_workspace_id", @"mistral_api_key", @"muse_api_key",
@@ -471,6 +476,8 @@ static NSString *trimmedValue(NSTextField *field)
     [button setFont:[NSFont systemFontOfSize:12]];
     [button setToolTip:@"Off by default. Another computer running Tiger Build can then start Commander here over SSH and read, change and run things as you. Needs Remote Login in System Preferences, Sharing."];
     [tab addSubview:button];
+    [button setTarget:self];
+    [button setAction:@selector(remoteBoxChanged:)];
     [prefsFields setObject:button forKey:@"remote.check"];
     y -= 22;
     [self preferencesNote:@"Turning this on allows other computers on the network to start Commander on this Mac, so it can be controlled by other copies of Tiger Build or other programs that speak MCP over SSH. Note: Remote Login must be on (System Preferences, Sharing) and the other computer's public SSH key must be in ~/.ssh/authorized_keys on this account; no password is used."
@@ -490,6 +497,45 @@ static NSString *trimmedValue(NSTextField *field)
     [note setFont:[NSFont systemFontOfSize:11]];
     [prefsFields setObject:note forKey:@"sudo.status"];
 
+    /* ---- Commander Options ---- */
+    tab = [self preferencesTab:@"Commander Options" in:tabs];
+    y = 292;
+    [self preferencesHeading:@"Commands to block" y:y inView:tab];
+    y -= 28;
+    {
+        NSTextField *blocked = [[[NSTextField alloc] initWithFrame:NSMakeRect(16, y, 520, 22)] autorelease];
+        [blocked setEditable:YES];
+        [blocked setBezeled:YES];
+        [blocked setFont:[NSFont systemFontOfSize:12]];
+        [tab addSubview:blocked];
+        [prefsFields setObject:blocked forKey:@"commander.blocked"];
+    }
+    y -= 40;
+    [self preferencesNote:@"Commander refuses these commands in this Mac's chats, on top of the disk-erase ones it always blocks. Separate them with spaces or commas, for example: rm curl scp. "
+        @"The check looks at the words of a command, so it stops mistakes, not a determined attempt."
+        frame:NSMakeRect(16, y, 520, 44) inView:tab];
+    y -= 36;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Show a diff when Commander writes or edits a file"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [button setToolTip:@"The result of write_file and edit_block then includes what changed (removed lines with -, added lines with +), so you and the model both see it."];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"commander.diffs"];
+    y -= 42;
+    [self preferencesHeading:@"When this Mac is used from other computers" y:y inView:tab];
+    y -= 28;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Open Tiger Build when I log in, hidden in the background"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [button setToolTip:@"Adds Tiger Build to your Login Items (System Preferences, Accounts) so it is running when another computer connects. Only available while Allow other computers is on."];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"commander.login"];
+    y -= 22;
+    [self preferencesNote:@"Only while \"Allow other computers to use Commander on this Mac\" is on (Commander tab); turning that off removes the Login Item. Commander itself starts only when another computer connects."
+        frame:NSMakeRect(34, y - 22, 502, 40) inView:tab];
+
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
     button = [self preferencesButton:@"Save" frame:NSMakeRect(396, 16, 94, 30)
@@ -505,6 +551,35 @@ static NSString *trimmedValue(NSTextField *field)
 - (void)loadSSHFields
 {
     [[prefsFields objectForKey:@"remote.check"] setState:[[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0 ? NSOnState : NSOffState];
+}
+
+- (void)remoteBoxChanged:(id)sender
+{
+    BOOL on = [sender state] == NSOnState;
+    [[prefsFields objectForKey:@"commander.login"] setEnabled:on];
+    if (!on)
+        [[prefsFields objectForKey:@"commander.login"] setState:NSOffState];
+}
+
+- (void)loadCommanderOptions
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL remote = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
+    NSString *blocked = [defaults stringForKey:@"TBCommanderBlocked"];
+    [[prefsFields objectForKey:@"commander.blocked"] setStringValue:blocked ? blocked : @""];
+    [[prefsFields objectForKey:@"commander.diffs"] setState:[defaults boolForKey:@"TBCommanderDiffs"] ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"commander.login"] setState:remote && [self loginLaunchOn] ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"commander.login"] setEnabled:remote];
+}
+
+/* Saved after the Allow Other Computers choice, which the login item depends on. */
+- (void)saveCommanderOptions
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL remote = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
+    [defaults setObject:trimmedValue([prefsFields objectForKey:@"commander.blocked"]) forKey:@"TBCommanderBlocked"];
+    [defaults setBool:[[prefsFields objectForKey:@"commander.diffs"] state] == NSOnState forKey:@"TBCommanderDiffs"];
+    [self setLoginLaunch:remote && [[prefsFields objectForKey:@"commander.login"] state] == NSOnState];
 }
 
 - (void)saveSSHFields
