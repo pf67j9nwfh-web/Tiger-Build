@@ -513,7 +513,7 @@ static NSString *trimmedValue(NSTextField *field)
     y -= 40;
     [self preferencesNote:@"Commander refuses these commands in this Mac's chats, on top of the disk-erase ones it always blocks. Separate them with spaces or commas, for example: rm curl scp. "
         @"The check looks at the words of a command, so it stops mistakes, not a determined attempt."
-        frame:NSMakeRect(16, y, 520, 44) inView:tab];
+        frame:NSMakeRect(16, y - 6, 520, 44) inView:tab];
     y -= 36;
     button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
     [button setButtonType:NSSwitchButton];
