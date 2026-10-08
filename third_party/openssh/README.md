@@ -10,7 +10,7 @@ This build uses ed25519 keys, ML-KEM/curve25519 key exchange and ChaCha20-Poly13
 - **Licence:** BSD and ISC (`LICENSE`); also copied into the app (`openssh-LICENSE.txt`) and to `/usr/local/tbssh/LICENSE`.
 - **Source:** https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.6p1.tar.gz, checked against the SHA-256 in the release announcement by `fetch.sh`.
 - **Modifications:** none to the sources. It is built **without OpenSSL** (`--without-openssl`), so only ed25519 host and user keys exist; a computer with only RSA host keys (a stock Remote Login on the old Macs) is reached with the system's ssh instead, which Tiger Build chooses by itself and remembers per host.
-- **Built how:** universal programs in `bin/`: ppc + i386 (10.4 and later, no PIE and no sandbox) and x86_64 (10.5 and later, with the Darwin sandbox). No ppc64 slice: a G5 runs the 32-bit one.
+- **Built how:** universal programs in `bin/`: ppc + i386 (10.4 and later, no PIE) and x86_64 (10.5 and later); no sandbox in any (see build-mac.sh). No ppc64 slice: a G5 runs the 32-bit one.
 
 ## Rebuilding
 

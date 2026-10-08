@@ -12,7 +12,8 @@ TOOLS="ssh ssh-keygen ssh-keyscan sshd sshd-session sshd-auth"
 slice() {  # name host compiler flags...
   name=$1; host=$2; cc="$3"; shift 3
   rm -rf build/$name; mkdir -p build/$name; cd build/$name
-  # no PIE (Tiger cannot run it) and no sandbox on the 10.4 slices (the Darwin sandbox is 10.5 and later); x86_64 keeps both
+  # no PIE on the 10.4 slices (Tiger cannot run it). No sandbox anywhere: the Darwin one loads libsandbox after sshd has chrooted to /var/empty,
+  # where it cannot be found (the 64-bit server died with "sandbox_init: dlopen(libsandbox.1.dylib) image not found"); privilege separation and the chroot remain
   CC="$cc" CFLAGS=-O2 LDFLAGS="$*" "$SRC/configure" --host=$host --without-openssl --without-pam --prefix=/usr/local/tbssh $EXTRA > configure.log 2>&1
   make $TOOLS > make.log 2>&1
   for t in $TOOLS; do strip -x $t; done
@@ -21,7 +22,7 @@ slice() {  # name host compiler flags...
 }
 EXTRA="--without-pie --with-sandbox=no" slice ppc powerpc-apple-darwin8 "gcc-4.0 -arch ppc -isysroot $D/MacOSX10.4u.sdk -mmacosx-version-min=10.4" -arch ppc -isysroot $D/MacOSX10.4u.sdk -mmacosx-version-min=10.4
 EXTRA="--without-pie --with-sandbox=no" slice i386 i686-apple-darwin8 "gcc-4.0 -arch i386 -isysroot $D/MacOSX10.4u.sdk -mmacosx-version-min=10.4" -arch i386 -isysroot $D/MacOSX10.4u.sdk -mmacosx-version-min=10.4
-EXTRA="" slice x86_64 x86_64-apple-darwin9 "gcc-4.2 -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5" -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5
+EXTRA="--with-sandbox=no" slice x86_64 x86_64-apple-darwin9 "gcc-4.2 -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5" -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5
 mkdir -p bin
 for t in $TOOLS; do
   lipo -create build/ppc/$t build/i386/$t build/x86_64/$t -output bin/$t
