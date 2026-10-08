@@ -1,7 +1,7 @@
 # OpenSSH 10.6p1
 
 **What it is for:** Tiger Build's own SSH, so the old Macs can talk to current computers and to each other.
-- the **client** (`ssh`, `ssh-keygen`, `ssh-keyscan`) is inside the app and used for "Commander on another computer" and other MCP servers over SSH;
+- the **client** (`ssh`, `ssh-keygen`, `ssh-keyscan`) is inside the app and used for "Commander on another computer" and other MCP servers over SSH; the installer also puts the whole set (`ssh`, `scp`, `sftp`, `ssh-add`, `ssh-agent`, `ssh-keygen`, `ssh-keyscan`) in `/usr/local/tbssh/bin` for use from a terminal (add that folder to your PATH; `scp` and `sftp` find their `ssh` there);
 - the **server** (`sshd`, `sshd-session`, `sshd-auth`) is installed by the installer in `/usr/local/tbssh`, switched off, and started only while Allow Other Computers is on.
 
 The system's own SSH on Tiger, Leopard and Snow Leopard (OpenSSH 4.x to 5.6) cannot negotiate with current servers, which refuse its old algorithms.

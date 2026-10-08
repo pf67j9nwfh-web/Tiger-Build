@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 VERSION=10.6p1
 SRC="$PWD/src/openssh-$VERSION"
 D=/Developer/SDKs
-TOOLS="ssh ssh-keygen ssh-keyscan sshd sshd-session sshd-auth"
+TOOLS="ssh ssh-keygen ssh-keyscan ssh-add ssh-agent scp sftp sshd sshd-session sshd-auth"
 slice() {  # name host compiler flags...
   name=$1; host=$2; cc="$3"; shift 3
   rm -rf build/$name; mkdir -p build/$name; cd build/$name
