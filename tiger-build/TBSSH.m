@@ -22,9 +22,9 @@ static NSString *modernKeyPath(void) { return [folder() stringByAppendingPathCom
 static NSString *modesPath(void) { return [folder() stringByAppendingPathComponent:@"host_modes.plist"]; }
 static NSString *pendingModePath(void) { return [folder() stringByAppendingPathComponent:@"pending_mode"]; }
 
-/* Tiger Build carries a current OpenSSH (ed25519 keys, modern key exchange) that the old Macs' own ssh cannot match. A host that only speaks the old
-   algorithms (a stock Remote Login on Tiger, Leopard or Snow Leopard) is reached with the system's ssh and an RSA key instead; which one is
-   remembered per host when it is trusted. */
+/* Tiger Build carries a current OpenSSH (with LibreSSL: ed25519 keys and modern key exchange, but RSA and the old algorithms too) that the old
+   Macs' own ssh cannot match. A host that only speaks the old algorithms (a stock Remote Login on Tiger, Leopard or Snow Leopard) is reached with
+   the same client, an RSA key and the old algorithms switched back on; which of the two is remembered per host when it is trusted. */
 static NSString *bundledTool(NSString *name)
 {
     NSString *path = [[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"ssh"] stringByAppendingPathComponent:name];
@@ -193,7 +193,7 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
                 [args addObject:portText];
             }
             [args addObjectsFromArray:[NSArray arrayWithObjects:@"-t", @"rsa", name, nil]];
-            keys = run(@"/usr/bin/ssh-keyscan", args, &status, 20);
+            keys = run(haveModern() ? bundledTool(@"ssh-keyscan") : @"/usr/bin/ssh-keyscan", args, &status, 20);
         }
     }
     lines = @"";
@@ -242,8 +242,7 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
 
 + (NSString *)programForTarget:(NSString *)target
 {
-    NSString *mode = modeOfHost([self hostOfTarget:target]);
-    return [mode isEqualToString:@"modern"] ? bundledTool(@"ssh") : @"/usr/bin/ssh";
+    return haveModern() ? bundledTool(@"ssh") : @"/usr/bin/ssh";
 }
 
 /* "user@host", from what a server entry holds after ssh: */
@@ -272,6 +271,9 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
             [args addObject:@"-p"];
             [args addObject:[NSString stringWithFormat:@"%d", port]];
         }
+        if (![mode isEqualToString:@"modern"] && haveModern())   /* a stock old sshd: the algorithms it still has, which a current ssh turns off */
+            [args addObjectsFromArray:[NSArray arrayWithObjects:@"-o", @"KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1", @"-o", @"HostKeyAlgorithms=+ssh-rsa",
+                @"-o", @"PubkeyAcceptedAlgorithms=+ssh-rsa", @"-o", @"MACs=+hmac-sha1", nil]];
         [args addObject:target];
     }
     if ([remoteCommand length])
