@@ -1,0 +1,22 @@
+#!/bin/sh
+# usage: tbssh-service on|off   (run as root; Tiger Build asks for the administrator password and runs it)
+# Starts or stops Tiger Build's SSH server (port 2222). The server is a launchd job that starts a copy of sshd for each connection.
+PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
+KEY=/usr/local/tbssh/etc/ssh_host_ed25519_key
+case "$1" in
+  on)
+    if [ ! -f "$KEY" ]; then
+      /usr/local/tbssh/bin/ssh-keygen -q -t ed25519 -N '' -C tiger-build-host -f "$KEY" || exit 1
+    fi
+    chown root:wheel "$KEY" "$KEY.pub" && chmod 600 "$KEY" && chmod 644 "$KEY.pub"
+    touch /var/log/tbsshd.log && chmod 600 /var/log/tbsshd.log
+    launchctl load -w "$PLIST"
+    ;;
+  off)
+    launchctl unload -w "$PLIST"
+    ;;
+  *)
+    echo "usage: tbssh-service on|off" >&2
+    exit 2
+    ;;
+esac

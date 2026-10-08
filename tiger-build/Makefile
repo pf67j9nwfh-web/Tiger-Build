@@ -30,6 +30,7 @@ CFLAGSPPC64 := -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -W
 CFLAGSX86 := -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Wno-deprecated-declarations -O2 $(TLSFLAGS) $(if $(findstring 10.6,$(SDKX86)),-DTB_QTKIT64=1)
 WEBP := ../third_party/libwebp
 AOM := ../third_party/libaom
+SSH := ../third_party/openssh
 DE265 := ../third_party/libde265
 LIBS32 := $(TLS)/lib/libmbedtls32.a $(WEBP)/lib/libwebp32.a $(AOM)/lib/libaom32.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework QTKit
 LIBS64 := $(TLS)/lib/libmbedtls64ppc.a $(WEBP)/lib/libwebp64ppc.a $(AOM)/lib/libaom64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio
@@ -66,6 +67,7 @@ endif
 	rm -rf $(APP)/Contents/Resources/ppc-commander; $(MAKE) -C ../commander TB=$(CURDIR) && cp ../commander/ppc-commander $(APP)/Contents/Resources/ppc-commander
 	mkdir -p $(APP)/Contents/Frameworks && lipo -create $(DE265)/lib/libde265-32.dylib $(if $(findstring ppc64,$(ARCHS64)),$(DE265)/lib/libde265-64ppc.dylib) $(if $(findstring x86_64,$(ARCHS64)),$(DE265)/lib/libde265-64x86.dylib) -output $(APP)/Contents/Frameworks/libde265.dylib
 	cp $(DE265)/LICENSE $(APP)/Contents/Resources/libde265-LICENSE.txt
+	rm -rf $(APP)/Contents/Resources/ssh && mkdir -p $(APP)/Contents/Resources/ssh && cp $(SSH)/bin/* $(APP)/Contents/Resources/ssh/ && cp $(SSH)/LICENSE $(APP)/Contents/Resources/openssh-LICENSE.txt
 	cp $(AOM)/LICENSE $(APP)/Contents/Resources/libaom-LICENSE.txt && cp $(AOM)/PATENTS $(APP)/Contents/Resources/libaom-PATENTS.txt
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 

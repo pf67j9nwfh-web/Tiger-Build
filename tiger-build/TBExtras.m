@@ -412,7 +412,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
                     NSArray *ssh = [TBSSH argumentsForTarget:[command substringFromIndex:4] remote:[remote count] ? [remote componentsJoinedByString:@" "] : nil problem:&problem];
                     if (!ssh)
                         TBFail(@"%@", problem);
-                    client = [TBMCPClient clientWithPath:@"/usr/bin/ssh" arguments:ssh environment:nil label:sid];
+                    client = [TBMCPClient clientWithPath:[TBSSH programForTarget:[command substringFromIndex:4]] arguments:ssh environment:nil label:sid];
                 } else
                     client = [TBMCPClient clientWithPath:command arguments:TBArray(server, @"args") environment:env label:sid];
                 [run attach:client];

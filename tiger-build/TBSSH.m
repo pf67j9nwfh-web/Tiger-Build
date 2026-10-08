@@ -18,6 +18,47 @@ static NSString *folder(void)
 }
 
 static NSString *keyPath(void) { return [folder() stringByAppendingPathComponent:@"id_rsa"]; }
+static NSString *modernKeyPath(void) { return [folder() stringByAppendingPathComponent:@"id_ed25519"]; }
+static NSString *modesPath(void) { return [folder() stringByAppendingPathComponent:@"host_modes.plist"]; }
+static NSString *pendingModePath(void) { return [folder() stringByAppendingPathComponent:@"pending_mode"]; }
+
+/* Tiger Build carries a current OpenSSH (ed25519 keys, modern key exchange) that the old Macs' own ssh cannot match. A host that only speaks the old
+   algorithms (a stock Remote Login on Tiger, Leopard or Snow Leopard) is reached with the system's ssh and an RSA key instead; which one is
+   remembered per host when it is trusted. */
+static NSString *bundledTool(NSString *name)
+{
+    NSString *path = [[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"ssh"] stringByAppendingPathComponent:name];
+    NSString *override = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBSSHFolder"];
+    if ([override length])
+        path = [override stringByAppendingPathComponent:name];
+    return [[NSFileManager defaultManager] isExecutableFileAtPath:path] ? path : nil;
+}
+
+static BOOL haveModern(void) { return bundledTool(@"ssh") != nil && bundledTool(@"ssh-keygen") != nil && bundledTool(@"ssh-keyscan") != nil; }
+
+/* "host" or "host:port" -> the host, and the port (0 for the default) */
+static NSString *bareHost(NSString *hostAndPort, int *port)
+{
+    NSRange colon = [hostAndPort rangeOfString:@":" options:NSBackwardsSearch];
+    if (port)
+        *port = 0;
+    if (colon.location == NSNotFound || [[hostAndPort componentsSeparatedByString:@":"] count] != 2)
+        return hostAndPort;
+    if (port)
+        *port = [[hostAndPort substringFromIndex:colon.location + 1] intValue];
+    return [hostAndPort substringToIndex:colon.location];
+}
+
+static NSString *modeOfHost(NSString *host)
+{
+    NSDictionary *modes = [NSDictionary dictionaryWithContentsOfFile:modesPath()];
+    NSString *mode = [modes objectForKey:host];
+    if ([mode isEqualToString:@"legacy"] || [mode isEqualToString:@"modern"])
+        return mode;
+    return haveModern() ? @"modern" : @"legacy";
+}
+
+static NSString *identityPath(NSString *mode) { return [mode isEqualToString:@"modern"] ? modernKeyPath() : keyPath(); }
 static NSString *knownPath(void) { return [folder() stringByAppendingPathComponent:@"known_hosts"]; }
 static NSString *pendingPath(void) { return [folder() stringByAppendingPathComponent:@"pending_host"]; }
 
@@ -85,14 +126,21 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
 
 + (NSString *)publicKey
 {
-    NSString *pub = [keyPath() stringByAppendingString:@".pub"];
+    return [self publicKeyForHost:nil];
+}
+
++ (NSString *)publicKeyForHost:(NSString *)host
+{
+    NSString *mode = host ? modeOfHost(host) : (haveModern() ? @"modern" : @"legacy"), *identity = identityPath(mode), *pub = [identity stringByAppendingString:@".pub"];
     NSFileManager *m = [NSFileManager defaultManager];
-    if (![m fileExistsAtPath:keyPath()] || ![m fileExistsAtPath:pub]) {
+    if (![m fileExistsAtPath:identity] || ![m fileExistsAtPath:pub]) {
         int status = 0;
-        [m removeFileAtPath:keyPath() handler:nil];
+        [m removeFileAtPath:identity handler:nil];
         [m removeFileAtPath:pub handler:nil];
-        /* RSA: the old Macs' OpenSSH has nothing newer, and every server still understands it. */
-        run(@"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-q", @"-t", @"rsa", @"-b", @"2048", @"-N", @"", @"-C", @"tiger-build", @"-f", keyPath(), nil], &status, 60);
+        if ([mode isEqualToString:@"modern"])
+            run(bundledTool(@"ssh-keygen"), [NSArray arrayWithObjects:@"-q", @"-t", @"ed25519", @"-N", @"", @"-C", @"tiger-build", @"-f", identity, nil], &status, 60);
+        else
+            run(@"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-q", @"-t", @"rsa", @"-b", @"2048", @"-N", @"", @"-C", @"tiger-build", @"-f", identity, nil], &status, 60);
         if (status != 0)
             return nil;
     }
@@ -115,7 +163,7 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
 + (NSString *)fingerprintOfHost:(NSString *)host problem:(NSString **)problem
 {
     int status = 0;
-    NSString *keys, *lines, *print;
+    NSString *keys, *lines, *print, *pendingMode;
     NSArray *pieces;
     unsigned i;
     host = TBTrim(host);
@@ -123,7 +171,36 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
         *problem = @"That is not a usable address.";
         return nil;
     }
-    keys = run(@"/usr/bin/ssh-keyscan", [NSArray arrayWithObjects:@"-T", @"10", @"-t", @"rsa", host, nil], &status, 20);
+    {
+        int port = 0, p2 = 0;
+        NSString *name = bareHost(host, &port), *portText = port ? [NSString stringWithFormat:@"%d", port] : nil;
+        NSMutableArray *scan = [NSMutableArray arrayWithObjects:@"-T", @"10", nil];
+        (void)p2;
+        keys = @"";
+        pendingMode = @"legacy";
+        if (haveModern()) {
+            NSMutableArray *args = [NSMutableArray arrayWithArray:scan];
+            if (portText) {
+                [args addObject:@"-p"];
+                [args addObject:portText];
+            }
+            [args addObjectsFromArray:[NSArray arrayWithObjects:@"-t", @"ed25519", name, nil]];
+            keys = run(bundledTool(@"ssh-keyscan"), args, &status, 20);
+            if ([keys rangeOfString:@"ssh-ed25519"].location != NSNotFound)
+                pendingMode = @"modern";
+            else
+                keys = @"";
+        }
+        if (![keys length]) {
+            NSMutableArray *args = [NSMutableArray arrayWithArray:scan];
+            if (portText) {
+                [args addObject:@"-p"];
+                [args addObject:portText];
+            }
+            [args addObjectsFromArray:[NSArray arrayWithObjects:@"-t", @"rsa", name, nil]];
+            keys = run(@"/usr/bin/ssh-keyscan", args, &status, 20);
+        }
+    }
     lines = @"";
     pieces = [keys componentsSeparatedByString:@"\n"];
     for (i = 0; i < [pieces count]; i++)
@@ -133,11 +210,12 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
         *problem = [NSString stringWithFormat:@"%@ did not answer on the SSH port. Check the address, and that Remote Login is on in System Preferences, Sharing.", host];
         return nil;
     }
+    [pendingMode writeToFile:pendingModePath() atomically:YES encoding:NSUTF8StringEncoding error:NULL];
     if (![lines writeToFile:pendingPath() atomically:YES encoding:NSUTF8StringEncoding error:NULL]) {
         *problem = @"Tiger Build could not save the host key.";
         return nil;
     }
-    print = run(@"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-l", @"-f", pendingPath(), nil], &status, 15);
+    print = run(haveModern() ? bundledTool(@"ssh-keygen") : @"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-l", @"-f", pendingPath(), nil], &status, 15);
     return [TBTrim(print) length] ? TBTrim(print) : lines;
 }
 
@@ -154,14 +232,33 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
         *problem = @"Tiger Build could not save the host key.";
         return NO;
     }
+    {
+        NSMutableDictionary *modes = [NSMutableDictionary dictionaryWithContentsOfFile:modesPath()];
+        NSString *mode = [NSString stringWithContentsOfFile:pendingModePath() encoding:NSUTF8StringEncoding error:NULL];
+        if (!modes)
+            modes = [NSMutableDictionary dictionary];
+        [modes setObject:[mode length] ? mode : @"legacy" forKey:host];
+        [modes writeToFile:modesPath() atomically:YES];
+    }
     [[NSFileManager defaultManager] removeFileAtPath:pendingPath() handler:nil];
+    [[NSFileManager defaultManager] removeFileAtPath:pendingModePath() handler:nil];
     return YES;
 }
 
 + (void)forgetHost:(NSString *)host
 {
-    int status = 0;
-    run(@"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-R", TBTrim(host), @"-f", knownPath(), nil], &status, 15);
+    int status = 0, port = 0;
+    NSString *name = bareHost(TBTrim(host), &port);
+    NSMutableDictionary *modes = [NSMutableDictionary dictionaryWithContentsOfFile:modesPath()];
+    run(haveModern() ? bundledTool(@"ssh-keygen") : @"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-R", port ? [NSString stringWithFormat:@"[%@]:%d", name, port] : name, @"-f", knownPath(), nil], &status, 15);
+    [modes removeObjectForKey:TBTrim(host)];
+    [modes writeToFile:modesPath() atomically:YES];
+}
+
++ (NSString *)programForTarget:(NSString *)target
+{
+    NSString *mode = modeOfHost([self hostOfTarget:target]);
+    return [mode isEqualToString:@"modern"] ? bundledTool(@"ssh") : @"/usr/bin/ssh";
 }
 
 /* "user@host", from what a server entry holds after ssh: */
@@ -177,9 +274,21 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
         *problem = @"The other computer's key is not trusted yet. Edit the server and choose Trust Host.";
         return nil;
     }
-    args = [NSMutableArray arrayWithObjects:@"-T", @"-i", keyPath(), @"-o", @"IdentitiesOnly=yes", @"-o", @"BatchMode=yes", @"-o", @"PreferredAuthentications=publickey",
+    {
+        NSString *hostPort = [target substringFromIndex:at.location + 1], *mode = modeOfHost(hostPort);
+        int port = 0;
+        NSString *name = bareHost(hostPort, &port);
+        [self publicKeyForHost:hostPort];   /* makes the key if it is not there yet */
+        target = [[target substringToIndex:at.location + 1] stringByAppendingString:name];
+        args = [NSMutableArray arrayWithObjects:@"-T", @"-i", identityPath(mode), @"-o", @"IdentitiesOnly=yes", @"-o", @"BatchMode=yes", @"-o", @"PreferredAuthentications=publickey",
         @"-o", @"StrictHostKeyChecking=yes", @"-o", [@"UserKnownHostsFile=" stringByAppendingString:knownLink()], @"-o", @"ConnectTimeout=12",
-        @"-o", @"ServerAliveInterval=20", @"-o", @"ServerAliveCountMax=6", target, nil];
+        @"-o", @"ServerAliveInterval=20", @"-o", @"ServerAliveCountMax=6", nil];
+        if (port) {
+            [args addObject:@"-p"];
+            [args addObject:[NSString stringWithFormat:@"%d", port]];
+        }
+        [args addObject:target];
+    }
     if ([remoteCommand length])
         [args addObject:remoteCommand];
     return args;
@@ -196,18 +305,17 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
     NSString *problem = nil, *text, *low;
     int status = 0;
     NSArray *args;
-    if (![self publicKey])
+    if (![self publicKeyForHost:[self hostOfTarget:target]])
         return @"Tiger Build could not make its SSH key.";
     args = [self argumentsForTarget:target remote:@"echo tiger-build-ok" problem:&problem];
     if (!args)
         return problem;
-    text = run(@"/usr/bin/ssh", args, &status, 30);
+    text = run([self programForTarget:target], args, &status, 30);
     if (status == 0 && [text rangeOfString:@"tiger-build-ok"].location != NSNotFound)
         return nil;
     low = [text lowercaseString];
     if ([low rangeOfString:@"permission denied"].location != NSNotFound)
-        return [NSString stringWithFormat:@"%@ refused the key. Add Tiger Build's public key (Copy Key) to ~/.ssh/authorized_keys on that computer. "
-            @"A recent macOS may also need ssh-rsa accepted for this key.", [self hostOfTarget:target]];
+        return [NSString stringWithFormat:@"%@ refused the key. Add Tiger Build's public key (Copy Key) to ~/.ssh/authorized_keys on that computer.", [self hostOfTarget:target]];
     if ([low rangeOfString:@"host key"].location != NSNotFound)
         return @"The other computer's key changed. If that is expected, choose Trust Host again.";
     if ([low rangeOfString:@"timed out"].location != NSNotFound || status == -1)

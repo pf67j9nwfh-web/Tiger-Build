@@ -264,11 +264,11 @@ static NSString *trimmedText(NSString *text)
 - (void)sheetCopyKey:(id)sender
 {
     (void)sender;
-    NSString *key=[TBSSH publicKey];
+    NSString *key=[TBSSH publicKeyForHost:[TBSSH hostOfTarget:[self sheetTarget]]];
     if(!key){[self sheetStatus:@"Tiger Build could not make its SSH key."];return;}
     [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
     [[NSPasteboard generalPasteboard] setString:key forType:NSStringPboardType];
-    [self sheetStatus:@"Key copied. Add it as a line in ~/.ssh/authorized_keys on the other computer, then Trust Host."];
+    [self sheetStatus:@"Key copied. Add it as a line in ~/.ssh/authorized_keys on the other computer (for a Tiger Build SSH server, in its authorized keys file), then Trust Host."];
 }
 - (void)sheetTrust:(id)sender
 {

@@ -1,0 +1,10 @@
+#!/bin/sh
+# What Tiger Build's SSH server runs for a connection: Commander, from the Tiger Build that belongs to the signed-in account
+# (/Applications, or the account's own Applications folder). Whatever command the other computer asked for is ignored.
+for app in "/Applications/Tiger Build.app" "$HOME/Applications/Tiger Build.app"; do
+  if [ -x "$app/Contents/Resources/ppc-commander" ]; then
+    exec "$app/Contents/Resources/ppc-commander"
+  fi
+done
+echo "Tiger Build is not installed for this account." >&2
+exit 1
