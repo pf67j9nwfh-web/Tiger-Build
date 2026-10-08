@@ -92,18 +92,26 @@ static BOOL trusted(NSString *path)
         AuthorizationFree(auth, kAuthorizationFlagDefaults);
         return @"The SSH server could not be started with administrator rights.";
     }
+    /* Not waited for until the pipe closes: another process can hold it open (on Tiger a launchd that launchctl starts did), so the answer is
+       what the port does, for up to ten seconds. */
     if (pipe) {
-        char buffer[256];
-        while (fgets(buffer, sizeof buffer, pipe))
-            ;   /* returns when the helper has finished */
-        fclose(pipe);
+        int fd = fileno(pipe);
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     }
-    AuthorizationFree(auth, kAuthorizationFlagDefaults);
-    for (i = 0; i < 20; i++) {
+    for (i = 0; i < 40; i++) {
+        char buffer[256];
+        if (pipe)
+            while (read(fileno(pipe), buffer, sizeof buffer) > 0)
+                ;
         if ([self listening] == on)
-            return nil;
+            break;
         usleep(250000);
     }
+    if (pipe)
+        fclose(pipe);
+    AuthorizationFree(auth, kAuthorizationFlagDefaults);
+    if ([self listening] == on)
+        return nil;
     return on ? @"The SSH server did not start. See /var/log/tbsshd.log." : @"The SSH server did not stop.";
 }
 

@@ -14,10 +14,11 @@ case "$1" in
     fi
     chown root:wheel "$KEY" "$KEY.pub" && chmod 600 "$KEY" && chmod 644 "$KEY.pub"
     touch /var/log/tbsshd.log && chmod 600 /var/log/tbsshd.log
-    launchctl load -w "$PLIST"
+    # nothing of ours may keep the caller's output open: on Tiger launchctl can start a launchd that inherits it
+    launchctl load -w "$PLIST" </dev/null >/dev/null 2>&1
     ;;
   off)
-    launchctl unload -w "$PLIST"
+    launchctl unload -w "$PLIST" </dev/null >/dev/null 2>&1
     ;;
   *)
     echo "usage: tbssh-service on|off" >&2
