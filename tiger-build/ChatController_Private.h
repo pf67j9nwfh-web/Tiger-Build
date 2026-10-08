@@ -5,6 +5,16 @@
 /* Methods the ChatController source files call on each other. They are
    implemented in ChatController.m and ChatController+Preferences.m. */
 @interface ChatController (Internal)
+- (void)buildAlertsTab:(NSTabView *)tabs;
+- (void)loadAlertOptions;
+- (void)saveAlertOptions;
+- (void)noteReplyFinished:(BOOL)offScreen;
+- (double)spendToday;
+- (NSString *)spendLimitProblemForChat:(NSDictionary *)chat;
+- (void)spendCheckAfterUsage:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
+- (void)checkForUpdates:(id)sender;
+- (void)checkForUpdatesAtLaunch;
+- (void)uninstallTigerBuild:(id)sender;
 - (NSString *)supportDir;
 - (void)saveStore;
 - (void)flushStore;

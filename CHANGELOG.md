@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3 (in progress)
+- **Uninstaller**: Configuration, *Uninstall Tiger Build...* (or `sudo /usr/local/tbssh/bin/tiger-build-uninstall`), with an option to delete your data and saved keys too.
+- **A sound when a reply finishes** off screen or in the background, and a Dock bounce; **spending limits** per chat and per day; **Check for Updates...** against the latest GitHub release (once a day at start, switchable). Preferences has a new Alerts tab.
+
 ## 2.2
 - **JPEG XL pictures** (`.jxl`) can be attached and are read by `convert_file`: lossy and lossless, with transparency (shown on white), 16-bit and grey pictures, and animations (up to four frames of the first 120 are shown). The decoder is [jxldec](https://github.com/kjk/jxldec), plain C, built into the app for PowerPC and Intel; it matches libjxl to within one step on the files tried. See `third_party/jxldec`.
 - **Quick Look** (Leopard and Snow Leopard) shows JPEG XL pictures and previews `.json` files as text.

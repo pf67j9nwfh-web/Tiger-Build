@@ -346,6 +346,7 @@ static NSString *newRunId(void)
 {
     int context = [[event objectForKey:@"context"] intValue];
     TBAddUsage(chat, event);
+    [self spendCheckAfterUsage:event chat:chat];
     if (context > 0) {
         [chat setObject:[NSNumber numberWithInt:context] forKey:@"ctxTokens"];
         [chat setObject:[NSNumber numberWithInt:(int)[[chat objectForKey:@"messages"] count]] forKey:@"ctxAt"];

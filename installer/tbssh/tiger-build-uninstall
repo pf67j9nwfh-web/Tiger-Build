@@ -1,0 +1,54 @@
+#!/bin/sh
+# usage: tiger-build-uninstall [--data /Users/NAME]     (run as root: Tiger Build asks for the administrator password and runs it, or: sudo /usr/local/tbssh/bin/tiger-build-uninstall)
+# Removes everything the Tiger Build installer put on this Mac: the application, the OpenSSH tools, sshfs and the SSH server in /usr/local/tbssh (and its
+# launchd job), the Quick Look generator, and the installer's receipts. With --data the person's chats, settings and SSH keys (the Application Support
+# folder, the preferences file and caches) go too; their API keys stay in the Keychain (Tiger Build removes those itself before it starts this).
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+unset IFS ENV BASH_ENV CDPATH DYLD_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_FRAMEWORK_PATH
+unset SHELLOPTS BASHOPTS 2>/dev/null
+LOG=/var/log/tbssh-uninstall.log
+# this file lives in a folder it deletes, so it runs from a copy
+if [ -z "$TB_UNINSTALL_COPY" ]; then
+  COPY=$(mktemp /tmp/tb-uninstall.XXXXXX) || exit 1
+  cp "$0" "$COPY" && TB_UNINSTALL_COPY=1 exec /bin/sh "$COPY" "$@"
+  exit 1
+fi
+rm -f "$0"
+# TB_UNINSTALL_DRYRUN=1 only prints what would be done (for trying it without administrator rights)
+if [ -n "$TB_UNINSTALL_DRYRUN" ]; then
+  do_() { echo "+ $*"; }
+else
+  [ "$(id -u)" = 0 ] || { echo "tiger-build-uninstall must run as root" >&2; exit 1; }
+  do_() { "$@"; }
+  touch "$LOG"; chmod 640 "$LOG"
+  exec >>"$LOG" 2>&1 </dev/null
+fi
+echo "== $(date) uninstall $*"
+DATA=
+if [ "$1" = "--data" ]; then
+  case "$2" in
+    /Users/*) [ -d "$2" ] && DATA="$2" ;;
+  esac
+fi
+# the application is quitting (it started this): give it a few seconds, then end it
+# (pgrep and pkill are not on Tiger)
+running() { ps -axco command 2>/dev/null | grep -qx "$1"; }
+n=0
+while running TigerBuild && [ $n -lt 10 ]; do sleep 1; n=$((n+1)); done
+do_ killall TigerBuild ppc-commander 2>/dev/null
+# the SSH server, if it is running
+[ -x /usr/local/tbssh/bin/tbssh-service ] && do_ /usr/local/tbssh/bin/tbssh-service off
+PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
+do_ launchctl unload -w "$PLIST" 2>/dev/null
+do_ rm -f "$PLIST" /var/log/tbsshd.log
+do_ rm -rf /usr/local/tbssh
+do_ rm -rf /Library/QuickLook/TigerBuild.qlgenerator
+do_ qlmanage -r >/dev/null 2>&1
+do_ rm -rf "/Applications/Tiger Build.app"
+for r in /Library/Receipts/TigerBuild-*.pkg; do [ -e "$r" ] && do_ rm -rf "$r"; done
+if [ -n "$DATA" ]; then
+  do_ rm -rf "$DATA/Library/Application Support/Tiger Build" "$DATA/Library/Preferences/local.tigerbuild.TigerBuild.plist" "$DATA/Library/Caches/local.tigerbuild.TigerBuild" "$DATA/Library/Logs/Tiger Build"
+fi
+echo "done"
+exit 0

@@ -115,6 +115,43 @@ static BOOL trusted(NSString *path)
     return on ? @"The SSH server did not start. See /var/log/tbsshd.log." : @"The SSH server did not stop.";
 }
 
++ (NSString *)uninstallWithData:(NSString *)home
+{
+    NSString *script = @"/usr/local/tbssh/bin/tiger-build-uninstall";
+    AuthorizationRef auth = NULL;
+    const char *path = [script fileSystemRepresentation];
+    char *arguments[3];
+    FILE *pipe = NULL;
+    OSStatus status;
+    if (!trusted(script))
+        return @"The uninstaller was not found. Tiger Build was probably not put here by its installer; quit it and drag Tiger Build to the Trash.";
+    if ([home length] && [home hasPrefix:@"/Users/"]) {
+        arguments[0] = "--data";
+        arguments[1] = (char *)[home fileSystemRepresentation];
+        arguments[2] = NULL;
+    } else
+        arguments[0] = NULL;
+    if (AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment, kAuthorizationFlagDefaults, &auth) != errAuthorizationSuccess)
+        return @"The administrator dialog could not be opened.";
+    {
+        AuthorizationItem item = {kAuthorizationRightExecute, strlen(path), (void *)path, 0};
+        AuthorizationRights rights = {1, &item};
+        AuthorizationFlags flags = kAuthorizationFlagInteractionAllowed | kAuthorizationFlagExtendRights | kAuthorizationFlagPreAuthorize;
+        status = AuthorizationCopyRights(auth, &rights, kAuthorizationEmptyEnvironment, flags, NULL);
+        if (status != errAuthorizationSuccess) {
+            AuthorizationFree(auth, kAuthorizationFlagDefaults);
+            return status == errAuthorizationCanceled ? @"cancelled" : @"The administrator password was not accepted.";
+        }
+    }
+    status = AuthorizationExecuteWithPrivileges(auth, path, kAuthorizationFlagDefaults, arguments, &pipe);
+    /* the script goes on by itself once Tiger Build has quit; the pipe and the authorization are left for the process to end with */
+    if (status != errAuthorizationSuccess) {
+        AuthorizationFree(auth, kAuthorizationFlagDefaults);
+        return @"The uninstaller could not be started with administrator rights.";
+    }
+    return nil;
+}
+
 + (NSString *)authorizedKeysPath
 {
     NSString *folder = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/ssh"];

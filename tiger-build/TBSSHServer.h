@@ -10,5 +10,6 @@
 + (NSString *)authorizedKeysPath;
 + (NSString *)authorizedKeys;
 + (BOOL)saveAuthorizedKeys:(NSString *)text;
++ (NSString *)uninstallWithData:(NSString *)home; /* runs the installer's uninstaller with the administrator's rights, without waiting; nil when started, else what went wrong ("cancelled" included). home: also delete that person's data */
 + (NSString *)hostFingerprint;     /* of the server's key, to compare on the other computer; nil until it has run once */
 @end

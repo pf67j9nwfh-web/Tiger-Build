@@ -1135,6 +1135,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [preferences setTarget:self];
     [appMenu addItem:about];
     [about release];
+    {
+        NSMenuItem *update = [[[NSMenuItem alloc] initWithTitle:@"Check for Updates..." action:@selector(checkForUpdates:) keyEquivalent:@""] autorelease];
+        [update setTarget:self];
+        [appMenu addItem:update];
+    }
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItem:preferences];
     [preferences release];
@@ -1173,6 +1178,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:@""] autorelease];
             [item setTarget:self]; [menu addItem:item];
         }
+        [menu addItem:[NSMenuItem separatorItem]];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Uninstall Tiger Build..." action:@selector(uninstallTigerBuild:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [menu addItem:item];
         slot = [[[NSMenuItem alloc] initWithTitle:@"Configuration" action:NULL keyEquivalent:@""] autorelease];
         [slot setSubmenu:menu]; [appMenu addItem:slot];
         [appMenu addItem:[NSMenuItem separatorItem]];
@@ -1876,6 +1884,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self refreshCatalog];
     [self refreshToolCatalog];
     [self refreshLocalModels];
+    [self performSelector:@selector(checkForUpdatesAtLaunch) withObject:nil afterDelay:6];
     relayTimer = [[NSTimer scheduledTimerWithTimeInterval:30 target:self
         selector:@selector(relayTick:) userInfo:nil repeats:YES] retain];
     if (![TBSettings hasKeyForProvider:@"grok"] && ![TBSettings hasKeyForProvider:@"chatgpt"] && ![TBSettings hasKeyForProvider:@"claude"] && ![TBSettings hasKeyForProvider:@"mistral"]
@@ -2362,6 +2371,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             stopping = NO;
             [thinkingText release];
             thinkingText = nil;
+            [self noteReplyFinished:YES];
         }
         return;
     }
@@ -2371,6 +2381,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         [self stopPulse];
         stopping = NO;
         [self setThinkingText:nil];
+        [self noteReplyFinished:NO];
     }
     [self applyBusyUI];
     if (!flag)
@@ -3173,6 +3184,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     if ([text length] == 0)
         return;
+    {
+        NSString *limit = [self spendLimitProblemForChat:current];
+        if (limit) {
+            [self setRelayProblem:limit];
+            NSBeep();
+            return;
+        }
+    }
     if (![self providerUsable:[self providerForChat:current]]) {
         NSString *pid = [self providerForChat:current];
         NSString *note = [self providerNote:pid];

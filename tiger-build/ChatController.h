@@ -103,6 +103,7 @@
     id displacedRun;                    /* while such a reply is handled, the run that is on screen waits here */
     NSString *swappedKey;
     BOOL swapped;
+    BOOL updateChecking;
     NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 

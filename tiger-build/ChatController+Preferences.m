@@ -43,6 +43,7 @@
     [self fillNewChatModelPopup];
     [self loadSSHFields];
     [self loadCommanderOptions];
+    [self loadAlertOptions];
     [self requestSettings];
 }
 
@@ -187,6 +188,7 @@
     }
     [self saveSSHFields];
     [self saveCommanderOptions];
+    [self saveAlertOptions];
     keys = [NSArray arrayWithObjects:
         @"xai_api_key", @"openai_api_key", @"anthropic_api_key",
         @"anthropic_workspace_id", @"mistral_api_key", @"muse_api_key",
@@ -548,6 +550,8 @@
     y -= 22;
     [self preferencesNote:@"Needs the administrator password saved (Commander tab). Chats on this Mac use sudo through their own Tools menu item either way."
         frame:NSMakeRect(34, y - 8, 502, 30) inView:tab];
+
+    [self buildAlertsTab:tabs];
 
     /* ---- SSH Server ---- */
     tab = [self preferencesTab:@"SSH Server" in:tabs];
