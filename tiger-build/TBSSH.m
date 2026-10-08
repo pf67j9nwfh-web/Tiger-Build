@@ -124,11 +124,6 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
 
 @implementation TBSSH
 
-+ (NSString *)publicKey
-{
-    return [self publicKeyForHost:nil];
-}
-
 + (NSString *)publicKeyForHost:(NSString *)host
 {
     NSString *mode = host ? modeOfHost(host) : (haveModern() ? @"modern" : @"legacy"), *identity = identityPath(mode), *pub = [identity stringByAppendingString:@".pub"];
@@ -243,16 +238,6 @@ static NSString *run(NSString *path, NSArray *args, int *status, int seconds)
     [[NSFileManager defaultManager] removeFileAtPath:pendingPath() handler:nil];
     [[NSFileManager defaultManager] removeFileAtPath:pendingModePath() handler:nil];
     return YES;
-}
-
-+ (void)forgetHost:(NSString *)host
-{
-    int status = 0, port = 0;
-    NSString *name = bareHost(TBTrim(host), &port);
-    NSMutableDictionary *modes = [NSMutableDictionary dictionaryWithContentsOfFile:modesPath()];
-    run(haveModern() ? bundledTool(@"ssh-keygen") : @"/usr/bin/ssh-keygen", [NSArray arrayWithObjects:@"-R", port ? [NSString stringWithFormat:@"[%@]:%d", name, port] : name, @"-f", knownPath(), nil], &status, 15);
-    [modes removeObjectForKey:TBTrim(host)];
-    [modes writeToFile:modesPath() atomically:YES];
 }
 
 + (NSString *)programForTarget:(NSString *)target

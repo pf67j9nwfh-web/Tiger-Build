@@ -251,7 +251,6 @@ static NSString *stripThink(NSString *text)
 static NSMutableArray *providerList = nil;
 static NSMutableDictionary *modelLists = nil;
 static NSMutableDictionary *defaultModels = nil;
-static NSMutableDictionary *liveModels = nil;
 
 static void loadCatalog(void)
 {
@@ -263,7 +262,6 @@ static void loadCatalog(void)
     providerList = [[NSMutableArray alloc] init];
     modelLists = [[NSMutableDictionary alloc] init];
     defaultModels = [[NSMutableDictionary alloc] init];
-    liveModels = [[NSMutableDictionary alloc] init];
     text = [NSString stringWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"models" ofType:@"txt"]];
     if (!text)
         text = [NSString stringWithContentsOfFile:@"models.txt"];
@@ -316,14 +314,6 @@ static NSString *baseOverride(NSString *provider, NSString *standard)
     return [defaultModels objectForKey:provider];
 }
 
-+ (void)setLiveModels:(NSArray *)ids forProvider:(NSString *)provider
-{
-    loadCatalog();
-    @synchronized(liveModels) {
-        [liveModels setObject:ids forKey:provider];
-    }
-}
-
 + (NSString *)normalize:(NSString *)name
 {
     NSString *key = [TBTrim(name ? name : @"") lowercaseString];
@@ -343,15 +333,11 @@ static NSString *baseOverride(NSString *provider, NSString *standard)
 {
     NSArray *list = [self modelsForProvider:provider];
     unsigned i;
-    NSArray *live;
     for (i = 0; i < [list count]; i++) {
         if ([[[list objectAtIndex:i] objectForKey:@"id"] isEqualToString:model])
             return YES;
     }
-    @synchronized(liveModels) {
-        live = [[[liveModels objectForKey:provider] retain] autorelease];
-    }
-    return [live containsObject:model];
+    return NO;
 }
 
 + (NSString *)resolveModel:(NSString *)requested provider:(NSString *)provider
@@ -855,19 +841,6 @@ static NSString *chunkThinking(id value)
     return out;
 }
 
-static BOOL truthy(id v)
-{
-    if (!v)
-        return NO;
-    if ([v isKindOfClass:[NSString class]])
-        return [v length] > 0;
-    if ([v isKindOfClass:[NSArray class]] || [v isKindOfClass:[NSDictionary class]])
-        return [v count] > 0;
-    if ([v isKindOfClass:[NSNumber class]])
-        return [v boolValue];
-    return YES;
-}
-
 static NSString *streamFailure(id item)
 {
     id err;
@@ -1036,9 +1009,9 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         NSString *reasoning;
         NSArray *pieces;
         unsigned p;
-        if (!truthy(first))
+        if (!TBTruthy(first))
             first = TBValue(source, @"reasoning");
-        if (!truthy(first))
+        if (!TBTruthy(first))
             first = TBValue(source, @"reasoning_details");
         reasoning = [NSString stringWithFormat:@"%@%@%@", pieceText(first), pieceText(extra == (id)[NSNull null] ? nil : extra), chunkThinking(content)];
         [answer addReasoning:reasoning];
@@ -1070,7 +1043,7 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         if ([TBString(function, @"arguments") length])
             [[slot objectForKey:@"arguments"] appendString:TBString(function, @"arguments")];
     }
-    if (truthy(TBValue(choice, @"finish_reason"))) {
+    if (TBTruthy(TBValue(choice, @"finish_reason"))) {
         if ([TBString(choice, @"finish_reason") isEqualToString:@"length"])
             round->truncated = YES;
         finished = YES;
@@ -1095,7 +1068,7 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
     } else if ([type isEqualToString:@"error"] || [type isEqualToString:@"response.failed"]) {
         id err = TBValue(item, @"error");
         NSString *message;
-        if (!truthy(err))
+        if (!TBTruthy(err))
             err = TBValue(TBDictionary(item, @"response"), @"error");
         message = TBString(err, @"message");
         [self fail:[message length] ? message : @"The model failed."];
@@ -1192,7 +1165,7 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
                 [looseSignature release];
                 looseSignature = [signature copy];
             }
-            if (truthy(TBValue(part, @"thought"))) {
+            if (TBTruthy(TBValue(part, @"thought"))) {
                 if (thinking && [TBString(part, @"text") length])
                     [self think:TBString(part, @"text")];
                 continue;

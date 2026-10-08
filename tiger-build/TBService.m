@@ -174,26 +174,30 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
 
 /* ---- the tool catalogue ---- */
 
+/* a row of the Tools menu: its id, title, whether it asks first, and whether a new chat has it on */
+static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL approval, BOOL on)
+{
+    [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:key, @"id", title, @"title", [NSNumber numberWithBool:approval], @"approval", [NSNumber numberWithBool:on], @"default", nil]];
+}
+
 + (NSData *)toolsPlist
 {
     NSMutableArray *rows = [NSMutableArray array];
     NSString *problem = [TBSession cachedCommanderProblem];
     NSString *error = nil;
-    if ([TBSettings flag:@"ppc_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"commander", @"id", @"Commander (this Mac)", @"title", [NSNumber numberWithBool:[TBSettings flag:@"ppc_approval"]], @"approval",
-            [NSNumber numberWithBool:YES], @"default", nil]];
-    if ([TBSettings flag:@"ppc_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"sudo", @"id", @"Administrator (sudo) for Commander", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
-    if ([TBSettings flag:@"ppc_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"screen", @"id", @"Screen control (mouse and keyboard)", @"title", [NSNumber numberWithBool:YES], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
+    if ([TBSettings flag:@"ppc_enabled"]) {
+        addRow(rows, @"commander", @"Commander (this Mac)", [TBSettings flag:@"ppc_approval"], YES);
+        addRow(rows, @"sudo", @"Administrator (sudo) for Commander", NO, NO);
+        addRow(rows, @"screen", @"Screen control (mouse and keyboard)", YES, NO);
+    }
     if ([TBSettings flag:@"toolbox_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"toolbox", @"id", @"Agent toolbox", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
+        addRow(rows, @"toolbox", @"Agent toolbox", NO, YES);
     if ([TBSettings flag:@"download_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"download", @"id", @"Download files from the web (https)", @"title", [NSNumber numberWithBool:YES], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
+        addRow(rows, @"download", @"Download files from the web (https)", YES, NO);
     if ([TBSettings flag:@"search_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"search", @"id", @"Web search", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:YES], @"default", nil]];
+        addRow(rows, @"search", @"Web search", NO, YES);
     if ([TBSettings flag:@"consult_enabled"])
-        [rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"consult", @"id", @"Ask other models", @"title", [NSNumber numberWithBool:NO], @"approval", [NSNumber numberWithBool:NO], @"default", nil]];
+        addRow(rows, @"consult", @"Ask other models", NO, NO);
     [rows addObjectsFromArray:[TBIntegrations catalogue]];
     return [NSPropertyListSerialization dataFromPropertyList:[NSDictionary dictionaryWithObjectsAndKeys:rows, @"tools", problem, @"commander_problem", @"", @"commander_code", nil]
                                                       format:NSPropertyListXMLFormat_v1_0 errorDescription:&error];
@@ -246,7 +250,7 @@ static NSArray *cleanedMessages(NSDictionary *incoming, BOOL requireUserEnd)
                     model = value ? value : @"";
                 }
             }
-            limit = [provider isEqualToString:@"local"] ? [TBLocal contextForModel:model] : [TBPricing liveContextForProvider:provider model:model];
+            limit = [provider isEqualToString:@"local"] ? [TBLocal contextForModel:model] : 0;
             if (!limit)
                 limit = [TBProviders contextLimitForModel:model];
             return textReply(200, [NSString stringWithFormat:@"%d\n", limit]);

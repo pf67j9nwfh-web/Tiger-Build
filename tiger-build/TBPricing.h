@@ -8,6 +8,4 @@
 /* usage: input (not from cache), cached, written, output. Dollars, or nil if the price is unknown. */
 + (NSNumber *)costForProvider:(NSString *)provider model:(NSString *)model usage:(NSDictionary *)usage;
 /* A context size learned from the service for this model, or 0 to use the table. */
-+ (int)liveContextForProvider:(NSString *)provider model:(NSString *)model;
-+ (void)setLiveContext:(int)tokens forProvider:(NSString *)provider model:(NSString *)model;
 @end

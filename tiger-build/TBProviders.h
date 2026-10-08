@@ -33,7 +33,6 @@
 + (NSString *)normalize:(NSString *)name;                 /* "openai" -> "chatgpt"; fails on a name it does not know */
 + (NSString *)resolveModel:(NSString *)requested provider:(NSString *)provider;
 + (int)contextLimitForModel:(NSString *)model;
-+ (void)setLiveModels:(NSArray *)ids forProvider:(NSString *)provider;
 + (NSString *)apiErrorText:(NSString *)detail code:(int)code;
 + (NSString *)localBase;                                  /* the local server's /v1 address, or "" */
 

@@ -4,12 +4,10 @@
    command to run on it). Tiger Build makes its own key and keeps its own list of trusted hosts, in
    ~/Library/Application Support/Tiger Build/ssh, so nothing in ~/.ssh is touched. */
 @interface TBSSH : NSObject
-+ (NSString *)publicKey;               /* makes the key first; nil if ssh-keygen failed */
 + (NSString *)publicKeyForHost:(NSString *)host;     /* the key that host is reached with (ed25519, or RSA for a host that only speaks the old algorithms) */
 + (NSString *)programForTarget:(NSString *)target;   /* the ssh to run: Tiger Build's own, or the system's for an old host */
 + (NSString *)fingerprintOfHost:(NSString *)host problem:(NSString **)problem;   /* looks at the host's key; does not trust it */
 + (BOOL)trustHost:(NSString *)host problem:(NSString **)problem;                 /* remembers the key seen by -fingerprintOfHost: */
-+ (void)forgetHost:(NSString *)host;
 + (NSString *)hostOfTarget:(NSString *)target;
 /* The ssh arguments that run remoteCommand on user@host (empty command: just connect); nil with *problem if not set up. */
 + (NSArray *)argumentsForTarget:(NSString *)target remote:(NSString *)remoteCommand problem:(NSString **)problem;

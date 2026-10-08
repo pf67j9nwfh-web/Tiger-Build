@@ -61,6 +61,19 @@ BOOL TBTruth(id container, NSString *key)
     return [value isKindOfClass:[NSNumber class]] && [value boolValue];
 }
 
+BOOL TBTruthy(id v)
+{
+    if (!v)
+        return NO;
+    if ([v isKindOfClass:[NSString class]])
+        return [v length] > 0;
+    if ([v isKindOfClass:[NSArray class]] || [v isKindOfClass:[NSDictionary class]])
+        return [v count] > 0;
+    if ([v isKindOfClass:[NSNumber class]])
+        return [v boolValue];
+    return YES;
+}
+
 NSString *TBTrim(NSString *text)
 {
     return [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];

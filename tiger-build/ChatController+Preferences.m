@@ -7,11 +7,6 @@
 
 #define TB_LOCAL_EXAMPLE @"http://127.0.0.1:1234/v1"
 
-static NSString *trimmedValue(NSTextField *field)
-{
-    return [[field stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-}
-
 @interface ChatController (PreferencesPrivate)
 - (void)loadSSHFields;
 - (void)saveSSHFields;
@@ -199,7 +194,7 @@ static NSString *trimmedValue(NSTextField *field)
     body = [NSMutableString stringWithString:@"{"];
     for (i = 0; i < [keys count]; i++) {
         NSString *key = [keys objectAtIndex:i];
-        NSString *value = trimmedValue([prefsFields objectForKey:key]);
+        NSString *value = TBTrim([[prefsFields objectForKey:key] stringValue]);
         /* Blank means "leave as saved". Remove clears a saved value. */
         if ([value length] == 0)
             continue;
@@ -686,7 +681,7 @@ static NSString *trimmedValue(NSTextField *field)
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     BOOL remote = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
-    [defaults setObject:trimmedValue([prefsFields objectForKey:@"commander.blocked"]) forKey:@"TBCommanderBlocked"];
+    [defaults setObject:TBTrim([[prefsFields objectForKey:@"commander.blocked"] stringValue]) forKey:@"TBCommanderBlocked"];
     [defaults setBool:[[prefsFields objectForKey:@"commander.diffs"] state] == NSOnState forKey:@"TBCommanderDiffs"];
     [self setLoginLaunch:remote && [[prefsFields objectForKey:@"commander.login"] state] == NSOnState];
     if (remote && [[prefsFields objectForKey:@"commander.remotesudo"] state] == NSOnState) {

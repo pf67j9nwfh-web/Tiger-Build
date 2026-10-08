@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TBSSH.h"
+#import "TBEngine.h"
 
 /* The tools window: the switches for Commander and the built-in tools,
    web search keys, and the list of custom MCP servers. It is tabbed so every
@@ -238,11 +239,6 @@
 
 static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Contents/Resources/ppc-commander\"";
 
-static NSString *trimmedText(NSString *text)
-{
-    return [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-}
-
 /* 0 program on this Mac, 1 web address, 2 another computer over SSH, 3 Commander on another computer */
 - (void)serverKindChanged:(id)sender
 {
@@ -260,7 +256,7 @@ static NSString *trimmedText(NSString *text)
     for(i=0;i<[[f objectForKey:@"sheetSSH"] count];i++)[[[f objectForKey:@"sheetSSH"] objectAtIndex:i] setHidden:!ssh];
 }
 - (void)sheetStatus:(NSString *)text {[[[self integrationFields] objectForKey:@"sheetStatus"] setStringValue:text?text:@""];[[[self integrationFields] objectForKey:@"sheetStatus"] displayIfNeeded];}
-- (NSString *)sheetTarget {return trimmedText([[[self integrationFields] objectForKey:@"sheetProgram"] stringValue]);}
+- (NSString *)sheetTarget {return TBTrim([[[self integrationFields] objectForKey:@"sheetProgram"] stringValue]);}
 - (void)sheetCopyKey:(id)sender
 {
     (void)sender;
@@ -373,16 +369,16 @@ static NSString *trimmedText(NSString *text)
     int result=[NSApp runModalForWindow:panel];[panel orderOut:nil];
     if(result!=1)return nil;
     int chosen=[kind indexOfSelectedItem];
-    NSString *name=trimmedText([[fieldList objectAtIndex:0] stringValue]);
-    NSString *command=trimmedText([[fieldList objectAtIndex:2] stringValue]);
+    NSString *name=TBTrim([[fieldList objectAtIndex:0] stringValue]);
+    NSString *command=TBTrim([[fieldList objectAtIndex:2] stringValue]);
     NSString *args=[[fieldList objectAtIndex:3] stringValue];
     NSArray *argList;
     if(chosen>=2){
-        if(![[command componentsSeparatedByString:@"@"] count]||[[command componentsSeparatedByString:@"@"] count]!=2||![trimmedText(args) length]){
+        if(![[command componentsSeparatedByString:@"@"] count]||[[command componentsSeparatedByString:@"@"] count]!=2||![TBTrim(args) length]){
             NSRunAlertPanel(@"MCP Server",@"Enter the other computer as user@address, and the command to run there.",@"OK",nil,nil);return nil;
         }
         command=[@"ssh:" stringByAppendingString:command];
-        argList=[NSArray arrayWithObject:trimmedText(args)];
+        argList=[NSArray arrayWithObject:TBTrim(args)];
     } else {
         if(!([command hasPrefix:@"/"]||[[command lowercaseString] hasPrefix:@"http://"]||[[command lowercaseString] hasPrefix:@"https://"]||[command hasPrefix:@"builtin:"])) {
             NSRunAlertPanel(@"MCP Server",@"Enter the absolute path of a program on this Mac, or an http:// or https:// address.",@"OK",nil,nil);return nil;
@@ -399,7 +395,7 @@ static NSString *trimmedText(NSString *text)
         if(eq.location!=NSNotFound&&eq.location>0)[vars setObject:[line substringFromIndex:eq.location+1] forKey:[line substringToIndex:eq.location]];
     }
     return [NSMutableDictionary dictionaryWithObjectsAndKeys:name,@"id",[[fieldList objectAtIndex:1] stringValue],@"title",command,@"command",
-        argList,@"args",vars,@"env",trimmedText([desc string]),@"description",
+        argList,@"args",vars,@"env",TBTrim([desc string]),@"description",
         [NSNumber numberWithBool:[on state]==NSOnState],@"enabled",[NSNumber numberWithBool:[ask state]==NSOnState],@"approval",nil];
 }
 - (void)addIntegrationServer:(id)sender

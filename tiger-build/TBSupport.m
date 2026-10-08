@@ -734,7 +734,6 @@ static NSMutableDictionary *openStores = nil;
 - (NSMutableArray *)chats { return chats; }
 - (NSMutableDictionary *)settings { return settings; }
 - (int)next { return next; }
-- (void)setNext:(int)value { next = value; }
 
 - (int)takeNextId
 {

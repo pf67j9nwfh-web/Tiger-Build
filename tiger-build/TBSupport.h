@@ -75,7 +75,6 @@ extern NSString *TBStoreChangedNotification;
 - (NSMutableDictionary *)settings;
 - (int)next;
 - (int)takeNextId;
-- (void)setNext:(int)value;
 - (void)markDirty;
 - (void)flush;
 @end

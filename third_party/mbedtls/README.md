@@ -23,4 +23,4 @@ without assembly because Darwin's libgcc has no `__udivti3`.
 `include/` and `lib/` are kept in git, so the app builds without either script.
 
 Read the CA bundle into memory and parse it with `mbedtls_x509_crt_parse`: it takes about 20 ms, while `mbedtls_x509_crt_parse_file`
-took 0.6 to 25 seconds on the old Macs. Resolve IPv4 first and set a connect timeout. See `spikes/tls/tlstest13.c`.
+took 0.6 to 25 seconds on the old Macs. Resolve IPv4 first and set a connect timeout.

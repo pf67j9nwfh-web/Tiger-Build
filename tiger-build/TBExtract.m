@@ -286,23 +286,17 @@ static NSData *checkedXML(NSData *xml)
 
 @end
 
-/* shared strings, workbook sheets, relationships and cells of a spreadsheet */
+/* shared strings, workbook sheets and relationships of a spreadsheet (the cells themselves are read straight from the bytes, below) */
 @interface TBCells : NSObject TB_PROTOCOLS(NSXMLParserDelegate)
 {
-    NSMutableArray *strings, *sheets, *rows, *cells;
+    NSMutableArray *strings, *sheets;
     NSMutableDictionary *targets;
-    NSMutableString *value, *inline_;
-    NSString *kind, *reference;
-    BOOL inSI, inV, inT;
-    int inIS;
     NSMutableString *item;
-    int limit, kept;                     /* stop after this many rows that hold something */
-    BOOL stopped;
+    BOOL inSI, inT;
 }
 + (NSArray *)sharedStrings:(NSData *)xml;
 + (NSArray *)sheetNames:(NSData *)xml; /* [{name, id}] */
 + (NSDictionary *)relationships:(NSData *)xml;
-+ (NSArray *)rowsOf:(NSData *)xml shared:(NSArray *)shared limit:(int)limit stopped:(BOOL *)stopped;
 @end
 
 @implementation TBCells
@@ -313,10 +307,7 @@ static NSData *checkedXML(NSData *xml)
     NSXMLParser *parser = [[[NSXMLParser alloc] initWithData:checkedXML(xml)] autorelease];
     me->strings = [NSMutableArray array];
     me->sheets = [NSMutableArray array];
-    me->rows = [NSMutableArray array];
     me->targets = [NSMutableDictionary dictionary];
-    me->value = [NSMutableString string];
-    me->inline_ = [NSMutableString string];
     me->item = [NSMutableString string];
     [parser setDelegate:me];
     [parser parse];
@@ -326,34 +317,6 @@ static NSData *checkedXML(NSData *xml)
 + (NSArray *)sharedStrings:(NSData *)xml { return [self run:xml]->strings; }
 + (NSArray *)sheetNames:(NSData *)xml { return [self run:xml]->sheets; }
 + (NSDictionary *)relationships:(NSData *)xml { return [self run:xml]->targets; }
-+ (NSArray *)rowsOf:(NSData *)xml shared:(NSArray *)shared limit:(int)limit stopped:(BOOL *)stopped
-{
-    TBCells *me = [[[TBCells alloc] init] autorelease];
-    NSXMLParser *parser = [[[NSXMLParser alloc] initWithData:checkedXML(xml)] autorelease];
-    me->strings = [NSMutableArray arrayWithArray:shared];
-    me->rows = [NSMutableArray array];
-    me->value = [NSMutableString string];
-    me->inline_ = [NSMutableString string];
-    me->item = [NSMutableString string];
-    me->limit = limit;
-    [parser setDelegate:me];
-    [parser parse];
-    *stopped = me->stopped;
-    return me->rows;
-}
-
-static int columnOf(NSString *ref)
-{
-    int n = 0;
-    unsigned i;
-    for (i = 0; i < [ref length]; i++) {
-        unichar c = [ref characterAtIndex:i];
-        if (c < 'A' || c > 'Z')
-            break;
-        n = n * 26 + c - 'A' + 1;
-    }
-    return n ? n - 1 : 0;
-}
 
 - (void)parser:(NSXMLParser *)p didStartElement:(NSString *)element namespaceURI:(NSString *)uri qualifiedName:(NSString *)q attributes:(NSDictionary *)a
 {
@@ -373,17 +336,6 @@ static int columnOf(NSString *ref)
         NSString *path = [a objectForKey:@"Target"];
         if ([a objectForKey:@"Id"] && path)
             [targets setObject:[path hasPrefix:@"/"] ? [path substringFromIndex:1] : [@"xl/" stringByAppendingString:path] forKey:[a objectForKey:@"Id"]];
-    } else if ([name isEqualToString:@"row"]) {
-        cells = [NSMutableArray array];
-    } else if ([name isEqualToString:@"c"]) {
-        kind = [a objectForKey:@"t"];
-        reference = [a objectForKey:@"r"];
-        [value setString:@""];
-        [inline_ setString:@""];
-    } else if ([name isEqualToString:@"v"]) {
-        inV = YES;
-    } else if ([name isEqualToString:@"is"]) {
-        inIS++;
     } else if ([name isEqualToString:@"t"]) {
         inT = YES;
     }
@@ -395,53 +347,31 @@ static int columnOf(NSString *ref)
     if ([name isEqualToString:@"si"]) {
         inSI = NO;
         [strings addObject:[[item copy] autorelease]];
-    } else if ([name isEqualToString:@"v"]) {
-        inV = NO;
-    } else if ([name isEqualToString:@"t"]) {
+    } else if ([name isEqualToString:@"t"])
         inT = NO;
-    } else if ([name isEqualToString:@"is"]) {
-        inIS--;
-    } else if ([name isEqualToString:@"c"] && cells) {
-        NSString *text = @"";
-        int column = columnOf(reference);
-        if ([kind isEqualToString:@"s"] && [value length] && [value intValue] >= 0 && (unsigned)[value intValue] < [strings count] && [[NSString stringWithFormat:@"%d", [value intValue]] isEqualToString:value])
-            text = [strings objectAtIndex:[value intValue]];
-        else if ([kind isEqualToString:@"inlineStr"])
-            text = [[inline_ copy] autorelease];
-        else if ([value length])
-            text = [[value copy] autorelease];
-        while ((int)[cells count] < column && column < 16384)
-            [cells addObject:@""];
-        text = swap(swap(text, @"\t", @" "), @"\n", @" ");
-        [cells addObject:text];
-    } else if ([name isEqualToString:@"row"] && cells) {
-        unsigned c;
-        BOOL holds = NO;
-        for (c = 0; c < [cells count] && !holds; c++)
-            if ([[cells objectAtIndex:c] length])
-                holds = YES;
-        [rows addObject:cells];
-        cells = nil;
-        /* A big sheet is read only as far as will be shown: on an old Mac the rest takes many seconds. */
-        if (holds && limit > 0 && ++kept >= limit) {
-            stopped = YES;
-            [p abortParsing];
-        }
-    }
 }
 
 - (void)parser:(NSXMLParser *)p foundCharacters:(NSString *)string
 {
     if (inSI && inT)
         [item appendString:string];
-    else if (inIS && inT)
-        [inline_ appendString:string];
-    else if (inV)
-        [value appendString:string];
 }
 
 @end
 
+
+static int columnOf(NSString *ref)
+{
+    int n = 0;
+    unsigned i;
+    for (i = 0; i < [ref length]; i++) {
+        unichar c = [ref characterAtIndex:i];
+        if (c < 'A' || c > 'Z')
+            break;
+        n = n * 26 + c - 'A' + 1;
+    }
+    return n ? n - 1 : 0;
+}
 
 static const unsigned char *memmem_ptr(const unsigned char *p, const unsigned char *end, const char *needle)
 {

@@ -4,7 +4,6 @@
 #import "TBHTTP.h"
 
 static NSDictionary *rates = nil;
-static NSMutableDictionary *liveContexts = nil;
 static BOOL started = NO;
 static NSString *priceURL = @"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 
@@ -111,7 +110,6 @@ static void install(NSDictionary *newRates, double stamp)
     if (started)
         return;
     started = YES;
-    liveContexts = [[NSMutableDictionary alloc] init];
     data = [NSData dataWithContentsOfFile:cachePath()];
     blob = data ? TBJSONParse(data, NULL) : nil;
     if (![TBDictionary(blob, @"rates") count]) {
@@ -197,26 +195,6 @@ static double rate(NSDictionary *row, NSString *field, long long prompt)
     prompt = input + cached + written;
     return [NSNumber numberWithDouble:input * rate(row, @"input", prompt) + cached * rate(row, @"cache_read_input", prompt)
         + written * rate(row, @"cache_creation_input", prompt) + output * rate(row, @"output", prompt)];
-}
-
-+ (int)liveContextForProvider:(NSString *)provider model:(NSString *)model
-{
-    NSNumber *n;
-    if (!liveContexts)
-        return 0;
-    @synchronized(liveContexts) {
-        n = [liveContexts objectForKey:[NSString stringWithFormat:@"%@/%@", provider, model]];
-    }
-    return n ? [n intValue] : 0;
-}
-
-+ (void)setLiveContext:(int)tokens forProvider:(NSString *)provider model:(NSString *)model
-{
-    if (!liveContexts)
-        liveContexts = [[NSMutableDictionary alloc] init];
-    @synchronized(liveContexts) {
-        [liveContexts setObject:[NSNumber numberWithInt:tokens] forKey:[NSString stringWithFormat:@"%@/%@", provider, model]];
-    }
 }
 
 @end

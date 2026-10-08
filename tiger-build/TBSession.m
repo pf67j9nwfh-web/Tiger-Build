@@ -23,7 +23,6 @@ static NSString *const kSystem = @"You are an assistant chatting inside Tiger Bu
     "is not tied to this chat. Use open for a Mac .app. "
     "The shell is bash and the system Python is 2.3. "
     "After the tools finish, answer in a few plain sentences.";
-static BOOL truthyValue(id v);
 static BOOL mentionsWord(NSString *line, NSString *word);
 static NSString *const kLimitNote = @"\n\n[The reply stopped here because the model reached its output limit. Say \"continue\" and it will pick up where it left off.]";
 static NSString *const kStepNote = @"\n\n[Stopped after %d tool steps in one turn. Say \"continue\" to keep going.]";
@@ -502,7 +501,7 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (int)contextLimitForProvider:(NSString *)provider model:(NSString *)model
 {
-    int live = [provider isEqualToString:@"local"] ? [TBLocal contextForModel:model] : [TBPricing liveContextForProvider:provider model:model];
+    int live = [provider isEqualToString:@"local"] ? [TBLocal contextForModel:model] : 0;
     return live ? live : [TBProviders contextLimitForModel:model];
 }
 
@@ -559,9 +558,9 @@ static NSDictionary *callArguments(NSDictionary *call)
     NSDictionary *stats;
     unsigned i;
     NSArray *fallbacks = [NSArray arrayWithObjects:@"input", @"query", @"url", @"question", nil];
-    for (i = 0; !truthyValue(detail) && i < [fallbacks count]; i++)
+    for (i = 0; !TBTruthy(detail) && i < [fallbacks count]; i++)
         detail = TBValue(args, [fallbacks objectAtIndex:i]);
-    if (!truthyValue(detail))
+    if (!TBTruthy(detail))
         detail = TBJSONString(args);
     shown = [detail isKindOfClass:[NSString class]] ? detail : [detail description];
     if ([shown length] > 20000)
@@ -593,17 +592,6 @@ static BOOL mentionsWord(NSString *line, NSString *word)
             return YES;
         at = found;
     }
-}
-
-static BOOL truthyValue(id v)
-{
-    if (!v)
-        return NO;
-    if ([v isKindOfClass:[NSString class]])
-        return [v length] > 0;
-    if ([v isKindOfClass:[NSNumber class]])
-        return [v boolValue];
-    return YES;
 }
 
 - (NSDictionary *)capCommandWait:(NSDictionary *)args
@@ -655,7 +643,7 @@ static BOOL truthyValue(id v)
         unsigned i;
         for (i = 0; i < [names count] && !detail; i++) {
             id v = TBValue(args, [names objectAtIndex:i]);
-            if (truthyValue(v))
+            if (TBTruthy(v))
                 detail = [v isKindOfClass:[NSString class]] ? v : [v description];
         }
     }
