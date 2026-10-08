@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2.3 (in progress)
+- **EPUB books** (title, author, chapter text and cover) and **ZIP archives** (the file list) can be attached and read by `convert_file`. **Quick Look** previews them too, and shows **Markdown** and **CSV** files as formatted pages.
 - **Uninstaller**: Configuration, *Uninstall Tiger Build...* (or `sudo /usr/local/tbssh/bin/tiger-build-uninstall`), with an option to delete your data and saved keys too.
 - **A sound when a reply finishes** off screen or in the background, and a Dock bounce; **spending limits** per chat and per day; **Check for Updates...** against the latest GitHub release (once a day at start, switchable). Preferences has a new Alerts tab.
 

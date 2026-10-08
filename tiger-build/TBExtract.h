@@ -22,6 +22,7 @@ extern NSString *TBExtractError; /* exception name; the reason is for the person
 - (NSArray *)names;
 - (BOOL)has:(NSString *)name;
 - (NSData *)dataFor:(NSString *)name; /* raises TBExtractError when it is too large or damaged */
+- (double)sizeOf:(NSString *)name;
 - (double)totalSize;
 @end
 

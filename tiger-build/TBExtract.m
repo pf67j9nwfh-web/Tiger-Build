@@ -93,6 +93,7 @@ static unsigned le32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2]
 }
 
 - (NSArray *)names { return [entries allKeys]; }
+- (double)sizeOf:(NSString *)name { return [[[entries objectForKey:name] objectAtIndex:2] doubleValue]; }
 - (BOOL)has:(NSString *)name { return [entries objectForKey:name] != nil; }
 
 - (double)totalSize
@@ -1580,7 +1581,7 @@ static NSArray *types(int which)
 {
     switch (which) {
     case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jxl", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
-    case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", nil];
+    case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", @"epub", @"zip", nil];
     }
     return [NSArray arrayWithObjects:@"pages", @"numbers", @"key", nil];
 }
@@ -1590,6 +1591,165 @@ static NSArray *types(int which)
 @end
 
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
+
+/* ---- ZIP archives (the list of what is inside) and EPUB books ---- */
+
+static NSString *sizeText(double bytes)
+{
+    if (bytes < 1024)
+        return [NSString stringWithFormat:@"%.0f B", bytes];
+    if (bytes < 1024 * 1024)
+        return [NSString stringWithFormat:@"%.1f KB", bytes / 1024];
+    if (bytes < 1024.0 * 1024 * 1024)
+        return [NSString stringWithFormat:@"%.1f MB", bytes / (1024 * 1024)];
+    return [NSString stringWithFormat:@"%.2f GB", bytes / (1024.0 * 1024 * 1024)];
+}
+
+static NSString *pad10(NSString *t)
+{
+    unsigned n = [t length];
+    return n >= 10 ? t : [[@"" stringByPaddingToLength:10 - n withString:@" " startingAtIndex:0] stringByAppendingString:t];
+}
+
+static NSString *zipListing(TBZip *zip)
+{
+    NSArray *names = [[zip names] sortedArrayUsingSelector:@selector(compare:)];
+    NSMutableString *out = [NSMutableString string];
+    unsigned i, files = 0, shown = 0;
+    for (i = 0; i < [names count]; i++)
+        if (![[names objectAtIndex:i] hasSuffix:@"/"])
+            files++;
+    [out appendFormat:@"ZIP archive: %u files, %@ unpacked.\n\n", files, sizeText([zip totalSize])];
+    for (i = 0; i < [names count] && shown < 1000; i++) {
+        NSString *name = [names objectAtIndex:i];
+        [out appendFormat:@"%@  %@\n", pad10([name hasSuffix:@"/"] ? @"folder" : sizeText([zip sizeOf:name])), name];
+        shown++;
+    }
+    if (shown < [names count])
+        [out appendFormat:@"... and %u more.\n", (unsigned)[names count] - shown];
+    return out;
+}
+
+/* The value of attribute `name` inside one tag's text */
+static NSString *tagAttr(NSString *tag, NSString *name)
+{
+    NSRange r = [tag rangeOfString:[name stringByAppendingString:@"=\""]];
+    char quote = '"';
+    NSRange end;
+    if (r.location == NSNotFound) {
+        r = [tag rangeOfString:[name stringByAppendingString:@"='"]];
+        quote = '\'';
+    }
+    if (r.location == NSNotFound)
+        return nil;
+    tag = [tag substringFromIndex:r.location + r.length];
+    end = [tag rangeOfString:[NSString stringWithFormat:@"%c", quote]];
+    return end.location == NSNotFound ? nil : [tag substringToIndex:end.location];
+}
+
+/* every <tag ...> of that name in the XML text */
+static NSArray *tagsNamed(NSString *xml, NSString *name)
+{
+    NSMutableArray *out = [NSMutableArray array];
+    NSString *open = [@"<" stringByAppendingString:name];
+    NSRange from = NSMakeRange(0, [xml length]);
+    for (;;) {
+        NSRange r = [xml rangeOfString:open options:0 range:from], close;
+        unichar after;
+        if (r.location == NSNotFound)
+            break;
+        from = NSMakeRange(r.location + r.length, [xml length] - r.location - r.length);
+        if (from.length == 0)
+            break;
+        after = [xml characterAtIndex:from.location];
+        if (after != ' ' && after != '\n' && after != '\t' && after != '/' && after != '>')
+            continue;
+        close = [xml rangeOfString:@">" options:0 range:from];
+        if (close.location == NSNotFound)
+            break;
+        [out addObject:[xml substringWithRange:NSMakeRange(r.location, close.location - r.location)]];
+        from = NSMakeRange(close.location, [xml length] - close.location);
+    }
+    return out;
+}
+
+static NSString *utf8(NSData *d)
+{
+    NSString *s = [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] autorelease];
+    return s ? s : [[[NSString alloc] initWithData:d encoding:NSISOLatin1StringEncoding] autorelease];
+}
+
+/* An EPUB's title, author and the text of its chapters in reading order; *cover gets the cover picture's bytes when there is one. */
+static NSString *epubText(TBZip *zip, NSData **cover)
+{
+    NSString *container = [zip has:@"META-INF/container.xml"] ? utf8([zip dataFor:@"META-INF/container.xml"]) : nil;
+    NSArray *roots = container ? tagsNamed(container, @"rootfile") : nil;
+    NSString *opfPath = [roots count] ? tagAttr([roots objectAtIndex:0], @"full-path") : nil, *dir, *opf, *coverId = nil;
+    NSMutableDictionary *hrefs = [NSMutableDictionary dictionary], *props = [NSMutableDictionary dictionary];
+    NSMutableString *out = [NSMutableString string];
+    NSArray *titles, *authors, *items;
+    unsigned i;
+    if (!opfPath || ![zip has:opfPath])
+        fail(@"This EPUB has no book description (container.xml), so it cannot be read.");
+    opf = utf8([zip dataFor:opfPath]);
+    dir = [opfPath rangeOfString:@"/"].location == NSNotFound ? @"" : [[opfPath stringByDeletingLastPathComponent] stringByAppendingString:@"/"];
+    items = tagsNamed(opf, @"item");
+    for (i = 0; i < [items count]; i++) {
+        NSString *tag = [items objectAtIndex:i], *ident = tagAttr(tag, @"id"), *href = tagAttr(tag, @"href");
+        if (ident && href) {
+            [hrefs setObject:href forKey:ident];
+            if (tagAttr(tag, @"properties"))
+                [props setObject:tagAttr(tag, @"properties") forKey:ident];
+            if ([[props objectForKey:ident] rangeOfString:@"cover-image"].location != NSNotFound)
+                coverId = ident;
+        }
+    }
+    {
+        NSArray *metas = tagsNamed(opf, @"meta");
+        for (i = 0; i < [metas count] && !coverId; i++)
+            if ([tagAttr([metas objectAtIndex:i], @"name") isEqualToString:@"cover"])
+                coverId = tagAttr([metas objectAtIndex:i], @"content");
+    }
+    titles = [TBParas parse:[opf dataUsingEncoding:NSUTF8StringEncoding] paragraphs:[NSArray arrayWithObject:@"title"] text:nil breaks:NO];
+    authors = [TBParas parse:[opf dataUsingEncoding:NSUTF8StringEncoding] paragraphs:[NSArray arrayWithObject:@"creator"] text:nil breaks:NO];
+    if ([titles count])
+        [out appendFormat:@"%@\n", TBTrim([titles objectAtIndex:0])];
+    if ([authors count])
+        [out appendFormat:@"by %@\n", TBTrim([authors componentsJoinedByString:@", "])];
+    [out appendString:@"\n"];
+    if (coverId && [hrefs objectForKey:coverId] && cover) {
+        NSString *path = [dir stringByAppendingString:[[hrefs objectForKey:coverId] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
+        if ([zip has:path] && [zip sizeOf:path] < 20 * 1024 * 1024)
+            *cover = [zip dataFor:path];
+    }
+    {
+        NSArray *refs = tagsNamed(opf, @"itemref");
+        NSArray *blocks = [NSArray arrayWithObjects:@"p", @"h1", @"h2", @"h3", @"h4", @"h5", @"h6", @"li", @"blockquote", @"pre", @"td", nil];
+        for (i = 0; i < [refs count] && [out length] < MAX_TEXT; i++) {
+            NSString *href = [hrefs objectForKey:tagAttr([refs objectAtIndex:i], @"idref")], *path;
+            NSData *page;
+            NSArray *paras;
+            if (!href)
+                continue;
+            if ([href rangeOfString:@"#"].location != NSNotFound)
+                href = [href substringToIndex:[href rangeOfString:@"#"].location];
+            path = [dir stringByAppendingString:[href stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
+            if (![zip has:path] || [zip sizeOf:path] > 8 * 1024 * 1024)
+                continue;
+            page = [zip dataFor:path];
+            paras = [TBParas parse:page paragraphs:blocks text:nil breaks:YES];
+            if ([paras count] > 0) {
+                unsigned k;
+                for (k = 0; k < [paras count]; k++) {
+                    NSString *line = TBTrim([paras objectAtIndex:k]);
+                    if ([line length])
+                        [out appendFormat:@"%@\n\n", line];
+                }
+            }
+        }
+    }
+    return out;
+}
 
 @implementation TBExtract
 
@@ -1701,9 +1861,25 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
             fail(@"This file looks cut short, as if its copy or download did not finish. Copy it again.");
         fail(@"This file is not in a form the converter can read. Save it again, or export it as PDF or text.");
     }
+    if ([ext isEqualToString:@"zip"])
+        return [self reply:zipListing(zip) images:[NSArray array] note:@"A list of what is in this archive; nothing was unpacked."];
     if ([zip totalSize] > MAX_ALL)
         fail(@"This file unpacks to more than 400 MB, which the converter will not read.");
-    if ([ext isEqualToString:@"docx"])
+    if ([ext isEqualToString:@"epub"]) {
+        NSData *cover = nil;
+        NSMutableDictionary *book;
+        text = epubText(zip, &cover);
+        if (cover) {
+            NSData *jpeg = jpegFrom(cover, 1200);
+            if (jpeg)
+                [images addObject:jpeg];
+        }
+        if ([text length] > MAX_TEXT)
+            text = [text substringToIndex:MAX_TEXT];
+        book = [NSMutableDictionary dictionaryWithDictionary:[self reply:text images:images note:@"The title, author and text of the chapters of this book, in reading order; pictures and layout are not included. The picture is the cover."]];
+        [book setObject:[NSNumber numberWithBool:YES] forKey:@"textFirst"];
+        return book;
+    } else if ([ext isEqualToString:@"docx"])
         text = docxText(zip);
     else if ([ext isEqualToString:@"pptx"]) {
         text = pptxText(zip);

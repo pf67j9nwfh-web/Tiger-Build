@@ -15,6 +15,13 @@
 				<string>public.heif</string>
 				<string>public.avif</string>
 				<string>org.webmproject.webp</string>
+				<string>public.jpeg-xl</string>
+				<string>public.json</string>
+				<string>net.daringfireball.markdown</string>
+				<string>public.comma-separated-values-text</string>
+				<string>public.tab-separated-values-text</string>
+				<string>com.pkware.zip-archive</string>
+				<string>org.idpf.epub-container</string>
 				<string>org.openxmlformats.wordprocessingml.document</string>
 				<string>org.openxmlformats.spreadsheetml.sheet</string>
 				<string>org.openxmlformats.presentationml.presentation</string>
@@ -122,6 +129,96 @@
 				<array><string>webp</string></array>
 				<key>public.mime-type</key>
 				<string>image/webp</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>public.jpeg-xl</string>
+			<key>UTTypeDescription</key>
+			<string>JPEG XL image</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.image</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>jxl</string></array>
+				<key>public.mime-type</key>
+				<string>image/jxl</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>public.json</string>
+			<key>UTTypeDescription</key>
+			<string>JSON</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>json</string></array>
+				<key>public.mime-type</key>
+				<string>application/json</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeDescription</key>
+			<string>Markdown document</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.plain-text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>md</string><string>markdown</string><string>mdown</string><string>mkd</string></array>
+				<key>public.mime-type</key>
+				<string>text/markdown</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>public.comma-separated-values-text</string>
+			<key>UTTypeDescription</key>
+			<string>CSV text</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.plain-text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>csv</string></array>
+				<key>public.mime-type</key>
+				<string>text/csv</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>public.tab-separated-values-text</string>
+			<key>UTTypeDescription</key>
+			<string>Tab-separated text</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.plain-text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>tsv</string></array>
+				<key>public.mime-type</key>
+				<string>text/tab-separated-values</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.idpf.epub-container</string>
+			<key>UTTypeDescription</key>
+			<string>EPUB book</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string><string>public.composite-content</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>epub</string></array>
+				<key>public.mime-type</key>
+				<string>application/epub+zip</string>
 			</dict>
 		</dict>
 		<dict>
