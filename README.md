@@ -83,7 +83,7 @@ Your chat history stays on the Mac. API keys are kept in that Mac's Keychain and
 
 ## Setup
 
-**1. Install.** Open `TigerBuild-2.0.pkg` (or build it yourself, below). It installs Tiger Build in `/Applications`; Commander is inside the app, so nothing else is installed and no sharing service is turned on.
+**1. Install.** Open `TigerBuild-2.1.pkg` (or build it yourself, below). It installs Tiger Build in `/Applications`; Commander is inside the app, so nothing else is installed and no sharing service is turned on.
 
 **2. Add keys.** Open **Tiger Build → Preferences**. On the **API Keys** tab paste a key for each service you use, then Save. Keys go to the Keychain; Tiger Build only shows whether one is saved. For LM Studio or Ollama, enter its address on the **Local LLM Server** tab (it can be another computer on your network).
 
@@ -211,7 +211,7 @@ sh tests/engine/run-host.sh                   # engine tests against mock servic
 
 | Script | Makes |
 | --- | --- |
-| `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-2.0.pkg` (the installer for the old Macs) |
+| `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-2.1.pkg` (the installer for the old Macs) |
 | `third_party/mbedtls/fetch.sh`, `build-mac.sh` | The TLS libraries (already built and kept in git) |
 | `third_party/libwebp/fetch.sh`, `build-mac.sh` | The WebP decoder (already built and kept in git) |
 | `third_party/libde265/fetch.sh`, `old-compilers.patch`, `build-mac.sh` | The HEIC video decoder as a dynamic library, patched for the old compilers (already built and kept in git) |

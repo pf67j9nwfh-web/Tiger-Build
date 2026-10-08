@@ -532,9 +532,9 @@ static NSString *newRunId(void)
         detail = [[detail substringToIndex:900] stringByAppendingString:@"..."];
     [NSApp activateIgnoringOtherApps:YES];
     choice = NSRunAlertPanel(@"Allow this tool?",
-        @"The model wants to run %@ (%@):\n\n%@\n\n\"Always Allow\" stops asking for %@ in this chat.",
+        @"In the chat \"%@\" the model wants to run %@ (%@):\n\n%@\n\n\"Always Allow\" stops asking for %@ in this chat.",
         @"Allow", @"Deny", @"Always Allow",
-        [event objectForKey:@"name"], title ? title : server, detail, title ? title : server);
+        [chat objectForKey:@"title"], [event objectForKey:@"name"], title ? title : server, detail, title ? title : server);
     if (choice == NSAlertDefaultReturn)
         decision = @"allow";
     else if (choice == NSAlertOtherReturn) {

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.1
+- **The approval prompt names the chat** that wants to run the tool, which matters when several chats work at once.
+
 ## 2.0
 - **Commander is a native program** (Objective-C, inside the app), not Python. It starts with a chat that uses it, listens on no port, and runs only for Tiger Build on the same Mac unless you turn on **Commander → Allow Other Computers**. Nothing needs Remote Login unless you want another computer to use this one.
 - **Other computers** are added as MCP servers over SSH (user@address and a command), with *Commander on another computer* as a preset; Tiger Build's own key and a host list you confirm are used. Every MCP server can have a description or instructions for the model.
