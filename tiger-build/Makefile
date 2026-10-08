@@ -41,7 +41,7 @@ HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h 
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
-.PHONY: all clean test convert cmtest
+.PHONY: all clean test convert cmtest quicklook
 
 all: $(BIN)
 
@@ -92,3 +92,20 @@ test: tbtests
 
 clean:
 	rm -rf $(APP) "Tiger Build.app" tbtests build
+
+# The Quick Look generator for Leopard and Snow Leopard (HEIC, AVIF, WebP, docx, xlsx, pptx, OpenDocument), built with the converter's sources.
+# ppc and i386 (10.5 SDK, which has the QuickLook framework) and x86_64; installed in /Library/QuickLook.
+QLDIR := TigerBuild.qlgenerator
+QLSRC := ../quicklook/TBQuickLook.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m
+quicklook: $(QLSRC) TBNet.c ../quicklook/Info.plist
+	rm -rf $(QLDIR) build/ql && mkdir -p build/ql $(QLDIR)/Contents/MacOS $(QLDIR)/Contents/Resources
+	$(CC32) $(CFLAGS32) -isysroot $(SDK64) -mmacosx-version-min=10.5 -c -o build/ql/TBNet32.o TBNet.c
+	$(CC32) $(CFLAGS32) -isysroot $(SDK64) -mmacosx-version-min=10.5 -fobjc-exceptions -I. -bundle -Wl,-w -o build/ql/ql32 $(QLSRC) build/ql/TBNet32.o $(LIBS32) -framework QuickLook
+	$(CC64) $(CFLAGSX86) -c -o build/ql/TBNetX64.o TBNet.c
+	$(CC64) $(CFLAGSX86) -fobjc-exceptions -I. -bundle -o build/ql/qlx64 $(QLSRC) build/ql/TBNetX64.o $(LIBSX86) -framework QuickLook
+	lipo -create build/ql/ql32 build/ql/qlx64 -output $(QLDIR)/Contents/MacOS/TigerBuildQL
+	cp ../quicklook/Info.plist $(QLDIR)/Contents/Info.plist
+	lipo -create $(DE265)/lib/libde265-32.dylib $(DE265)/lib/libde265-64x86.dylib -output $(QLDIR)/Contents/Resources/libde265.dylib
+	cp $(DE265)/LICENSE $(QLDIR)/Contents/Resources/libde265-LICENSE.txt
+	cp $(AOM)/LICENSE $(QLDIR)/Contents/Resources/libaom-LICENSE.txt
+	rm -rf build/ql

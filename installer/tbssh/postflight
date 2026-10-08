@@ -4,7 +4,9 @@
 D=/usr/local/tbssh
 chown -R root:wheel "$D" /Library/LaunchDaemons/local.tigerbuild.sshd.plist
 chmod 755 "$D" "$D/sbin" "$D/bin" "$D/libexec" "$D/etc" "$D/sbin/sshd" "$D/bin/"* "$D/libexec/"*
-chmod 644 "$D/etc/sshd_config" "$D/LICENSE" /Library/LaunchDaemons/local.tigerbuild.sshd.plist
+chmod 644 "$D/etc/sshd_config" "$D/LICENSE" "$D/sshfs-LICENSE" /Library/LaunchDaemons/local.tigerbuild.sshd.plist
 chown -R root:admin "/Applications/Tiger Build.app" 2>/dev/null
+chown -R root:wheel /Library/QuickLook/TigerBuild.qlgenerator 2>/dev/null
+qlmanage -r > /dev/null 2>&1
 mkdir -p /var/empty
 exit 0

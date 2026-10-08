@@ -14,6 +14,7 @@ mkdir -p "$DIST"
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
 NO_OPEN=1 bash "$ROOT/scripts/install-tiger.sh"
 
+COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT" -cf - quicklook/TigerBuild.qlgenerator third_party/sshfs/bin/sshfs third_party/sshfs/LICENSE | "$SSH" 'cd "$HOME/TigerBuild-build" && tar -xf -'
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/installer" -cf - tbssh | "$SSH" 'rm -rf "$HOME/TigerBuild-build/tbssh" && cd "$HOME/TigerBuild-build" && tar -xf -'
 
 "$SSH" bash -s << 'REMOTE'
@@ -37,6 +38,9 @@ cp "$T/ssh" "$T/ssh-keygen" "$T/ssh-keyscan" "$T/ssh-add" "$T/ssh-agent" "$T/scp
 cp "$S/sshd_config" "$PAYLOAD/usr/local/tbssh/etc/sshd_config"
 cp "$HOME/TigerBuild-build/third_party/openssh/LICENSE" "$PAYLOAD/usr/local/tbssh/LICENSE"
 cp "$S/local.tigerbuild.sshd.plist" "$PAYLOAD/Library/LaunchDaemons/"
+cp "$T/../../sshfs/bin/sshfs" "$PAYLOAD/usr/local/tbssh/bin/"
+cp "$T/../../sshfs/LICENSE" "$PAYLOAD/usr/local/tbssh/sshfs-LICENSE"
+mkdir -p "$PAYLOAD/Library/QuickLook" && cp -R "$HOME/TigerBuild-build/quicklook/TigerBuild.qlgenerator" "$PAYLOAD/Library/QuickLook/"
 cp "$S/postflight" "$PKG/Contents/Resources/postflight"
 chmod 755 "$PKG/Contents/Resources/postflight" "$PAYLOAD/usr/local/tbssh/bin/"* "$PAYLOAD/usr/local/tbssh/sbin/sshd" "$PAYLOAD/usr/local/tbssh/libexec/"*
 cd "$PAYLOAD"
