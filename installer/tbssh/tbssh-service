@@ -4,6 +4,11 @@
 # must be loaded into the system's launchd (as root), not into the launchd of whoever is signed in, or sshd would run as that person and
 # could not read its host key. The system's Authorization dialog runs this with root's rights but the signed-in user's launchd, so it
 # first becomes root all the way (the real user id too) and, on 10.5 and later, switches into the system launchd's namespace.
+# The administrator dialog starts this with the caller's environment, so before anything else runs the search path and the shell's startup
+# variables are replaced; otherwise a program the caller planted in its PATH could run as root.
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+unset IFS ENV BASH_ENV CDPATH SHELLOPTS BASHOPTS DYLD_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_FRAMEWORK_PATH
 # everything this does is written to /var/log/tbssh-service.log (readable by administrators), and nothing goes to the caller's pipe
 LOG=/var/log/tbssh-service.log
 touch "$LOG" 2>/dev/null; chown root:admin "$LOG" 2>/dev/null; chmod 640 "$LOG" 2>/dev/null
