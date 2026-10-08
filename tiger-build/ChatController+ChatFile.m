@@ -253,6 +253,165 @@ static NSString *safeFileStem(NSString *title)
     return out;
 }
 
+/* ---- PDF ---- */
+
+/* one line of a reply with **bold** and `code` styled and the marks taken out */
+static void appendStyledLine(NSMutableAttributedString *out, NSString *line, NSDictionary *plain, NSDictionary *code, float size, BOOL boldAll)
+{
+    NSMutableString *run = [NSMutableString string];
+    BOOL bold = boldAll, mono = NO;
+    NSUInteger i, n = [line length];
+    NSFont *base = [plain objectForKey:NSFontAttributeName];
+    #define FLUSH do { if ([run length]) { \
+        NSMutableDictionary *a = [NSMutableDictionary dictionaryWithDictionary:mono ? code : plain]; \
+        if (!mono) [a setObject:bold ? [NSFont boldSystemFontOfSize:size] : [NSFont systemFontOfSize:size] forKey:NSFontAttributeName]; \
+        [out appendAttributedString:[[[NSAttributedString alloc] initWithString:run attributes:a] autorelease]]; [run setString:@""]; } } while (0)
+    (void)base;
+    for (i = 0; i < n; i++) {
+        unichar c = [line characterAtIndex:i];
+        if (c == '*' && i + 1 < n && [line characterAtIndex:i + 1] == '*' && !mono) {
+            FLUSH;
+            bold = boldAll ? YES : !bold;
+            i++;
+        } else if (c == '`') {
+            FLUSH;
+            mono = !mono;
+        } else
+            [run appendFormat:@"%C", c];
+    }
+    FLUSH;
+    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:plain] autorelease]];
+    #undef FLUSH
+}
+
+/* the text of a message: its ``` blocks in a code font on gray, headings, bullets, bold and inline code styled */
+static void appendMessageText(NSMutableAttributedString *out, NSString *text, NSDictionary *plain, NSDictionary *code)
+{
+    NSArray *parts = [text componentsSeparatedByString:@"```"];
+    NSCharacterSet *edge = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    unsigned i;
+    for (i = 0; i < [parts count]; i++) {
+        NSString *part = [parts objectAtIndex:i];
+        if (i % 2 == 1) {
+            /* the first line of a fenced block names the language: left out */
+            NSRange nl = [part rangeOfString:@"\n"];
+            if (nl.location != NSNotFound && nl.location < 24)
+                part = [part substringFromIndex:nl.location + 1];
+            part = [part stringByTrimmingCharactersInSet:edge];
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n\n", part] attributes:code] autorelease]];
+        } else {
+            NSArray *lines = [[part stringByTrimmingCharactersInSet:edge] componentsSeparatedByString:@"\n"];
+            unsigned k;
+            if (![[part stringByTrimmingCharactersInSet:edge] length])
+                continue;
+            for (k = 0; k < [lines count]; k++) {
+                NSString *line = [lines objectAtIndex:k];
+                unsigned level = 0;
+                while (level < [line length] && [line characterAtIndex:level] == '#')
+                    level++;
+                if (level > 0 && level < [line length] && [line characterAtIndex:level] == ' ')
+                    appendStyledLine(out, [line substringFromIndex:level + 1], plain, code, level == 1 ? 15 : (level == 2 ? 13.5f : 12), YES);
+                else if ([line hasPrefix:@"- "] || [line hasPrefix:@"* "])
+                    appendStyledLine(out, [NSString stringWithFormat:@"%C %@", (unichar)0x2022, [line substringFromIndex:2]], plain, code, 11, NO);
+                else
+                    appendStyledLine(out, line, plain, code, 11, NO);
+            }
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n" attributes:plain] autorelease]];
+        }
+    }
+}
+
+- (NSAttributedString *)pdfContentForChat:(NSDictionary *)chat width:(float)width
+{
+    NSMutableAttributedString *out = [[[NSMutableAttributedString alloc] init] autorelease];
+    NSArray *messages = [chat objectForKey:@"messages"];
+    NSMutableParagraphStyle *para = [[[NSMutableParagraphStyle alloc] init] autorelease];
+    NSDictionary *titleAttrs, *metaAttrs, *userAttrs, *botAttrs, *plain, *code, *note;
+    unsigned i;
+    [para setLineBreakMode:NSLineBreakByWordWrapping];
+    [para setParagraphSpacing:2];
+    titleAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont boldSystemFontOfSize:20], NSFontAttributeName, nil];
+    metaAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:10], NSFontAttributeName, [NSColor grayColor], NSForegroundColorAttributeName, nil];
+    userAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont boldSystemFontOfSize:12], NSFontAttributeName, [NSColor colorWithCalibratedRed:0.1 green:0.3 blue:0.75 alpha:1], NSForegroundColorAttributeName, nil];
+    botAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont boldSystemFontOfSize:12], NSFontAttributeName, [NSColor colorWithCalibratedRed:0.15 green:0.45 blue:0.2 alpha:1], NSForegroundColorAttributeName, nil];
+    plain = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:11], NSFontAttributeName, para, NSParagraphStyleAttributeName, nil];
+    code = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont userFixedPitchFontOfSize:9.5f], NSFontAttributeName,
+        [NSColor colorWithCalibratedWhite:0.93f alpha:1], NSBackgroundColorAttributeName, nil];
+    note = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:10], NSFontAttributeName, [NSColor colorWithCalibratedWhite:0.4f alpha:1], NSForegroundColorAttributeName, nil];
+    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n", [chat objectForKey:@"title"] ? [chat objectForKey:@"title"] : @"Chat"] attributes:titleAttrs] autorelease]];
+    [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@ / %@\n\n", [self providerForChat:chat], [self modelForChat:chat]] attributes:metaAttrs] autorelease]];
+    for (i = 0; i < [messages count]; i++) {
+        NSDictionary *message = [messages objectAtIndex:i], *attachment = [message objectForKey:@"attachment"];
+        BOOL user = [[message objectForKey:@"role"] isEqualToString:@"user"];
+        NSString *text = [message objectForKey:@"text"], *file = [message objectForKey:@"file"], *imagePath = [message objectForKey:@"image"];
+        if ([[message objectForKey:@"status"] boolValue] || [message objectForKey:@"activityKind"])
+            continue;
+        if (attachment) {
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"You attached %@ (%@)\n\n", [attachment objectForKey:@"name"],
+                TBHumanSize([[attachment objectForKey:@"size"] doubleValue])] attributes:note] autorelease]];
+            continue;
+        }
+        [out appendAttributedString:[[[NSAttributedString alloc] initWithString:user ? @"You\n" : @"Assistant\n" attributes:user ? userAttrs : botAttrs] autorelease]];
+        if ([text length])
+            appendMessageText(out, text, plain, code);
+        if (file) {
+            NSString *body = TBReadTextFile(file, 60000, NULL);
+            if (body)
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n\n", body] attributes:code] autorelease]];
+        } else if (imagePath) {
+            NSImage *image = [[[NSImage alloc] initWithContentsOfFile:imagePath] autorelease];
+            if (image && [image size].width > 0) {
+                NSSize size = [image size];
+                NSTextAttachment *attachmentView;
+                float limit = width < 420 ? width : 420;
+                if (size.width > limit) {
+                    size.height = size.height * limit / size.width;
+                    size.width = limit;
+                }
+                [image setScalesWhenResized:YES];
+                [image setSize:size];
+                attachmentView = [[[NSTextAttachment alloc] init] autorelease];
+                [attachmentView setAttachmentCell:[[[NSTextAttachmentCell alloc] initImageCell:image] autorelease]];
+                [out appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachmentView]];
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:@"\n\n" attributes:plain] autorelease]];
+            } else
+                [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"[Picture: %@]\n\n", [imagePath lastPathComponent]] attributes:note] autorelease]];
+        } else if ([message objectForKey:@"video"])
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"[Video: %@]\n\n", [[message objectForKey:@"video"] lastPathComponent]] attributes:note] autorelease]];
+    }
+    return out;
+}
+
+/* The chat as a paginated PDF at `path`. NO when the file could not be made. */
+- (BOOL)writePDFOfChat:(NSDictionary *)chat toPath:(NSString *)path
+{
+    NSPrintInfo *info = [[[NSPrintInfo sharedPrintInfo] copy] autorelease];
+    NSTextView *view;
+    NSPrintOperation *operation;
+    float width;
+    [info setJobDisposition:NSPrintSaveJob];
+    [[info dictionary] setObject:path forKey:NSPrintSavePath];
+    [info setLeftMargin:54];
+    [info setRightMargin:54];
+    [info setTopMargin:54];
+    [info setBottomMargin:54];
+    [info setHorizontalPagination:NSFitPagination];
+    [info setVerticalPagination:NSAutoPagination];
+    [info setVerticallyCentered:NO];
+    [info setHorizontallyCentered:NO];
+    width = [info paperSize].width - [info leftMargin] - [info rightMargin];
+    view = [[[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, width, 100)] autorelease];
+    [view setHorizontallyResizable:NO];
+    [view setVerticallyResizable:YES];
+    [[view textContainer] setContainerSize:NSMakeSize(width, 1.0e7f)];
+    [[view textContainer] setWidthTracksTextView:YES];
+    [[view textStorage] setAttributedString:[self pdfContentForChat:chat width:width]];
+    [view sizeToFit];
+    operation = [NSPrintOperation printOperationWithView:view printInfo:info];
+    [operation setShowPanels:NO];
+    return [operation runOperation] && [[NSFileManager defaultManager] fileExistsAtPath:path];
+}
+
 - (IBAction)exportChat:(id)sender
 {
     NSSavePanel *panel;
@@ -280,6 +439,7 @@ static NSString *safeFileStem(NSString *title)
     [format addItemWithTitle:@"Tiger Build chat (can be imported again)"];
     [format addItemWithTitle:@"Markdown (to read)"];
     [format addItemWithTitle:@"Plain text (to read)"];
+    [format addItemWithTitle:@"PDF (to read or print)"];
     [accessory addSubview:label];
     [accessory addSubview:format];
     [panel setAccessoryView:accessory];
@@ -288,13 +448,18 @@ static NSString *safeFileStem(NSString *title)
             file:safeFileStem([current objectForKey:@"title"])] != NSOKButton)
         return;
     kind = [format indexOfSelectedItem];
-    ext = kind == 0 ? @"plist" : (kind == 1 ? @"md" : @"txt");
+    ext = kind == 0 ? @"plist" : (kind == 1 ? @"md" : (kind == 2 ? @"txt" : @"pdf"));
     path = [panel filename];
     if (![[[path pathExtension] lowercaseString] isEqualToString:ext]) {
         NSString *known = [[path pathExtension] lowercaseString];
-        if ([known isEqualToString:@"plist"] || [known isEqualToString:@"md"] || [known isEqualToString:@"txt"])
+        if ([known isEqualToString:@"plist"] || [known isEqualToString:@"md"] || [known isEqualToString:@"txt"] || [known isEqualToString:@"pdf"])
             path = [path stringByDeletingPathExtension];
         path = [path stringByAppendingPathExtension:ext];
+    }
+    if (kind == 3) {
+        if (![self writePDFOfChat:current toPath:path])
+            NSRunAlertPanel(@"Export chat", @"The PDF could not be made at %@.", @"OK", nil, nil, path);
+        return;
     }
     if (kind == 0) {
         NSDictionary *portable = [self portableChat:current];
