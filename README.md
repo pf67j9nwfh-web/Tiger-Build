@@ -63,9 +63,10 @@ Since 2.0, Tiger Build does everything itself. Version 1.x needed a **relay** on
  │  chats, tool loop, keys (Keychain), file     │                   │ (the ones you have   │
  │  conversion, dictation, MCP client           │   HTTP            │  keys for)           │
  │                                              │ ────────────────▶ │ Local LLM server     │
- │  ┌──────────────────────┐                    │                   │ (if configured)      │
+ │                                              │                   │ (if configured)      │
+ │  ┌──────────────────────┐                    │                   └──────────────────────┘
  │  │ Commander (in the    │ ◀─ starts with a   │   SSH (optional)  ┌──────────────────────┐
- │  │ app), local only     │    chat that uses  ─────────────────────▶ │ Another Mac running  │
+ │  │ app), local only     │    chat that uses  │ ────────────────▶ │ Another Mac running  │
  │  └──────────────────────┘    it              │                   │ Tiger Build, as an   │
  └──────────────────────────────────────────────┘                   │ MCP server           │
                                                                     └──────────────────────┘
