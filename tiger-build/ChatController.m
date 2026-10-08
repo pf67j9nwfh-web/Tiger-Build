@@ -2508,14 +2508,77 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (void)showAbout:(id)sender
 {
+    static NSWindow *about = nil;
     NSString *version;
+    NSView *view;
+    NSImageView *icon;
+    NSTextField *name, *ver;
+    NSScrollView *scroll;
+    NSTextView *credits;
+    NSButton *ok;
     (void)sender;
+    if (about) {
+        [about makeKeyAndOrderFront:nil];
+        return;
+    }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
         version = @"2.1";
-    NSRunAlertPanel(@"About Tiger Build",
-        @"Version %@\nLicensed under the MIT License.\nEmoji pictures: Twemoji, copyright Twitter, Inc. and other contributors, CC-BY 4.0.\nSecure connections: Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0).\nPictures: libwebp (BSD-3-Clause) and libde265 (LGPL-3.0, Contents/Frameworks).",
-        @"OK", nil, nil, version);
+    about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
+        styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
+    [about setReleasedWhenClosed:NO];
+    [about setTitle:@"About Tiger Build"];
+    view = [about contentView];
+    icon = [[[NSImageView alloc] initWithFrame:NSMakeRect(176, 388, 88, 80)] autorelease];
+    [icon setImage:[NSImage imageNamed:@"NSApplicationIcon"]];
+    [view addSubview:icon];
+    name = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 358, 400, 26)] autorelease];
+    [name setStringValue:@"Tiger Build"];
+    [name setFont:[NSFont boldSystemFontOfSize:20]];
+    ver = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 336, 400, 18)] autorelease];
+    [ver setStringValue:[NSString stringWithFormat:@"Version %@. Licensed under the MIT License.", version]];
+    [ver setFont:[NSFont systemFontOfSize:11]];
+    {
+        NSTextField *fields[2];
+        unsigned i;
+        fields[0] = name;
+        fields[1] = ver;
+        for (i = 0; i < 2; i++) {
+            [fields[i] setEditable:NO];
+            [fields[i] setBezeled:NO];
+            [fields[i] setDrawsBackground:NO];
+            [fields[i] setAlignment:NSCenterTextAlignment];
+            [view addSubview:fields[i]];
+        }
+    }
+    scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(20, 52, 400, 274)] autorelease];
+    [scroll setHasVerticalScroller:YES];
+    [scroll setBorderType:NSBezelBorder];
+    credits = [[[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 384, 274)] autorelease];
+    [credits setEditable:NO];
+    [credits setRichText:NO];
+    [credits setFont:[NSFont systemFontOfSize:11]];
+    [credits setHorizontallyResizable:NO];
+    [credits setVerticallyResizable:YES];
+    [credits setAutoresizingMask:NSViewWidthSizable];
+    [[credits textContainer] setWidthTracksTextView:YES];
+    [credits setString:@"Software that comes with Tiger Build:\n\n"
+        @"Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0): secure connections.\n\n"
+        @"libwebp (BSD-3-Clause), libaom (BSD-2-Clause with a patent grant) and libde265 (LGPL-3.0, a separate library in Contents/Frameworks): WebP, AVIF and HEIC pictures.\n\n"
+        @"OpenSSH (BSD) with LibreSSL's libcrypto (ISC, and the OpenSSL and SSLeay licences): the ssh tools and Tiger Build's SSH server.\n\n"
+        @"sshfs 2.2 (GPL-2.0) with glib (LGPL-2.1), installed in /usr/local/tbssh: mounting another computer's folder. Its source and patch are in third_party/sshfs.\n\n"
+        @"Twemoji, copyright Twitter, Inc. and other contributors (CC-BY 4.0): emoji pictures."];
+    [scroll setDocumentView:credits];
+    [view addSubview:scroll];
+    ok = [[[NSButton alloc] initWithFrame:NSMakeRect(340, 14, 80, 28)] autorelease];
+    [ok setTitle:@"OK"];
+    [ok setBezelStyle:NSRoundedBezelStyle];
+    [ok setKeyEquivalent:@"\r"];
+    [ok setTarget:about];
+    [ok setAction:@selector(performClose:)];
+    [view addSubview:ok];
+    [about center];
+    [about makeKeyAndOrderFront:nil];
 }
 
 - (NSString *)urlEncode:(NSString *)value
