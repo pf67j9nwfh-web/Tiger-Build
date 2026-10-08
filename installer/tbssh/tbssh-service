@@ -1,24 +1,34 @@
 #!/bin/sh
 # usage: tbssh-service on|off   (run as root; Tiger Build asks for the administrator password and runs it)
-# Starts or stops Tiger Build's SSH server (port 2222). The server is a launchd job that starts a copy of sshd for each connection.
-[ "$(id -u)" = 0 ] || { echo "tbssh-service must run as root" >&2; exit 1; }
+# Starts or stops Tiger Build's SSH server (port 2222). The server is a launchd job that starts a copy of sshd for each connection, and it
+# must be loaded into the system's launchd (as root), not into the launchd of whoever is signed in, or sshd would run as that person and
+# could not read its host key. The system's Authorization dialog runs this with root's rights but the signed-in user's launchd, so it
+# first becomes root all the way (the real user id too) and, on 10.5 and later, switches into the system launchd's namespace.
+if [ "$(id -ru)" != 0 ]; then
+  exec /usr/bin/perl -e '$< = 0; $> = 0; $( = 0; $) = 0; exec @ARGV' /bin/sh "$0" "$@"
+fi
 for f in /usr/local/tbssh/sbin/sshd /usr/local/tbssh/libexec/sshd-session /usr/local/tbssh/libexec/sshd-auth /usr/local/tbssh/etc/sshd_config /Library/LaunchDaemons/local.tigerbuild.sshd.plist; do
   [ -f "$f" ] || { echo "Tiger Build's SSH server is not installed (missing $f)" >&2; exit 1; }
 done
 PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
 KEY=/usr/local/tbssh/etc/ssh_host_ed25519_key
+case "$(sw_vers -productVersion 2>/dev/null)" in
+  10.4*) LC="/bin/launchctl" ;;
+  *) LC="/bin/launchctl bsexec 1 /bin/launchctl" ;;
+esac
+# nothing of ours may keep the caller's output open: launchctl can start a launchd that inherits it
 case "$1" in
   on)
     if [ ! -f "$KEY" ]; then
       /usr/local/tbssh/bin/ssh-keygen -q -t ed25519 -N '' -C tiger-build-host -f "$KEY" || exit 1
     fi
     chown root:wheel "$KEY" "$KEY.pub" && chmod 600 "$KEY" && chmod 644 "$KEY.pub"
-    touch /var/log/tbsshd.log && chmod 600 /var/log/tbsshd.log
-    # nothing of ours may keep the caller's output open: on Tiger launchctl can start a launchd that inherits it
-    launchctl load -w "$PLIST" </dev/null >/dev/null 2>&1
+    touch /var/log/tbsshd.log && chown root:admin /var/log/tbsshd.log && chmod 640 /var/log/tbsshd.log
+    $LC unload "$PLIST" </dev/null >/dev/null 2>&1
+    $LC load -w "$PLIST" </dev/null >/dev/null 2>&1
     ;;
   off)
-    launchctl unload -w "$PLIST" </dev/null >/dev/null 2>&1
+    $LC unload -w "$PLIST" </dev/null >/dev/null 2>&1
     ;;
   *)
     echo "usage: tbssh-service on|off" >&2
