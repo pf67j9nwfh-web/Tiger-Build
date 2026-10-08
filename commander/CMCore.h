@@ -67,6 +67,8 @@ id CMToolScreenScroll(NSDictionary *args);
 id CMToolScreenType(NSDictionary *args);
 id CMToolScreenKey(NSDictionary *args);
 void CMScreenSetScale(double scale);
+BOOL CMConvertAvailable(void);
+id CMToolConvert(NSDictionary *args);
 id CMToolReadFile(NSDictionary *args);
 id CMToolReadMultiple(NSDictionary *args);
 id CMToolWriteFile(NSDictionary *args);

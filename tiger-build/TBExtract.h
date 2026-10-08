@@ -25,6 +25,10 @@ extern NSString *TBExtractError; /* exception name; the reason is for the person
 - (double)totalSize;
 @end
 
+/* `TigerBuild --convert FILE OUTDIR`: text.txt and image-1.jpg ... in OUTDIR, a line "NOTE: ..." or "ERROR: ..." on standard output. Commander's convert_file
+   tool runs it, so a model can read these files on any Mac that has Tiger Build. Returns the process exit code. */
+int TBConvertCommand(const char *file, const char *outdir);
+
 NSData *TBSnappyDecompress(const unsigned char *bytes, unsigned length); /* nil when damaged */
 NSData *TBGunzip(NSData *data, unsigned limit);
 NSData *TBJPEGFromWebP(NSData *data, int longest);   /* the first picture of a WebP as a JPEG, or nil */

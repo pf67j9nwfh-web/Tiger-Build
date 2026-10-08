@@ -201,6 +201,29 @@ int main(int argc, char **argv)
         expectThat([TEXT(r) rangeOfString:@"/sub"].location != NSNotFound, @"commands start in the workspace folder");
         [w close];
     }
+    /* convert_file runs the converter of the application the Commander is inside (here a stand-in script), and is not offered without one */
+    {
+        NSString *app = [dir stringByAppendingString:@"/Fake.app/Contents"];
+        NSString *copy = [app stringByAppendingString:@"/Resources/ppc-commander"], *script = [app stringByAppendingString:@"/MacOS/TigerBuild"], *doc = [dir stringByAppendingString:@"/doc.docx"];
+        TBMCPClient *c;
+        NSString *saved = program, *tools;
+        run([NSString stringWithFormat:@"mkdir -p '%@/Resources' '%@/MacOS' && cp '%@' '%@' && printf 'x' > '%@'", app, app, program, copy, doc]);
+        [@"#!/bin/sh\n[ \"$1\" = --convert ] || exit 2\nprintf 'converted text of %s\\n' \"$2\" > \"$3/text.txt\"\nprintf 'NOTE: stand-in\\nIMAGES: 0\\n'\n" writeToFile:script atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+        run([NSString stringWithFormat:@"chmod 755 '%@'", script]);
+        program = copy;
+        c = start(nil);
+        tools = [[c request:@"tools/list" params:[NSDictionary dictionary] timeout:10] description];
+        expectThat([tools rangeOfString:@"convert_file"].location != NSNotFound, @"convert_file is offered inside an application");
+        r = call(c, @"convert_file", D1(doc, @"path"));
+        expectThat(!FAILED(r) && [TEXT(r) rangeOfString:@"converted text of"].location != NSNotFound && [TEXT(r) rangeOfString:@"stand-in"].location != NSNotFound, @"it returns the converter's text");
+        r = call(c, @"convert_file", D1(@"/etc/hosts/nothing", @"path"));
+        expectThat(FAILED(r), @"a missing file is refused");
+        [c close];
+        program = saved;
+        c = start(nil);
+        expectThat([[[c request:@"tools/list" params:[NSDictionary dictionary] timeout:10] description] rangeOfString:@"convert_file"].location == NSNotFound, @"and is not offered without one");
+        [c close];
+    }
     /* sudo: a Commander of a chat with sudo ticked still needs the key Tiger Build sends it */
     {
         TBMCPClient *s = start(D1(@"1", @"TB_SUDO"));

@@ -94,6 +94,9 @@ static NSArray *toolDefs(void)
     [t addObject:def(@"get_usage_stats", @"Local counts of tool calls made to this server. Nothing is uploaded.", NONE, NONE)];
     [t addObject:def(@"get_recent_tool_calls", @"Recent local tool-call history with truncated arguments and output.",
         P(@"maxResults", @"number", @"How many calls, default 20, max 100", @"toolName", @"string", @"Optional tool name filter", @"since", @"string", @"Optional ISO timestamp; return calls at or after it"), NONE)];
+    if (CMConvertAvailable())
+        [t addObject:def(@"convert_file", @"Read a file this Mac cannot open by itself, with Tiger Build's converter: Word, Excel and PowerPoint (also the old .doc .xls .ppt), OpenDocument, Pages, Keynote and Numbers files give their text; HEIC, AVIF, WebP, GIF, TIFF and other pictures give an upright JPEG you can look at. Returns the text and, when there is one, the first picture.",
+            P(@"path", @"string", @"The file on this Mac"), P(@"path"))];
     if (CMScreenEnabled()) {
         NSString *where = @"Coordinates are pixels of the picture from the last take_screenshot (or screen points if none was taken). Take a screenshot first, act, then take another to see the result.";
         [t addObject:def(@"screen_info", @"Screen size, mouse position and the coordinate scale for the other screen_* tools.", NONE, NONE)];
@@ -147,6 +150,7 @@ static id callHandler(NSString *name, NSDictionary *a)
     if ([name isEqualToString:@"kill_process"]) return CMToolKillProcess(a);
     if ([name isEqualToString:@"take_screenshot"]) return CMToolScreenshot(a);
     if ([name isEqualToString:@"view_image"]) return CMToolViewImage(a);
+    if ([name isEqualToString:@"convert_file"]) return CMToolConvert(a);
     if ([name isEqualToString:@"repo_info"]) return CMToolRepoInfo(a);
     if ([name isEqualToString:@"git_read"]) return CMToolGit(a, NO);
     if ([name isEqualToString:@"git_write"]) return CMToolGit(a, YES);

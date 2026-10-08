@@ -1678,3 +1678,29 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
 }
 
 @end
+
+int TBConvertCommand(const char *file, const char *outdir)
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSString *path = [NSString stringWithUTF8String:file], *out = [NSString stringWithUTF8String:outdir];
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    int code = 0;
+    @try {
+        NSDictionary *result;
+        NSArray *images;
+        unsigned i;
+        if (!data)
+            [NSException raise:TBExtractError format:@"The file could not be read."];
+        result = [TBExtract extractName:[path lastPathComponent] data:data];
+        images = [result objectForKey:@"images"];
+        [[result objectForKey:@"text"] writeToFile:[out stringByAppendingPathComponent:@"text.txt"] atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+        for (i = 0; i < [images count] && i < 8; i++)
+            [[images objectAtIndex:i] writeToFile:[out stringByAppendingPathComponent:[NSString stringWithFormat:@"image-%u.jpg", i + 1]] atomically:NO];
+        printf("NOTE: %s\nIMAGES: %u\n", [[result objectForKey:@"note"] UTF8String], (unsigned)[images count]);
+    } @catch (NSException *e) {
+        printf("ERROR: %s\n", [[e reason] UTF8String]);
+        code = 1;
+    }
+    [pool release];
+    return code;
+}

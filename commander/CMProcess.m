@@ -721,6 +721,48 @@ id CMToolScreenshot(NSDictionary *args)
     return nil;
 }
 
+/* Tiger Build's own converter, in the application this Commander is part of (Contents/Resources/ppc-commander, Contents/MacOS/TigerBuild) */
+static NSString *converterPath(void)
+{
+    NSString *app = [[[[CMBinaryPath() stringByDeletingLastPathComponent] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"MacOS"] stringByAppendingPathComponent:@"TigerBuild"];
+    return [[NSFileManager defaultManager] isExecutableFileAtPath:app] ? app : nil;
+}
+
+BOOL CMConvertAvailable(void)
+{
+    return converterPath() != nil;
+}
+
+id CMToolConvert(NSDictionary *args)
+{
+    NSString *path = CMCheckPath(CMString(args, @"path")), *tool = converterPath(), *dir = scratchPath(@"d"), *out = nil, *text;
+    NSData *picture;
+    struct stat st;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (!tool)
+        CMFail(@"the converter is not available: this Commander is not inside a Tiger Build application");
+    if (stat([path fileSystemRepresentation], &st) != 0 || !S_ISREG(st.st_mode))
+        CMFail(@"not a file: %@", path);
+    if (st.st_size > 200 * 1024 * 1024)
+        CMFail(@"file is larger than 200 MB");
+    [fm createDirectoryAtPath:dir attributes:[NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0700] forKey:NSFilePosixPermissions]];
+    @try {
+        int code = CMRunProgram([NSArray arrayWithObjects:tool, @"--convert", path, dir, nil], nil, 180, nil, &out);
+        out = [out stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (code != 0 || [out hasPrefix:@"ERROR:"])
+            CMFail(@"%@", [out length] ? out : @"the converter failed");
+        text = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"text.txt"] encoding:NSUTF8StringEncoding error:NULL];
+        picture = [NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"image-1.jpg"]];
+        text = [NSString stringWithFormat:@"%@\n\n%@", out, [text length] ? text : @"(no text)"];
+        if ([picture length] && [picture length] < 4000000)
+            return [NSDictionary dictionaryWithObjectsAndKeys:CMCap(text), @"text", CMBase64(picture), @"image", @"image/jpeg", @"mime", nil];
+        return CMCap(text);
+    } @finally {
+        [fm removeFileAtPath:dir handler:nil];
+    }
+    return nil;
+}
+
 id CMToolViewImage(NSDictionary *args)
 {
     NSString *path = CMCheckPath(CMOptString(args, @"path", @""));
