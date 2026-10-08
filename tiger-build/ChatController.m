@@ -188,6 +188,7 @@ static NSMutableArray *allControllers = nil;
     contextPending = [[NSMutableDictionary alloc] init];
     queuedGuidance = [[NSMutableArray alloc] init];
     renameRow = -1;
+    sidebarHidden = [[NSUserDefaults standardUserDefaults] boolForKey:@"TigerBuildSidebarHidden"];
     sidebarWidth = [[NSUserDefaults standardUserDefaults] floatForKey:@"TigerBuildSidebarWidth"];
     if (sidebarWidth < 160)
         sidebarWidth = 176;
@@ -822,6 +823,28 @@ static NSMutableArray *allControllers = nil;
     return proposed;
 }
 
+/* the sidebar's width and the divider's, both 0 while the chat list is folded away */
+- (float)shownSidebar
+{
+    return sidebarHidden ? 0 : [self clampedSidebar:sidebarWidth];
+}
+
+- (float)shownDivider
+{
+    return sidebarHidden ? 0 : [split dividerThickness];
+}
+
+- (IBAction)toggleSidebar:(id)sender
+{
+    (void)sender;
+    sidebarHidden = !sidebarHidden;
+    [[NSUserDefaults standardUserDefaults] setBool:sidebarHidden forKey:@"TigerBuildSidebarHidden"];
+    [sidePane setHidden:sidebarHidden];
+    [self layoutSubviews];
+    [window makeFirstResponder:input];
+    [window display];
+}
+
 - (void)layoutSubviews
 {
     NSRect bounds = [content bounds];
@@ -830,9 +853,11 @@ static NSMutableArray *allControllers = nil;
     if (!split)
         return;
     [split setFrame:bounds];
-    thickness = [split dividerThickness];
-    side = [self clampedSidebar:sidebarWidth];
-    sidebarWidth = side;
+    thickness = [self shownDivider];
+    side = [self shownSidebar];
+    if (!sidebarHidden)
+        sidebarWidth = side;
+    [sidePane setHidden:sidebarHidden];
     [sidePane setFrame:NSMakeRect(0, 0, side, NSHeight(bounds))];
     [chatPane setFrame:NSMakeRect(side + thickness, 0, NSWidth(bounds) - side - thickness, NSHeight(bounds))];
     [self layoutPanes];
@@ -996,7 +1021,7 @@ static NSMutableArray *allControllers = nil;
 - (void)splitView:(NSSplitView *)sender resizeSubviewsWithOldSize:(NSSize)oldSize
 {
     NSRect bounds = [sender bounds];
-    float thickness = [sender dividerThickness], side = [self clampedSidebar:sidebarWidth];
+    float thickness = [self shownDivider], side = [self shownSidebar];
     (void)oldSize;
     [sidePane setFrame:NSMakeRect(0, 0, side, NSHeight(bounds))];
     [chatPane setFrame:NSMakeRect(side + thickness, 0, NSWidth(bounds) - side - thickness, NSHeight(bounds))];
@@ -1006,7 +1031,7 @@ static NSMutableArray *allControllers = nil;
 {
     float width;
     (void)note;
-    if (!sidePane)
+    if (!sidePane || sidebarHidden)
         return;
     width = NSWidth([sidePane frame]);
     if (width >= 160)
@@ -1272,9 +1297,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     {
         NSMenu *windowMenu = [[[NSMenu alloc] initWithTitle:@"Window"] autorelease];
         NSMenuItem *windowSlot = [[[NSMenuItem alloc] init] autorelease];
-        NSArray *titles = [NSArray arrayWithObjects:@"New Window", @"Close Window", @"Minimize", @"Maximize", @"Keep It On Top", nil];
-        SEL actions[] = {@selector(newWindow:), @selector(closeWindow:), @selector(minimizeWindow:), @selector(zoomWindow:), @selector(toggleOnTop:)};
-        NSArray *keys = [NSArray arrayWithObjects:@"n", @"w", @"m", @"M", @"T", nil];
+        NSArray *titles = [NSArray arrayWithObjects:@"New Window", @"Close Window", @"Minimize", @"Maximize", @"Hide Chat List", @"Keep It On Top", nil];
+        SEL actions[] = {@selector(newWindow:), @selector(closeWindow:), @selector(minimizeWindow:), @selector(zoomWindow:), @selector(toggleSidebar:), @selector(toggleOnTop:)};
+        NSArray *keys = [NSArray arrayWithObjects:@"n", @"w", @"m", @"M", @"\\", @"T", nil];
         unsigned i;
         for (i = 0; i < [titles count]; i++) {
             NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle:[titles objectAtIndex:i] action:actions[i] keyEquivalent:[keys objectAtIndex:i]] autorelease];
@@ -1282,7 +1307,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             /* New Window is Option-Command-N; Shift-Command-N makes a workspace. */
             if (i == 0)
                 [item setKeyEquivalentModifierMask:NSCommandKeyMask | NSAlternateKeyMask];
-            if (i == 4)
+            if (i == 5)
                 [windowMenu addItem:[NSMenuItem separatorItem]];
             [windowMenu addItem:item];
         }
@@ -2209,6 +2234,8 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (BOOL)validateMenuItem:(NSMenuItem *)item
 {
+    if ([item action] == @selector(toggleSidebar:))
+        [item setTitle:sidebarHidden ? @"Show Chat List" : @"Hide Chat List"];
     if ([item action] == @selector(toggleOnTop:)) {
         NSWindow *win = [self frontWindow];
         [item setState:(win && [win level] > NSNormalWindowLevel) ? NSOnState : NSOffState];

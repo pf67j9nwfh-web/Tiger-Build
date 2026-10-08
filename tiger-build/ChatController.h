@@ -88,6 +88,7 @@
     NSView *sidePane;
     NSView *chatPane;
     float sidebarWidth;
+    BOOL sidebarHidden;              /* the chat list is folded away (Window menu, Command-backslash) */
     float inputHeight;
     BOOL naming;
     NSMutableArray *localModels;
