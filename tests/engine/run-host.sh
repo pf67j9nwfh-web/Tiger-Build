@@ -24,7 +24,7 @@ for f in $(cat $AOM/files.txt) config/aom_config.c; do
 done
 COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m"
 COMMON_NO_MCP="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m"
-LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices $TLS/build/libmbedtls-host.a -lz"
+LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices -framework AudioToolbox -framework QTKit $TLS/build/libmbedtls-host.a -lz"
 build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
 build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o

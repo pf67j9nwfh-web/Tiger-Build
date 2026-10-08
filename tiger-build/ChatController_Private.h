@@ -5,6 +5,9 @@
 /* Methods the ChatController source files call on each other. They are
    implemented in ChatController.m and ChatController+Preferences.m. */
 @interface ChatController (Internal)
+- (NSString *)memoryRequestFragment;
+- (void)updateMemoryAfterReply:(NSMutableDictionary *)chat;
+- (void)editMemory:(id)sender;
 - (void)buildAlertsTab:(NSTabView *)tabs;
 - (void)loadAlertOptions;
 - (void)saveAlertOptions;

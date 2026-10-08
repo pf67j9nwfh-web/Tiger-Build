@@ -3371,6 +3371,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (chat) {
         [self speakFinishedReplyIfWanted:chat];
         [self autonameChat:chat];
+        [self updateMemoryAfterReply:chat];
     }
 }
 

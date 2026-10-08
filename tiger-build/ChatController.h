@@ -104,6 +104,7 @@
     NSString *swappedKey;
     BOOL swapped;
     BOOL updateChecking;
+    BOOL memoryBusy;
     NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 

@@ -158,6 +158,7 @@ static NSString *newRunId(void)
         [out appendFormat:@",\"root\":\"%@\"", TBJSONEscape(root)];
     if ([[chat objectForKey:@"instructions"] length] > 0)
         [out appendFormat:@",\"instructions\":\"%@\"", TBJSONEscape([chat objectForKey:@"instructions"])];
+    [out appendString:[self memoryRequestFragment]];
     return out;
 }
 
