@@ -2119,7 +2119,9 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [window setFrame:frame display:NO];
     [window makeKeyAndOrderFront:nil];
     [window makeFirstResponder:input];
+    [self refreshCommanderStatus];
     [self refreshCatalog];
+    [self refreshToolCatalog];
     [self refreshLocalModels];
     relayTimer = [[NSTimer scheduledTimerWithTimeInterval:30 target:self
         selector:@selector(relayTick:) userInfo:nil repeats:YES] retain];
@@ -2147,6 +2149,21 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self performSelector:@selector(retireExtraWindow) withObject:nil afterDelay:0];
+}
+
+/* The tool list is the same in every window, so what one window learns the others take over at once. */
+- (void)shareToolCatalog
+{
+    unsigned i;
+    for (i = 0; allControllers && i < [allControllers count]; i++) {
+        ChatController *other = [[allControllers objectAtIndex:i] nonretainedObjectValue];
+        if (other == self)
+            continue;
+        [other->toolCatalog release];
+        other->toolCatalog = [toolCatalog retain];
+        [other rebuildToolsMenu];
+        [other syncRunButtons];
+    }
 }
 
 - (IBAction)newWindow:(id)sender

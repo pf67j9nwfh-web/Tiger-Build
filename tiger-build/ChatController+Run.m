@@ -337,6 +337,7 @@ static NSString *newRunId(void)
     commanderCode = [[data objectForKey:@"commander_code"] copy];
     [self rebuildToolsMenu];
     [self commanderProblemChanged];
+    [self shareToolCatalog];
 }
 
 /* ---- usage, cost and context ---- */

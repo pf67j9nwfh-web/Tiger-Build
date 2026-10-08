@@ -32,6 +32,7 @@
 - (void)commanderIP:(id)sender;
 - (NSDictionary *)commanderCommand:(NSString *)command;
 - (BOOL)loginLaunchOn;
+- (void)shareToolCatalog;
 - (void)setRemoteSudo:(BOOL)on;
 - (BOOL)remoteSudoOn;
 - (BOOL)administratorPasswordIsSaved;
