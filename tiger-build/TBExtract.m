@@ -7,6 +7,7 @@
 #import "webp/decode.h"
 #import "webp/demux.h"
 #import "TBHEIC.h"
+#import "../third_party/jxldec/jxl.h"
 #import "TBOffice.h"
 #import "TBSupport.h"
 
@@ -587,6 +588,16 @@ static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int st
     return result;
 }
 
+static BOOL isJXL(NSData *data)
+{
+    return [data length] > 12 && jxl_signature_check([data bytes], [data length]) >= JXLDEC_SIG_CODESTREAM;
+}
+
+static void jxlMessage(void *user, jxl_severity severity, const char *message)
+{
+    (void)user; (void)severity; (void)message;
+}
+
 /* Up to four of n frames: the first, the last and two between. */
 static NSArray *pickFrames(int n)
 {
@@ -643,6 +654,52 @@ static NSArray *jpegFramesFromAnimatedWebP(NSData *data, int longest, int *total
         frame++;
     }
     WebPAnimDecoderDelete(decoder);
+    return [out count] ? out : nil;
+}
+
+/* A JPEG XL picture as a JPEG; an animation as up to four of its frames. *total is the number of frames. nil when it cannot be read.
+   The decoder is jxldec (plain C, single-threaded); a picture of more than 40 million pixels is refused so a big one cannot fill memory. */
+static NSArray *jpegFramesFromJXL(NSData *data, int longest, int *total, int *looked)
+{
+    jxl_ctx *ctx = jxl_ctx_new(NULL, NULL, jxlMessage, NULL);
+    jxl_doc *doc;
+    jxl_image_info info;
+    NSMutableArray *out = [NSMutableArray array];
+    NSArray *wanted;
+    unsigned i;
+    if (!ctx)
+        return nil;
+    jxl_ctx_set_srgb_output(ctx, 1);
+    doc = jxl_doc_open(ctx, [data bytes], [data length]);
+    if (!doc || jxl_doc_info(doc, &info) != 0 || info.width < 1 || info.height < 1 || info.width > 16384 || info.height > 16384
+        || (double)info.width * info.height > 40e6) {
+        if (doc)
+            jxl_doc_close(doc);
+        jxl_ctx_free(ctx);
+        return nil;
+    }
+    *total = jxl_doc_frame_count(doc);
+    if (*total < 1)
+        *total = 1;
+    /* frames can only be decoded in order, so a long animation is judged by its first frames: about 24 million pixels' worth, 4 to 120 frames */
+    *looked = (int)(24e6 / ((double)info.width * info.height));
+    if (*looked < 4) *looked = 4;
+    if (*looked > 120) *looked = 120;
+    if (*looked > *total) *looked = *total;
+    wanted = pickFrames(*looked);
+    for (i = 0; i < [wanted count]; i++) {
+        jxl_image *picture = jxl_frame_render(doc, [[wanted objectAtIndex:i] intValue], JXLDEC_FORMAT_RGBA32);
+        NSData *jpeg;
+        if (!picture)
+            break;
+        jpeg = jpegFromRGBA(picture->data, picture->width, picture->height, picture->stride, longest);
+        jxl_image_destroy(ctx, picture);
+        if (!jpeg)
+            break;
+        [out addObject:jpeg];
+    }
+    jxl_doc_close(doc);
+    jxl_ctx_free(ctx);
     return [out count] ? out : nil;
 }
 
@@ -1522,7 +1579,7 @@ static NSString *odfText(TBZip *zip)
 static NSArray *types(int which)
 {
     switch (which) {
-    case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
+    case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jxl", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
     case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", nil];
     }
     return [NSArray arrayWithObjects:@"pages", @"numbers", @"key", nil];
@@ -1604,6 +1661,15 @@ static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
         }
         if ([frames count] > 1 || total > 1)
             return [self reply:@"" images:frames note:[NSString stringWithFormat:@"An animated %@ with %d frames; %u of them are shown, in order.", [ext uppercaseString], total, (unsigned)[frames count]]];
+    }
+    if ([ext isEqualToString:@"jxl"] || isJXL(data)) {
+        int total = 0, looked = 0;
+        NSArray *frames = jpegFramesFromJXL(data, 2400, &total, &looked);
+        if (!frames)
+            fail(@"This JPEG XL picture could not be read.");
+        if (total > 1)
+            return [self reply:@"" images:frames note:[NSString stringWithFormat:@"An animated JPEG XL picture with %d frames; %u of %@%d are shown, in order. Any transparent parts are shown white.", total, (unsigned)[frames count], looked < total ? @"its first " : @"", looked]];
+        return [self reply:@"" images:frames note:@"Converted from JPEG XL to JPEG."];
     }
     if ([types(0) containsObject:ext]) {
         NSData *jpeg = jpegFrom(data, 2400);

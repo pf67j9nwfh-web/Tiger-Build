@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SSH="${PPC_SSH:-$ROOT/ppc-commander/bin/ppc-ssh}"
 DIST="$ROOT/dist"
-VERSION="2.1"
+VERSION="2.2"
 mkdir -p "$DIST"
 
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
@@ -21,7 +21,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/installer" -cf - tb
 set -e
 APP="$HOME/TigerBuild-build/native/TigerBuild.app"
 PAYLOAD="$HOME/TigerBuild-pkg-payload"
-PKG="$HOME/TigerBuild-2.1.pkg"
+PKG="$HOME/TigerBuild-2.2.pkg"
 if [ ! -d "$APP" ]; then
   echo "Missing $APP" >&2
   exit 1
@@ -54,13 +54,13 @@ cat > "$PKG/Contents/Info.plist" << PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleGetInfoString</key>
-  <string>Tiger Build 2.1</string>
+  <string>Tiger Build 2.2</string>
   <key>CFBundleIdentifier</key>
   <string>local.tigerbuild.TigerBuild.pkg</string>
   <key>CFBundleName</key>
   <string>Tiger Build</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.1</string>
+  <string>2.2</string>
   <key>IFMajorVersion</key>
   <integer>1</integer>
   <key>IFMinorVersion</key>
@@ -98,7 +98,7 @@ cat > "$PKG/Contents/Resources/English.lproj/Description.plist" << PLIST
   <key>IFPkgDescriptionTitle</key>
   <string>Tiger Build</string>
   <key>IFPkgDescriptionVersion</key>
-  <string>2.1</string>
+  <string>2.2</string>
   <key>IFPkgDescriptionDescription</key>
   <string>Installs Tiger Build on Mac OS X 10.4 to 10.6; Commander, which lets a chat use this Mac's files and shell, is inside the application. Tiger Build's own SSH server is installed switched off (it starts only when you turn on Allow Other Computers and give an administrator password). No API keys are included: in Tiger Build Preferences, add a key for each service you use, or the address of a local LLM server. No other computer is needed.</string>
 </dict>
@@ -110,6 +110,6 @@ echo "PACKAGED"
 REMOTE
 
 rm -rf "$DIST/TigerBuild-$VERSION.pkg"
-"$SSH" 'tar -C "$HOME" -cf - TigerBuild-2.1.pkg' | tar -C "$DIST" -xf -
+"$SSH" 'tar -C "$HOME" -cf - TigerBuild-2.2.pkg' | tar -C "$DIST" -xf -
 echo "Wrote $DIST/TigerBuild-$VERSION.pkg"
 "$SSH" 'open "$HOME/Desktop/Tiger Build.app"'

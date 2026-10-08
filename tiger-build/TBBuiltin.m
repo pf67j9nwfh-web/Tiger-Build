@@ -416,7 +416,7 @@ static NSData *fetchURL(NSString *url, TBRun *run, int *status)
     TBHTTP *http = [TBHTTP request:@"GET" url:url];
     int result;
     NSData *data;
-    [http setHeader:@"User-Agent" value:@"TigerBuild/2.1"];
+    [http setHeader:@"User-Agent" value:@"TigerBuild/2.2"];
     [http setIdleTimeout:25];
     [run attach:http];
     result = [http perform];

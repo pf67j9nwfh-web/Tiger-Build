@@ -1,0 +1,73 @@
+--- a/jxl.c	2026-10-08 14:55:07
++++ b/jxl.c	2026-10-08 14:57:54
+@@ -1144,7 +1144,7 @@
+ 
+ #if defined(_WIN32)
+ #include <intrin.h>
+-#elif defined(__x86_64__) || defined(__i386__)
++#elif (defined(__x86_64__) || defined(__i386__)) && !defined(JXL_NO_AVX2)
+ #include <cpuid.h>
+ #endif
+ 
+@@ -1207,7 +1207,7 @@
+     int r[4];
+     __cpuidex(r, 1, 0);
+     return (r[2] & (1 << 12)) != 0;
+-#elif defined(__x86_64__) || defined(__i386__)
++#elif (defined(__x86_64__) || defined(__i386__)) && !defined(JXL_NO_AVX2)
+     unsigned a, b, c, d;
+     if (!__get_cpuid_count(1, 0, &a, &b, &c, &d)) return 0;
+     return (c & (1u << 12)) != 0;
+@@ -1536,8 +1536,12 @@
+         int read_bytes;
+         const uint8_t *p = br->data + br->byte_pos;
+         memcpy(&bits, p, sizeof(bits));
+-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+-        bits = __builtin_bswap64(bits);
++#if defined(__BIG_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
++        /* gcc 4.0 and 4.2 (the old Macs) define __BIG_ENDIAN__ but not __BYTE_ORDER__ or __builtin_bswap64 */
++        bits = ((bits & 0x00000000000000ffULL) << 56) | ((bits & 0x000000000000ff00ULL) << 40) |
++               ((bits & 0x0000000000ff0000ULL) << 24) | ((bits & 0x00000000ff000000ULL) << 8) |
++               ((bits & 0x000000ff00000000ULL) >> 8) | ((bits & 0x0000ff0000000000ULL) >> 24) |
++               ((bits & 0x00ff000000000000ULL) >> 40) | ((bits & 0xff00000000000000ULL) >> 56);
+ #endif
+         br->buf |= bits << br->nbits;
+         read_bytes = (63 - br->nbits) >> 3;
+@@ -11573,10 +11577,9 @@
+                         if (!order0_ready[cc]) {
+                             uint32_t oi;
+                             for (oi = 0; oi < 64; oi++) {
+-                                uint32_t oxy, odx, ody;
+-                                memcpy(&oxy, ord + oi * 2, sizeof(oxy));
+-                                odx = oxy & 0xffffu;
+-                                ody = oxy >> 16;
++                                uint32_t odx, ody;
++                                odx = ord[oi * 2];
++                                ody = ord[oi * 2 + 1];
+                                 if (need_transpose) {
+                                     uint32_t t = odx; odx = ody; ody = t;
+                                 }
+@@ -11673,9 +11676,8 @@
+                         }
+                         coeff = jxl_unpack_signed(ucoeff) << p->coeff_shift;
+                         if (ord) {
+-                            memcpy(&xy, ord + k * 2, sizeof(xy));
+-                            dx = xy & 0xffffu;
+-                            dy = xy >> 16;
++                            dx = ord[k * 2];
++                            dy = ord[k * 2 + 1];
+                             if (need_transpose) {
+                                 uint32_t t = dx; dx = dy; dy = t;
+                             }
+@@ -11718,9 +11720,8 @@
+                         }
+                         coeff = jxl_unpack_signed(ucoeff) << p->coeff_shift;
+                         if (ord) {
+-                            memcpy(&xy, ord + k * 2, sizeof(xy));
+-                            dx = xy & 0xffffu;
+-                            dy = xy >> 16;
++                            dx = ord[k * 2];
++                            dy = ord[k * 2 + 1];
+                             if (need_transpose) {
+                                 uint32_t t = dx; dx = dy; dy = t;
+                             }

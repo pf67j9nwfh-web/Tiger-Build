@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2
+- **JPEG XL pictures** (`.jxl`) can be attached and are read by `convert_file`: lossy and lossless, with transparency (shown on white), 16-bit and grey pictures, and animations (up to four frames of the first 120 are shown). The decoder is [jxldec](https://github.com/kjk/jxldec), plain C, built into the app for PowerPC and Intel; it matches libjxl to within one step on the files tried. See `third_party/jxldec`.
+- **Quick Look** (Leopard and Snow Leopard) shows JPEG XL pictures and previews `.json` files as text.
+
 ## 2.1
 - **The approval prompt names the chat** that wants to run the tool, which matters when several chats work at once.
 

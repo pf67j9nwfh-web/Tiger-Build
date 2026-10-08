@@ -69,7 +69,7 @@
     [NSThread detachNewThreadSelector:@selector(readLoop) toTarget:self withObject:nil];
     [NSThread detachNewThreadSelector:@selector(errorLoop) toTarget:self withObject:nil];
     [self request:@"initialize" params:[NSDictionary dictionaryWithObjectsAndKeys:@"2025-06-18", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
-        [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.1", @"version", nil], @"clientInfo", nil] timeout:45];
+        [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.2", @"version", nil], @"clientInfo", nil] timeout:45];
     [self notify:@"notifications/initialized" params:[NSDictionary dictionary]];
 }
 
@@ -467,7 +467,7 @@ static BOOL privateNetworkAddress(NSString *host)
         || privateNetworkAddress(host) || [[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowPlainMCP"]))
         TBFail(@"MCP servers outside your own network must use HTTPS.");
     [self request:@"initialize" params:[NSDictionary dictionaryWithObjectsAndKeys:@"2025-06-18", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
-        [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.1", @"version", nil], @"clientInfo", nil] timeout:45];
+        [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.2", @"version", nil], @"clientInfo", nil] timeout:45];
     [self notify:@"notifications/initialized" params:[NSDictionary dictionary]];
 }
 

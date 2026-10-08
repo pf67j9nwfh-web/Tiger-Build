@@ -2523,7 +2523,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.1";
+        version = @"2.2";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];
@@ -2565,6 +2565,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [credits setString:@"Software that comes with Tiger Build:\n\n"
         @"Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0): secure connections.\n\n"
         @"libwebp (BSD-3-Clause), libaom (BSD-2-Clause with a patent grant) and libde265 (LGPL-3.0, a separate library in Contents/Frameworks): WebP, AVIF and HEIC pictures.\n\n"
+        @"jxldec by Krzysztof Kowalczyk, with changes for the old Macs (see third_party/jxldec): JPEG XL pictures.\n\n"
         @"OpenSSH (BSD) with LibreSSL's libcrypto (ISC, and the OpenSSL and SSLeay licences): the ssh tools and Tiger Build's SSH server.\n\n"
         @"sshfs 2.2 (GPL-2.0) with glib (LGPL-2.1), installed in /usr/local/tbssh: mounting another computer's folder. Its source and patch are in third_party/sshfs.\n\n"
         @"Twemoji, copyright Twitter, Inc. and other contributors (CC-BY 4.0): emoji pictures."];

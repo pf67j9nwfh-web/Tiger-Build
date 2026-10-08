@@ -671,3 +671,11 @@ finished:
     connClose(&c);
     return rc;
 }
+
+/* The JPEG XL decoder (third_party/jxldec) is compiled into this object, so every program that has the converter has the decoder. */
+/* gcc 4.0 and 4.2 have no AVX2 and no immintrin.h: the decoder runs its plain-C paths. */
+#define JXL_NO_AVX2 1
+#define JXL_DCT_FORCE_SCALAR 1
+#define JXL_EPF_FORCE_SCALAR 1
+#undef __SSE2__
+#include "../third_party/jxldec/jxl.c"

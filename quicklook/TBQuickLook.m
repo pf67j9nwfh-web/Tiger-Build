@@ -4,7 +4,7 @@
 #import <QuickLook/QuickLook.h>
 #import "TBExtract.h"
 
-/* A Quick Look generator for the files Tiger Build can read and the old Macs cannot: HEIC, AVIF and WebP pictures, Word, Excel and PowerPoint
+/* A Quick Look generator for the files Tiger Build can read and the old Macs cannot: HEIC, AVIF, WebP and JPEG XL pictures, JSON files (shown as text), Word, Excel and PowerPoint
    (docx, xlsx, pptx) and OpenDocument files. It uses Tiger Build's own converter (TBExtract): pictures become a JPEG preview and thumbnail, documents
    a plain-text preview. Leopard and Snow Leopard only (Tiger has no Quick Look). Installed in /Library/QuickLook by the Tiger Build installer. */
 
@@ -41,9 +41,35 @@ static NSDictionary *converted(CFURLRef url)
     return result;
 }
 
+/* A JSON file as the text it is: the first 400,000 bytes, as UTF-8 (or Latin-1 when it is not). nil when it cannot be read. */
+static NSString *jsonText(CFURLRef url)
+{
+    NSFileHandle *file = [NSFileHandle fileHandleForReadingAtPath:[(NSURL *)url path]];
+    NSData *data = [file readDataOfLength:400000];
+    NSString *text = nil;
+    unsigned trim;
+    [file closeFile];
+    if (!data)
+        return nil;
+    for (trim = 0; trim < 4 && !text && trim <= [data length]; trim++)   /* the cut may fall inside a UTF-8 character */
+        text = [[[NSString alloc] initWithBytes:[data bytes] length:[data length] - trim encoding:NSUTF8StringEncoding] autorelease];
+    if (!text)
+        text = [[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding] autorelease];
+    return text;
+}
+
 OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview, CFURLRef url, CFStringRef contentTypeUTI, CFDictionaryRef options)
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    if ([[[(NSURL *)url pathExtension] lowercaseString] isEqualToString:@"json"]) {
+        NSString *text = jsonText(url);
+        if (text) {
+            NSDictionary *props = [NSDictionary dictionaryWithObjectsAndKeys:@"UTF-8", (NSString *)kQLPreviewPropertyTextEncodingNameKey, @"text/plain", (NSString *)kQLPreviewPropertyMIMETypeKey, nil];
+            QLPreviewRequestSetDataRepresentation(preview, (CFDataRef)[text dataUsingEncoding:NSUTF8StringEncoding], kUTTypePlainText, (CFDictionaryRef)props);
+        }
+        [pool release];
+        return noErr;
+    }
     NSDictionary *result = converted(url);
     NSArray *images = [result objectForKey:@"images"];
     NSString *text = [result objectForKey:@"text"];
@@ -66,6 +92,10 @@ void CancelPreviewGeneration(void *thisInterface, QLPreviewRequestRef preview)
 OSStatus GenerateThumbnailForURL(void *thisInterface, QLThumbnailRequestRef thumbnail, CFURLRef url, CFStringRef contentTypeUTI, CFDictionaryRef options, CGSize maxSize)
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    if ([[[(NSURL *)url pathExtension] lowercaseString] isEqualToString:@"json"]) {
+        [pool release];
+        return noErr;
+    }
     NSDictionary *result = converted(url);
     NSArray *images = [result objectForKey:@"images"];
     if ([images count])
