@@ -219,6 +219,12 @@ static NSDictionary *dispatch(id msg)
     if (![method isKindOfClass:[NSString class]])
         method = @"";
     mid = [msg objectForKey:@"id"];
+    if ([method isEqualToString:@"tb/sudo-key"] && [[msg objectForKey:@"params"] isKindOfClass:[NSDictionary class]]) {
+        id key = [[msg objectForKey:@"params"] objectForKey:@"key"];
+        if ([key isKindOfClass:[NSString class]] && [key length] < 200)
+            CMSetSudoKey(key);
+        return nil;
+    }
     if ([method hasPrefix:@"notifications/"] || [method isEqualToString:@"initialized"] || mid == nil)
         return nil;
     params = [msg objectForKey:@"params"];
@@ -388,21 +394,22 @@ static void stopped(int sig)
 static int sudoCommand(NSArray *words)
 {
     NSString *action = [words count] ? [words objectAtIndex:0] : @"status";
-    if (![[NSArray arrayWithObjects:@"on", @"off", @"status", nil] containsObject:action]) {
-        fprintf(stderr, "usage: ppc-commander --sudo on|off|status\n");
+    if (![[NSArray arrayWithObjects:@"on", @"off", @"remote-on", @"remote-off", @"status", nil] containsObject:action]) {
+        fprintf(stderr, "usage: ppc-commander --sudo on|off|remote-on|remote-off|status\n");
         return 2;
     }
     if (![action isEqualToString:@"status"]) {
         NSMutableDictionary *c = (NSMutableDictionary *)CMConfig();
-        [c setObject:[NSNumber numberWithBool:[action isEqualToString:@"on"]] forKey:@"sudoMode"];
+        BOOL remote = [action hasPrefix:@"remote-"];
+        [c setObject:[NSNumber numberWithBool:[action hasSuffix:@"on"]] forKey:remote ? @"remoteSudo" : @"sudoMode"];
         CMSaveConfig();
         CMLoadSettings();
     }
-    if (CMSudoEnabled())
+    if (CMPolicyAllowsSudo() && [[CMConfig() objectForKey:[action hasPrefix:@"remote-"] ? @"remoteSudo" : @"sudoMode"] boolValue])
         printf("on\n");
     else {
         printf("off\n");
-        if ([action isEqualToString:@"on"])
+        if ([action hasSuffix:@"on"] && !CMPolicyAllowsSudo())
             printf("a policy file (%s) keeps administrator mode off on this Mac\n", [CMPolicyPath() UTF8String]);
     }
     return 0;

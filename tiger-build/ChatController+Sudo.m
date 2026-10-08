@@ -72,18 +72,45 @@ static NSString *brokerPath(void)
     return path;
 }
 
-/* Open only while a reply is running in a chat that ticked the sudo item. Anything else on this account (a model's own shell
-   included) that connects to the socket at another time is refused. */
-static volatile BOOL brokerOpen = NO;
+/* The key another computer's Tiger Build sends with a sudo request (Preferences, Commander Options), kept in the Keychain, never on disk. */
+static NSString *kRemoteKeyService = @"Tiger Build Commander remote sudo key";
 
-void TBSudoBrokerOpen(BOOL open)
+static NSString *remoteSudoKey(BOOL create)
 {
-    brokerOpen = open;
+    const char *service = [kRemoteKeyService UTF8String];
+    const char *account = [NSUserName() UTF8String];
+    UInt32 length = 0;
+    void *data = NULL;
+    NSString *key = nil;
+    if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL) == noErr) {
+        key = [[[NSString alloc] initWithBytes:data length:length encoding:NSUTF8StringEncoding] autorelease];
+        SecKeychainItemFreeContent(NULL, data);
+    } else if (create) {
+        const char *secret;
+        key = [NSString stringWithFormat:@"%08x%08x%08x%08x", arc4random(), arc4random(), arc4random(), arc4random()];
+        secret = [key UTF8String];
+        if (SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) != noErr)
+            key = nil;
+    }
+    return key;
+}
+
+/* Whether the computer's request may have the password: a key of a Commander this app started for a chat with sudo ticked, or this
+   Mac's remote key when the person allows other computers to use sudo here. Anything else on this account gets nothing. */
+static BOOL keyAccepted(NSString *key)
+{
+    if (TBSudoLocalKeyKnown(key))
+        return YES;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"TBRemoteSudo"] && TBCommanderRemoteAllowed()) {
+        NSString *remote = remoteSudoKey(NO);
+        return [remote length] && [remote isEqualToString:key];
+    }
+    return NO;
 }
 
 static void answerCommander(int client)
 {
-    char request[40];
+    char request[128];
     ssize_t got = read(client, request, sizeof(request) - 1);
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
@@ -94,11 +121,12 @@ static void answerCommander(int client)
     if (got <= 0 || getpeereid(client, &uid, &gid) != 0 || uid != getuid())
         return;
     request[got] = 0;
-    if (strcmp(request, "password\n") != 0)
+    if (strncmp(request, "password ", 9) != 0 || request[got - 1] != '\n')
         return;
-    if (!brokerOpen) {
-        const char *closed = "error: administrator mode is not switched on for the chat that is running.\n";
-        write(client, closed, strlen(closed));
+    request[got - 1] = 0;
+    if (!keyAccepted([NSString stringWithUTF8String:request + 9])) {
+        const char *refused = "error: administrator mode is not switched on for this chat.\n";
+        write(client, refused, strlen(refused));
         return;
     }
     if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL) == noErr) {
@@ -311,6 +339,42 @@ static BOOL passwordAccepted(NSString *password)
         forgetPassword();
     }
     [self refreshSudoStatus];
+}
+
+/* Other computers may run sudo here (needs Allow Other Computers): the setting, and Commander's own copy of it. */
+- (void)setRemoteSudo:(BOOL)on
+{
+    if (on) {
+        remoteSudoKey(YES);
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"TBRemoteSudo"];
+        runCommander(@"remote-on");
+    } else {
+        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"TBRemoteSudo"];
+        runCommander(@"remote-off");
+    }
+}
+
+- (BOOL)remoteSudoOn
+{
+    return [[NSUserDefaults standardUserDefaults] boolForKey:@"TBRemoteSudo"];
+}
+
+- (BOOL)administratorPasswordIsSaved
+{
+    return passwordSaved();
+}
+
+/* The key goes on the pasteboard, to be pasted into the server's settings on the other computer. */
+- (void)copyRemoteSudoKey:(id)sender
+{
+    NSString *key = remoteSudoKey(YES);
+    (void)sender;
+    if (!key)
+        return;
+    [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+    [[NSPasteboard generalPasteboard] setString:key forType:NSStringPboardType];
+    NSRunAlertPanel(@"Key copied", @"Add a line TB_SUDO_KEY=(paste) to the Environment box in the other computer's server settings (Tool Settings, MCP Servers, Edit). "
+        @"That computer can then run sudo here, but only in a chat that has the Administrator (sudo) item ticked.", @"OK", nil, nil);
 }
 
 - (IBAction)setAdministratorPassword:(id)sender

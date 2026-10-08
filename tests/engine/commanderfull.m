@@ -201,6 +201,22 @@ int main(int argc, char **argv)
         expectThat([TEXT(r) rangeOfString:@"/sub"].location != NSNotFound, @"commands start in the workspace folder");
         [w close];
     }
+    /* sudo: a Commander of a chat with sudo ticked still needs the key Tiger Build sends it */
+    {
+        TBMCPClient *s = start(D1(@"1", @"TB_SUDO"));
+        NSString *home = [NSString stringWithFormat:@"%@/nosock", dir];
+        r = call(s, @"start_process", [NSDictionary dictionaryWithObjectsAndKeys:@"sudo -n true", @"command", [NSNumber numberWithInt:1000], @"timeout_ms", nil]);
+        expectThat(FAILED(r) && [TEXT(r) rangeOfString:@"administrator key"].location != NSNotFound, @"sudo without the chat's key is refused before the password is asked for");
+        [s notify:@"tb/sudo-key" params:D1(@"abc123", @"key")];
+        r = call(s, @"start_process", [NSDictionary dictionaryWithObjectsAndKeys:@"sudo -n true", @"command", [NSNumber numberWithInt:1000], @"timeout_ms", nil]);
+        expectThat(FAILED(r) && [TEXT(r) rangeOfString:@"administrator key"].location == NSNotFound, @"with a key it goes on to ask Tiger Build (not running here)");
+        (void)home;
+        [s close];
+        s = start(D1(@"0", @"TB_SUDO"));
+        r = call(s, @"start_process", [NSDictionary dictionaryWithObjectsAndKeys:@"sudo -n true", @"command", [NSNumber numberWithInt:1000], @"timeout_ms", nil]);
+        expectThat(FAILED(r) && [TEXT(r) rangeOfString:@"commands are off"].location != NSNotFound, @"a chat without the item gets 'off' whatever else is set");
+        [s close];
+    }
     /* diffs on writes, an extra blocklist, screen tools only when switched on */
     {
         NSString *file = [dir stringByAppendingString:@"/diff.txt"];

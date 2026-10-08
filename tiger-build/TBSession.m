@@ -1,5 +1,6 @@
 #include <limits.h>
 #import "TBSession.h"
+#import "TBSupport.h"
 #include <limits.h>
 #import "TBIntegrations.h"
 #import "TBExtras.h"
@@ -369,6 +370,7 @@ static NSArray *withoutPictures(NSArray *messages)
     [client release];
     [side release];
     [commanderTools release];
+    [sudoKey release];
     [grokKey release];
     [extras release];
     [alwaysAllowed release];
@@ -377,6 +379,10 @@ static NSArray *withoutPictures(NSArray *messages)
 
 - (void)closeTools
 {
+    if (sudoKey)
+        TBSudoLocalKeyForget(sudoKey);
+    [sudoKey release];
+    sudoKey = nil;
     [commander close];
     [commander release];
     commander = nil;
@@ -880,6 +886,12 @@ NSString *TBCommanderProgram(void)
 
 - (TBMCPClient *)startCommanderWithRoot:(NSString *)root screen:(BOOL)screen
 {
+    return [self startCommanderWithRoot:root screen:screen forChat:NO];
+}
+
+/* forChat: this Commander serves the chat's tool calls (not just a look at its tool list), so a sudo chat gives it a key. */
+- (TBMCPClient *)startCommanderWithRoot:(NSString *)root screen:(BOOL)screen forChat:(BOOL)forChat
+{
     NSMutableDictionary *env = [NSMutableDictionary dictionaryWithObjectsAndKeys:@"C", @"LANG", @"C", @"LC_ALL", @"1", @"TB_LOCAL", nil];
     TBMCPClient *started;
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:TBCommanderProgram()])
@@ -895,6 +907,11 @@ NSString *TBCommanderProgram(void)
     [run attach:started];
     @try {
         [started start];
+        if (forChat && ![[self skipKeys] containsObject:@"sudo"]) {
+            [sudoKey release];
+            sudoKey = [TBSudoLocalKeyNew() retain];
+            [started notify:@"tb/sudo-key" params:[NSDictionary dictionaryWithObject:sudoKey forKey:@"key"]];
+        }
     } @catch (NSException *exception) {
         [run detach:started];
         [started close];
@@ -964,7 +981,7 @@ NSString *TBCommanderProgram(void)
         return [NSDictionary dictionaryWithObjectsAndKeys:@"error: Commander is switched off in Tiger Build.", @"output", [NSNumber numberWithBool:YES], @"failed", nil];
     @try {
         if (!commander)
-            commander = [[self startCommanderWithRoot:TBString(options, @"root")] retain];
+            commander = [[self startCommanderWithRoot:TBString(options, @"root") screen:![[self skipKeys] containsObject:@"screen"] forChat:YES] retain];
         result = [commander request:@"tools/call" params:[NSDictionary dictionaryWithObjectsAndKeys:name, @"name", args, @"arguments", nil] timeout:120];
         output = TBMCPResultText(result);
         failed = TBTruth(result, @"isError");
@@ -976,6 +993,10 @@ NSString *TBCommanderProgram(void)
         [commander close];
         [commander release];
         commander = nil;
+        if (sudoKey)
+            TBSudoLocalKeyForget(sudoKey);
+        [sudoKey release];
+        sudoKey = nil;
         @synchronized(toolCache) {
             [toolCache removeObjectForKey:@"entry"];
         }

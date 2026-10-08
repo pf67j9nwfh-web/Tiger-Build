@@ -32,6 +32,10 @@
 - (void)commanderIP:(id)sender;
 - (NSDictionary *)commanderCommand:(NSString *)command;
 - (BOOL)loginLaunchOn;
+- (void)setRemoteSudo:(BOOL)on;
+- (BOOL)remoteSudoOn;
+- (BOOL)administratorPasswordIsSaved;
+- (void)copyRemoteSudoKey:(id)sender;
 - (void)setLoginLaunch:(BOOL)on;
 - (BOOL)administratorPasswordSaved;
 - (BOOL)saveAdministratorPassword;
@@ -115,7 +119,7 @@
 /* Ask once and remember (see ChatController+Attachments.m). */
 BOOL TBConfirmOnce(NSString *key, NSString *title, NSString *message, NSString *okTitle);
 
-void TBSudoBrokerOpen(BOOL open);
+BOOL TBCommanderRemoteAllowed(void);
 /* A chat from a file keeps no approval choices and no administrator or download switch: a file must not pre-approve tools. */
 void TBSanitizeImportedChat(NSMutableDictionary *chat);
 

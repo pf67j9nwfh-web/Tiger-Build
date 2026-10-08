@@ -21,6 +21,7 @@
     long long lastContext;
     NSMutableArray *side;            /* frames from helper calls (consulting, summaries) to send with the next real one */
     TBMCPClient *commander;
+    NSString *sudoKey;               /* this Commander's key for the administrator password, if the chat has sudo ticked */
     NSString *offline;
     NSArray *commanderTools;
     NSString *grokKey;

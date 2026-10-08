@@ -339,6 +339,8 @@ static NSString *sudoPassword(void)
     ssize_t got, total = 0;
     struct timeval tv = {90, 0};
     NSString *line;
+    if (![CMSudoKey() length])
+        CMFail(@"this chat has no administrator key. A person can turn sudo on for it in Tiger Build: the Tools menu of the chat, Administrator (sudo). For another computer, the key from this Mac's Preferences, Commander Options (Copy Key) goes in the server's Environment as TB_SUDO_KEY=...");
     if (access([path fileSystemRepresentation], F_OK) != 0)
         CMFail(@"%@", notRunning);
     sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -350,7 +352,10 @@ static NSString *sudoPassword(void)
         close(sock);
         CMFail(@"%@", notRunning);
     }
-    write(sock, "password\n", 9);
+    {
+        NSData *ask = [[NSString stringWithFormat:@"password %@\n", CMSudoKey()] dataUsingEncoding:NSUTF8StringEncoding];
+        write(sock, [ask bytes], [ask length]);
+    }
     while (total < (ssize_t)sizeof buffer - 1 && !memchr(buffer, '\n', total)) {
         got = read(sock, buffer + total, sizeof buffer - 1 - total);
         if (got <= 0)

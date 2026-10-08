@@ -950,3 +950,32 @@ void TBCivilFromDays(long long unixDays, int *year, int *month, int *day)
     *month = (int)(mp < 10 ? mp + 3 : mp - 9);
     *year = (int)(yoe + era * 400) + (*month <= 2);
 }
+
+static NSMutableSet *sudoKeys = nil;
+
+NSString *TBSudoLocalKeyNew(void)
+{
+    NSString *key = [NSString stringWithFormat:@"%08x%08x%08x%08x", arc4random(), arc4random(), arc4random(), arc4random()];
+    @synchronized([NSString class]) {
+        if (!sudoKeys)
+            sudoKeys = [[NSMutableSet alloc] init];
+        [sudoKeys addObject:key];
+    }
+    return key;
+}
+
+void TBSudoLocalKeyForget(NSString *key)
+{
+    @synchronized([NSString class]) {
+        [sudoKeys removeObject:key];
+    }
+}
+
+BOOL TBSudoLocalKeyKnown(NSString *key)
+{
+    BOOL known;
+    @synchronized([NSString class]) {
+        known = key != nil && [sudoKeys containsObject:key];
+    }
+    return known;
+}

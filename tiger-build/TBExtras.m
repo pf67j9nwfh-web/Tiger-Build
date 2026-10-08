@@ -417,6 +417,10 @@ static NSString *imageSearch(NSString *query, TBRun *run)
                     client = [TBMCPClient clientWithPath:command arguments:TBArray(server, @"args") environment:env label:sid];
                 [run attach:client];
                 [client start];
+                /* another computer's sudo: only a chat with the sudo item ticked sends the key its owner gave (a line TB_SUDO_KEY=... in the server's
+                   Environment); it goes over standard input, not in the ssh command, where other programs could read it */
+                if ([command hasPrefix:@"ssh:"] && ![skip containsObject:@"sudo"] && [TBString(TBDictionary(server, @"env"), @"TB_SUDO_KEY") length])
+                    [client notify:@"tb/sudo-key" params:[NSDictionary dictionaryWithObject:TBString(TBDictionary(server, @"env"), @"TB_SUDO_KEY") forKey:@"key"]];
                 listed = [client request:@"tools/list" params:[NSDictionary dictionary] timeout:20];
                 [clients setObject:client forKey:sid];
             }

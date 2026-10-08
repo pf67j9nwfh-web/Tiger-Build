@@ -143,6 +143,13 @@ NSString *TBImageMime(NSString *path);
 - (int)checkingCount;
 @end
 
+/* Keys for the administrator password. Each Commander that Tiger Build starts for a chat with the sudo item ticked gets its own random
+   key, sent over its standard input (not its environment or arguments, which other programs of this account can read); the password
+   goes only to a program that quotes a key that is registered here. A chat without the item has no key. */
+NSString *TBSudoLocalKeyNew(void);
+void TBSudoLocalKeyForget(NSString *key);
+BOOL TBSudoLocalKeyKnown(NSString *key);
+
 /* A number as short text: whole numbers without a decimal point, others with up to 12 digits. */
 NSString *TBNumberText(double value);
 /* The calendar date of a day count since 1970-01-01. */

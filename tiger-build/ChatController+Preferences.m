@@ -535,6 +535,18 @@ static NSString *trimmedValue(NSTextField *field)
     y -= 22;
     [self preferencesNote:@"Only while \"Allow other computers to use Commander on this Mac\" is on (Commander tab); turning that off removes the Login Item. Commander itself starts only when another computer connects."
         frame:NSMakeRect(34, y - 22, 502, 40) inView:tab];
+    y -= 56;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 400, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Let other computers run administrator (sudo) commands here"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [button setToolTip:@"A chat on another computer can then use sudo on this Mac, but only if that chat has its Administrator (sudo) item ticked and its server settings hold this Mac's key. Chats here keep their own sudo item, whatever this says."];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"commander.remotesudo"];
+    [self preferencesButton:@"Copy Key" frame:NSMakeRect(420, y - 4, 116, 28) action:@selector(copyRemoteSudoKey:) inView:tab];
+    y -= 22;
+    [self preferencesNote:@"Needs the administrator password saved (Commander tab). Chats on this Mac use sudo through their own Tools menu item either way."
+        frame:NSMakeRect(34, y - 8, 502, 30) inView:tab];
 
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
@@ -557,8 +569,11 @@ static NSString *trimmedValue(NSTextField *field)
 {
     BOOL on = [sender state] == NSOnState;
     [[prefsFields objectForKey:@"commander.login"] setEnabled:on];
-    if (!on)
+    [[prefsFields objectForKey:@"commander.remotesudo"] setEnabled:on];
+    if (!on) {
         [[prefsFields objectForKey:@"commander.login"] setState:NSOffState];
+        [[prefsFields objectForKey:@"commander.remotesudo"] setState:NSOffState];
+    }
 }
 
 - (void)loadCommanderOptions
@@ -570,6 +585,8 @@ static NSString *trimmedValue(NSTextField *field)
     [[prefsFields objectForKey:@"commander.diffs"] setState:[defaults boolForKey:@"TBCommanderDiffs"] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"commander.login"] setState:remote && [self loginLaunchOn] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"commander.login"] setEnabled:remote];
+    [[prefsFields objectForKey:@"commander.remotesudo"] setState:remote && [self remoteSudoOn] ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"commander.remotesudo"] setEnabled:remote];
 }
 
 /* Saved after the Allow Other Computers choice, which the login item depends on. */
@@ -580,6 +597,15 @@ static NSString *trimmedValue(NSTextField *field)
     [defaults setObject:trimmedValue([prefsFields objectForKey:@"commander.blocked"]) forKey:@"TBCommanderBlocked"];
     [defaults setBool:[[prefsFields objectForKey:@"commander.diffs"] state] == NSOnState forKey:@"TBCommanderDiffs"];
     [self setLoginLaunch:remote && [[prefsFields objectForKey:@"commander.login"] state] == NSOnState];
+    if (remote && [[prefsFields objectForKey:@"commander.remotesudo"] state] == NSOnState) {
+        if ([self administratorPasswordIsSaved])
+            [self setRemoteSudo:YES];
+        else {
+            NSRunAlertPanel(@"Remote sudo needs the administrator password", @"Tick \"Let agents run administrator (sudo) commands on this Mac\" on the Commander tab and type the password first.", @"OK", nil, nil);
+            [self setRemoteSudo:NO];
+        }
+    } else
+        [self setRemoteSudo:NO];
 }
 
 - (void)saveSSHFields

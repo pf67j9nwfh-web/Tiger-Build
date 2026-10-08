@@ -116,6 +116,11 @@ static void endSessions(void)
     }
 }
 
+BOOL TBCommanderRemoteAllowed(void)
+{
+    return [[NSFileManager defaultManager] fileExistsAtPath:marker(@"remote-access")];
+}
+
 /* The login item: Tiger Build starts hidden when this person logs in, so other computers can use Commander without anyone opening it.
    It is a normal entry in System Preferences, Accounts, Login Items. */
 static NSString *loginItemPath(void)
@@ -146,6 +151,7 @@ static NSArray *loginItems(void)
         setMarker(@"remote-access", NO);
         endSessions();
         [self setLoginLaunch:NO];
+        [self setRemoteSudo:NO];
     }
     return [NSDictionary dictionaryWithObjectsAndKeys:[fm fileExistsAtPath:marker(@"disabled")] ? @"0" : @"1", @"enabled",
         [fm fileExistsAtPath:marker(@"remote-access")] ? @"1" : @"0", @"remote", addresses(), @"ip", nil];

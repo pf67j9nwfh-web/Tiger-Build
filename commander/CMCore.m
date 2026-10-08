@@ -235,6 +235,7 @@ static NSMutableDictionary *defaults(void)
         [NSNumber numberWithInt:1000], @"fileWriteLineLimit",
         [NSNumber numberWithBool:NO], @"telemetryEnabled",
         [NSNumber numberWithBool:NO], @"sudoMode",
+        [NSNumber numberWithBool:NO], @"remoteSudo",
         [NSNumber numberWithBool:NO], @"showDiffs",
         [NSNumber numberWithBool:NO], @"screenControl", nil];
 }
@@ -575,25 +576,46 @@ BOOL CMScreenEnabled(void)
     return chatFlag("TB_SCREEN", @"screenControl");
 }
 
+/* the key Tiger Build sent over standard input for the administrator password (never in the environment or arguments) */
+static NSString *sudoKeyHeld = nil;
+
+void CMSetSudoKey(NSString *key)
+{
+    [sudoKeyHeld release];
+    sudoKeyHeld = [key copy];
+}
+
+NSString *CMSudoKey(void)
+{
+    return sudoKeyHeld;
+}
+
+/* a root-owned policy that keeps administrator mode off wins over everything */
+BOOL CMPolicyAllowsSudo(void)
+{
+    struct stat info;
+    if (stat([CMPolicyPath() fileSystemRepresentation], &info) == 0 && info.st_uid == 0 && !(info.st_mode & 0022)) {
+        id policy = [TBJSONParse([NSData dataWithContentsOfFile:CMPolicyPath()], NULL) retain];
+        BOOL off = [policy isKindOfClass:[NSDictionary class]] && [policy objectForKey:@"sudoMode"] && ![[policy objectForKey:@"sudoMode"] boolValue];
+        [policy release];
+        if (off)
+            return NO;
+    }
+    return YES;
+}
+
 BOOL CMSudoEnabled(void)
 {
     const char *env = getenv("TB_SUDO");
-    /* Tiger Build says for each chat: "1" on, "0" off. Only a run without it (another computer, a terminal) goes by the saved setting. */
+    if (!CMPolicyAllowsSudo())
+        return NO;
+    /* Tiger Build says for each chat: "1" on, "0" off, so the chat that is running decides. A run without it (another computer arriving
+       over SSH, or a terminal) may use sudo only if the person allowed other computers to, which also needs the key they gave that computer. */
     if (env && !strcmp(env, "0"))
         return NO;
-    if (env && !strcmp(env, "1")) {
-        /* a root-owned policy that keeps administrator mode off wins over the chat's switch */
-        struct stat info;
-        if (stat([CMPolicyPath() fileSystemRepresentation], &info) == 0 && info.st_uid == 0 && !(info.st_mode & 0022)) {
-            id policy = [TBJSONParse([NSData dataWithContentsOfFile:CMPolicyPath()], NULL) retain];
-            BOOL off = [policy isKindOfClass:[NSDictionary class]] && [policy objectForKey:@"sudoMode"] && ![[policy objectForKey:@"sudoMode"] boolValue];
-            [policy release];
-            if (off)
-                return NO;
-        }
+    if (env && !strcmp(env, "1"))
         return YES;
-    }
-    return [[config objectForKey:@"sudoMode"] boolValue];
+    return [[config objectForKey:@"remoteSudo"] boolValue];
 }
 
 /* ---- this Mac ---- */
@@ -776,7 +798,7 @@ id CMToolSetConfig(NSDictionary *args)
     if (![args objectForKey:@"value"])
         CMFail(@"missing value");
     value = [args objectForKey:@"value"];
-    if ([[NSArray arrayWithObjects:@"blockedCommands", @"allowedDirectories", @"defaultShell", @"sudoMode", @"showDiffs", @"screenControl", nil] containsObject:key])
+    if ([[NSArray arrayWithObjects:@"blockedCommands", @"allowedDirectories", @"defaultShell", @"sudoMode", @"remoteSudo", @"showDiffs", @"screenControl", nil] containsObject:key])
         CMFail(@"%@ is locked. It controls what tools may run and touch, so only a person can change it, by editing %@ on this Mac (or %@ as an administrator).",
             key, [CMStateFolder() stringByAppendingPathComponent:@"config.json"], CMPolicyPath());
     if ([key isEqualToString:@"fileReadLineLimit"] || [key isEqualToString:@"fileWriteLineLimit"]) {

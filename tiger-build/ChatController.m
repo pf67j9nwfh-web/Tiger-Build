@@ -2349,7 +2349,6 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 - (void)setBusy:(BOOL)flag
 {
     busy = flag;
-    TBSudoBrokerOpen(flag && current && [self serverEnabled:@"sudo" chat:current]);
     [workspacePopup setEnabled:!flag];
     /* The message box stays usable while a model works, for guidance. */
     [input setEnabled:YES];

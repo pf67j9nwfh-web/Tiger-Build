@@ -34,6 +34,9 @@ NSMutableDictionary *CMConfig(void);               /* blockedCommands, defaultSh
 void CMLoadSettings(void);
 void CMSaveConfig(void);
 BOOL CMSudoEnabled(void);
+BOOL CMPolicyAllowsSudo(void);
+void CMSetSudoKey(NSString *key);
+NSString *CMSudoKey(void);
 BOOL CMDiffsEnabled(void);                         /* write_file and edit_block show what changed */
 BOOL CMScreenEnabled(void);                        /* the screen_* tools are offered */
 NSString *CMNow(void);
