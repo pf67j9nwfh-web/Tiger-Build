@@ -1,0 +1,10 @@
+#!/bin/sh
+# Run by the installer as root after the files are in place. The payload was packed by an ordinary account, so the server's files are made
+# root's, and nothing in /usr/local/tbssh can be changed by anyone else (the helper that starts and stops the server runs as root).
+D=/usr/local/tbssh
+chown -R root:wheel "$D" /Library/LaunchDaemons/local.tigerbuild.sshd.plist
+chmod 755 "$D" "$D/sbin" "$D/bin" "$D/libexec" "$D/etc" "$D/sbin/sshd" "$D/bin/"* "$D/libexec/"*
+chmod 644 "$D/etc/sshd_config" "$D/LICENSE" /Library/LaunchDaemons/local.tigerbuild.sshd.plist
+chown -R root:admin "/Applications/Tiger Build.app" 2>/dev/null
+mkdir -p /var/empty
+exit 0

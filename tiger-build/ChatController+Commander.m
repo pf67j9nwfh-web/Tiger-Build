@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBSSHServer.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <net/if.h>
@@ -145,16 +146,32 @@ static NSArray *loginItems(void)
     else if ([command isEqualToString:@"stop"]) {
         setMarker(@"disabled", YES);
         endSessions();
-    } else if ([command isEqualToString:@"remote-on"])
+    } else if ([command isEqualToString:@"remote-on"]) {
         setMarker(@"remote-access", YES);
+        [self applySSHServer:YES];
+    }
     else if ([command isEqualToString:@"remote-off"]) {
         setMarker(@"remote-access", NO);
         endSessions();
+        [self applySSHServer:NO];
         [self setLoginLaunch:NO];
         [self setRemoteSudo:NO];
     }
     return [NSDictionary dictionaryWithObjectsAndKeys:[fm fileExistsAtPath:marker(@"disabled")] ? @"0" : @"1", @"enabled",
         [fm fileExistsAtPath:marker(@"remote-access")] ? @"1" : @"0", @"remote", addresses(), @"ip", nil];
+}
+
+/* Tiger Build's own SSH server follows Allow Other Computers: on starts it, off stops it. Asking for the administrator password may be cancelled. */
+- (void)applySSHServer:(BOOL)on
+{
+    NSString *why;
+    if (![TBSSHServer installed] || [TBSSHServer listening] == on)
+        return;
+    why = [TBSSHServer setRunning:on];
+    if (why && ![why isEqualToString:@"cancelled"])
+        NSRunAlertPanel(on ? @"Tiger Build's SSH server did not start" : @"Tiger Build's SSH server did not stop", @"%@", @"OK", nil, nil, why);
+    else if (why && on)
+        NSRunAlertPanel(@"Tiger Build's SSH server is off", @"Other computers can connect through Remote Login (System Preferences, Sharing) but not through Tiger Build's own server until you turn Allow Other Computers off and on again and give the administrator password.", @"OK", nil, nil);
 }
 
 - (BOOL)loginLaunchOn

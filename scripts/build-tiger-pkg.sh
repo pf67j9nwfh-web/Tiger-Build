@@ -1,6 +1,7 @@
 #!/bin/bash
 # Compile Tiger Build on the Tiger Mac and pack a 10.4 installer.
-# The package installs the app, which carries its own Commander. Nothing else is installed.
+# The package installs the app (which carries its own Commander and ssh client) and Tiger Build's SSH server in /usr/local/tbssh, with its
+# launchd job switched off: it starts only when someone turns on Allow Other Computers and gives an administrator password.
 # It does not contain API keys.
 
 set -euo pipefail
@@ -13,6 +14,8 @@ mkdir -p "$DIST"
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
 NO_OPEN=1 bash "$ROOT/scripts/install-tiger.sh"
 
+COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/installer" -cf - tbssh | "$SSH" 'rm -rf "$HOME/TigerBuild-build/tbssh" && cd "$HOME/TigerBuild-build" && tar -xf -'
+
 "$SSH" bash -s << 'REMOTE'
 set -e
 APP="$HOME/TigerBuild-build/native/TigerBuild.app"
@@ -24,7 +27,18 @@ if [ ! -d "$APP" ]; then
 fi
 rm -rf "$PAYLOAD" "$PKG"
 mkdir -p "$PAYLOAD" "$PKG/Contents/Resources/English.lproj"
-cp -R "$APP" "$PAYLOAD/Tiger Build.app"
+mkdir -p "$PAYLOAD/Applications" "$PAYLOAD/Library/LaunchDaemons" "$PAYLOAD/usr/local/tbssh/sbin" "$PAYLOAD/usr/local/tbssh/bin" "$PAYLOAD/usr/local/tbssh/libexec" "$PAYLOAD/usr/local/tbssh/etc"
+cp -R "$APP" "$PAYLOAD/Applications/Tiger Build.app"
+T="$HOME/TigerBuild-build/third_party/openssh/bin"
+S="$HOME/TigerBuild-build/tbssh"
+cp "$T/sshd" "$PAYLOAD/usr/local/tbssh/sbin/sshd"
+cp "$T/sshd-session" "$T/sshd-auth" "$PAYLOAD/usr/local/tbssh/libexec/"
+cp "$T/ssh-keygen" "$S/tbssh-service" "$S/tbssh-commander" "$PAYLOAD/usr/local/tbssh/bin/"
+cp "$S/sshd_config" "$PAYLOAD/usr/local/tbssh/etc/sshd_config"
+cp "$HOME/TigerBuild-build/third_party/openssh/LICENSE" "$PAYLOAD/usr/local/tbssh/LICENSE"
+cp "$S/local.tigerbuild.sshd.plist" "$PAYLOAD/Library/LaunchDaemons/"
+cp "$S/postflight" "$PKG/Contents/Resources/postflight"
+chmod 755 "$PKG/Contents/Resources/postflight" "$PAYLOAD/usr/local/tbssh/bin/"* "$PAYLOAD/usr/local/tbssh/sbin/sshd" "$PAYLOAD/usr/local/tbssh/libexec/"*
 cd "$PAYLOAD"
 pax -w . | gzip -c > "$PKG/Contents/Archive.pax.gz"
 mkbom . "$PKG/Contents/Archive.bom"
@@ -52,7 +66,7 @@ cat > "$PKG/Contents/Info.plist" << PLIST
   <key>IFPkgFlagAuthorizationAction</key>
   <string>RootAuthorization</string>
   <key>IFPkgFlagDefaultLocation</key>
-  <string>/Applications</string>
+  <string>/</string>
   <key>IFPkgFlagInstallFat</key>
   <false/>
   <key>IFPkgFlagInstalledSize</key>
@@ -60,7 +74,7 @@ cat > "$PKG/Contents/Info.plist" << PLIST
   <key>IFPkgFlagOverwritePermissions</key>
   <false/>
   <key>IFPkgFlagRelocatable</key>
-  <true/>
+  <false/>
   <key>IFPkgFlagRestartAction</key>
   <string>NoRestart</string>
   <key>IFPkgFlagRootVolumeOnly</key>
@@ -82,7 +96,7 @@ cat > "$PKG/Contents/Resources/English.lproj/Description.plist" << PLIST
   <key>IFPkgDescriptionVersion</key>
   <string>2.0</string>
   <key>IFPkgDescriptionDescription</key>
-  <string>Installs Tiger Build on Mac OS X 10.4 to 10.6; Commander, which lets a chat use this Mac's files and shell, is inside the application. No API keys are included: in Tiger Build Preferences, add a key for each service you use, or the address of a local LLM server. No other computer is needed.</string>
+  <string>Installs Tiger Build on Mac OS X 10.4 to 10.6; Commander, which lets a chat use this Mac's files and shell, is inside the application. Tiger Build's own SSH server is installed switched off (it starts only when you turn on Allow Other Computers and give an administrator password). No API keys are included: in Tiger Build Preferences, add a key for each service you use, or the address of a local LLM server. No other computer is needed.</string>
 </dict>
 </plist>
 PLIST

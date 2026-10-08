@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBSSHServer.h"
 #import "TBSession.h"
 
 /* Preferences. Keys are kept in the Keychain by the engine, which only ever reports whether each key is saved, never the key itself.
@@ -15,6 +16,11 @@ static NSString *trimmedValue(NSTextField *field)
 - (void)loadSSHFields;
 - (void)saveSSHFields;
 - (void)loadCommanderOptions;
+- (void)refreshSSHServerStatus;
+- (void)editAllowedKeys:(id)sender;
+- (void)sshKeysOK:(id)sender;
+- (void)sshKeysCancel:(id)sender;
+- (void)copyHostFingerprint:(id)sender;
 - (void)saveCommanderOptions;
 - (void)remoteBoxChanged:(id)sender;
 - (void)fillNewChatModelPopup;
@@ -498,7 +504,7 @@ static NSString *trimmedValue(NSTextField *field)
     [prefsFields setObject:note forKey:@"sudo.status"];
 
     /* ---- Commander Options ---- */
-    tab = [self preferencesTab:@"Commander Options" in:tabs];
+    tab = [self preferencesTab:@"Options" in:tabs];
     y = 292;
     [self preferencesHeading:@"Commands to block" y:y inView:tab];
     y -= 28;
@@ -548,6 +554,24 @@ static NSString *trimmedValue(NSTextField *field)
     [self preferencesNote:@"Needs the administrator password saved (Commander tab). Chats on this Mac use sudo through their own Tools menu item either way."
         frame:NSMakeRect(34, y - 8, 502, 30) inView:tab];
 
+    /* ---- SSH Server ---- */
+    tab = [self preferencesTab:@"SSH Server" in:tabs];
+    y = 292;
+    [self preferencesNote:@"Tiger Build has its own SSH server (OpenSSH, port 2222) for other computers that use this Mac's Commander. It is separate from Remote Login, "
+        @"lets in only the public keys listed here, and can run nothing but Commander: no shell, terminal or forwarding. It runs only while Allow Other Computers is on "
+        @"(Commander tab), and starting or stopping it asks for the administrator password."
+        frame:NSMakeRect(16, y - 56, 520, 72) inView:tab];
+    y -= 96;
+    note = [self preferencesLabel:@"" frame:NSMakeRect(16, y, 520, 18) inView:tab];
+    [prefsFields setObject:note forKey:@"ssh.status"];
+    y -= 34;
+    [self preferencesButton:@"Allowed Keys..." frame:NSMakeRect(16, y, 140, 28) action:@selector(editAllowedKeys:) inView:tab];
+    [self preferencesButton:@"Copy Host Fingerprint" frame:NSMakeRect(162, y, 170, 28) action:@selector(copyHostFingerprint:) inView:tab];
+    y -= 30;
+    [self preferencesNote:@"Allowed Keys: one public key per line, from the other computer's Tiger Build (Tool Settings, MCP Servers, Copy Key). "
+        @"On the other computer add the server as ssh:you@this-Mac:2222; its Trust Host step shows the fingerprint to compare with the one here."
+        frame:NSMakeRect(16, y - 40, 520, 56) inView:tab];
+
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
     button = [self preferencesButton:@"Save" frame:NSMakeRect(396, 16, 94, 30)
@@ -576,8 +600,76 @@ static NSString *trimmedValue(NSTextField *field)
     }
 }
 
+- (void)refreshSSHServerStatus
+{
+    NSString *text;
+    if (![TBSSHServer installed])
+        text = @"Not installed. The Tiger Build installer puts it in /usr/local/tbssh.";
+    else if ([TBSSHServer listening])
+        text = @"Running on port 2222.";
+    else
+        text = @"Installed and off. It starts when Allow Other Computers is turned on.";
+    [[prefsFields objectForKey:@"ssh.status"] setStringValue:text];
+}
+
+- (void)editAllowedKeys:(id)sender
+{
+    NSPanel *panel = [[[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 520, 300) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
+    NSScrollView *scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(16, 50, 488, 200)] autorelease];
+    NSTextView *text = [[[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 470, 200)] autorelease];
+    NSTextField *label = [self preferencesLabel:@"Public keys that may connect, one per line (they start with ssh-ed25519 or ssh-rsa):" frame:NSMakeRect(16, 262, 488, 18) inView:[panel contentView]];
+    NSButton *save = [self preferencesButton:@"Save" frame:NSMakeRect(410, 12, 94, 30) action:@selector(sshKeysOK:) inView:[panel contentView]];
+    NSButton *cancel = [self preferencesButton:@"Cancel" frame:NSMakeRect(310, 12, 94, 30) action:@selector(sshKeysCancel:) inView:[panel contentView]];
+    (void)sender;
+    (void)label;
+    [save setKeyEquivalent:@"\r"];
+    [cancel setKeyEquivalent:@"\033"];
+    [text setFont:[NSFont fontWithName:@"Monaco" size:10]];
+    [text setString:[TBSSHServer authorizedKeys]];
+    [text setEditable:YES];
+    [text setMinSize:NSMakeSize(0, 200)];
+    [text setMaxSize:NSMakeSize(1e7, 1e7)];
+    [text setVerticallyResizable:YES];
+    [text setAutoresizingMask:NSViewWidthSizable];
+    [scroll setHasVerticalScroller:YES];
+    [scroll setBorderType:NSBezelBorder];
+    [scroll setDocumentView:text];
+    [[panel contentView] addSubview:scroll];
+    [panel setTitle:@"Allowed Keys"];
+    [panel setLevel:NSFloatingWindowLevel];
+    if ([NSApp runModalForWindow:panel] == 1 && ![TBSSHServer saveAuthorizedKeys:[text string]])
+        NSRunAlertPanel(@"Allowed Keys", @"The keys could not be saved.", @"OK", nil, nil);
+    [panel orderOut:nil];
+}
+
+- (void)sshKeysOK:(id)sender
+{
+    (void)sender;
+    [NSApp stopModalWithCode:1];
+}
+
+- (void)sshKeysCancel:(id)sender
+{
+    (void)sender;
+    [NSApp stopModalWithCode:0];
+}
+
+- (void)copyHostFingerprint:(id)sender
+{
+    NSString *print = [TBSSHServer hostFingerprint];
+    (void)sender;
+    if (!print) {
+        NSRunAlertPanel(@"Host fingerprint", @"The server has no key yet. It makes one the first time it starts (turn on Allow Other Computers).", @"OK", nil, nil);
+        return;
+    }
+    [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+    [[NSPasteboard generalPasteboard] setString:print forType:NSStringPboardType];
+    NSRunAlertPanel(@"Host fingerprint copied", @"%@", @"OK", nil, nil, print);
+}
+
 - (void)loadCommanderOptions
 {
+    [self refreshSSHServerStatus];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     BOOL remote = [[[self commanderCommand:@"status"] objectForKey:@"remote"] intValue] != 0;
     NSString *blocked = [defaults stringForKey:@"TBCommanderBlocked"];
