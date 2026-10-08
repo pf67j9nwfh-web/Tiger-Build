@@ -13,17 +13,24 @@ set -x
 if [ "$(id -ru)" != 0 ]; then
   [ -z "$TBSSH_REEXEC" ] || { echo "tbssh-service could not become root" >&2; exit 1; }
   # (perl turns on taint checking when the real and effective ids differ, so the environment is replaced and the arguments checked first)
-  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = $ARGV[0] =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = $ARGV[1] =~ m{^(on|off)$} or die "usage\n"; $< = 0; $> = 0; $( = 0; $) = 0; exec "/bin/sh", $s, $a' "$0" "$1"
+  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = $ARGV[0] =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = $ARGV[1] =~ m{^(on|off)$} or die "usage\n"; $< = 0; $> = 0; exec "/bin/sh", $s, $a' "$0" "$1"
 fi
 for f in /usr/local/tbssh/sbin/sshd /usr/local/tbssh/libexec/sshd-session /usr/local/tbssh/libexec/sshd-auth /usr/local/tbssh/etc/sshd_config /Library/LaunchDaemons/local.tigerbuild.sshd.plist; do
   [ -f "$f" ] || { echo "Tiger Build's SSH server is not installed (missing $f)" >&2; exit 1; }
 done
 PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
 KEY=/usr/local/tbssh/etc/ssh_host_ed25519_key
-case "$(sw_vers -productVersion 2>/dev/null)" in
-  10.4*) LC="/bin/launchctl" ;;
-  *) LC="/bin/launchctl bsexec 1 /bin/launchctl" ;;
-esac
+OS="$(sw_vers -productVersion 2>/dev/null)"
+# launchctl loads into the launchd it finds from the caller's session, which for the administrator dialog is the signed-in user's. With the real
+# user id and a clean environment it reaches the system's (as `sudo launchctl` in a terminal does); on 10.5 and later that is checked (the
+# system's launchd has com.apple.syslogd) and, if it is not, tried again from inside the system launchd's namespace.
+LC="/bin/launchctl"
+in_system() {
+  case "$OS" in
+    10.4*) return 0 ;;
+    *) /bin/launchctl list 2>/dev/null | grep -q com.apple.syslogd ;;
+  esac
+}
 case "$1" in
   on)
     if [ ! -f "$KEY" ]; then
@@ -32,11 +39,19 @@ case "$1" in
     chown root:wheel "$KEY" "$KEY.pub" && chmod 600 "$KEY" && chmod 644 "$KEY.pub"
     touch /var/log/tbsshd.log && chown root:admin /var/log/tbsshd.log && chmod 640 /var/log/tbsshd.log
     $LC unload "$PLIST"
-    $LC load -w "$PLIST"
-    echo "load finished: $?"
+    if in_system; then
+      $LC load -w "$PLIST"
+    else
+      echo "not in the system launchd; trying bsexec"
+      /bin/launchctl bsexec 1 /bin/launchctl unload "$PLIST"
+      /bin/launchctl bsexec 1 /bin/launchctl load -w "$PLIST"
+    fi
+    echo "load finished: $? (system domain: $(in_system && echo yes || echo no))"
+    /bin/launchctl list | grep tigerbuild
     ;;
   off)
     $LC unload -w "$PLIST"
+    in_system || /bin/launchctl bsexec 1 /bin/launchctl unload -w "$PLIST"
     echo "unload finished: $?"
     ;;
   *)
