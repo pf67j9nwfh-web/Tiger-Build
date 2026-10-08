@@ -4,6 +4,12 @@
 # must be loaded into the system's launchd (as root), not into the launchd of whoever is signed in, or sshd would run as that person and
 # could not read its host key. The system's Authorization dialog runs this with root's rights but the signed-in user's launchd, so it
 # first becomes root all the way (the real user id too) and, on 10.5 and later, switches into the system launchd's namespace.
+# everything this does is written to /var/log/tbssh-service.log (readable by administrators), and nothing goes to the caller's pipe
+LOG=/var/log/tbssh-service.log
+touch "$LOG" 2>/dev/null; chown root:admin "$LOG" 2>/dev/null; chmod 640 "$LOG" 2>/dev/null
+exec >>"$LOG" 2>&1 </dev/null
+echo "== $(date) tbssh-service $* ruid=$(id -ru) euid=$(id -u) os=$(sw_vers -productVersion 2>/dev/null)"
+set -x
 if [ "$(id -ru)" != 0 ]; then
   [ -z "$TBSSH_REEXEC" ] || { echo "tbssh-service could not become root" >&2; exit 1; }
   # (perl turns on taint checking when the real and effective ids differ, so the environment is replaced and the arguments checked first)
@@ -18,7 +24,6 @@ case "$(sw_vers -productVersion 2>/dev/null)" in
   10.4*) LC="/bin/launchctl" ;;
   *) LC="/bin/launchctl bsexec 1 /bin/launchctl" ;;
 esac
-# nothing of ours may keep the caller's output open: launchctl can start a launchd that inherits it
 case "$1" in
   on)
     if [ ! -f "$KEY" ]; then
@@ -26,11 +31,13 @@ case "$1" in
     fi
     chown root:wheel "$KEY" "$KEY.pub" && chmod 600 "$KEY" && chmod 644 "$KEY.pub"
     touch /var/log/tbsshd.log && chown root:admin /var/log/tbsshd.log && chmod 640 /var/log/tbsshd.log
-    $LC unload "$PLIST" </dev/null >/dev/null 2>&1
-    $LC load -w "$PLIST" </dev/null >/dev/null 2>&1
+    $LC unload "$PLIST"
+    $LC load -w "$PLIST"
+    echo "load finished: $?"
     ;;
   off)
-    $LC unload -w "$PLIST" </dev/null >/dev/null 2>&1
+    $LC unload -w "$PLIST"
+    echo "unload finished: $?"
     ;;
   *)
     echo "usage: tbssh-service on|off" >&2
