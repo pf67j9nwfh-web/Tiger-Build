@@ -121,7 +121,7 @@ Note: Pricing estimates on model usage are provided as a convenience and may not
 Skip this section if you don't want an ultra detailed description of this app's functionality.
 
 **Chats**
-- **Chat list.** Window → Hide Chat List (Command-backslash) folds the chat list away to give the chat the whole window, and shows it again; the choice is remembered. The model and Tools pickers live in the chat list, so use the Model and Chat menus while it is hidden.
+- **Chat list.** Window → Hide Chat List (Command-backslash) folds the chat list away to give the chat the whole window, and shows it again; the choice is remembered. While it is hidden, the service, model and Tools pickers sit in a band across the top of the chat.
 - **Workspaces.** The sidebar popup picks a workspace (project); each has its own chats. API keys and tools are shared. Workspace → Directory Restriction limits Commander's file tools to one folder and checks the paths in shell commands; the shell check is a guard against mistakes, not a sandbox, because a shell can always build a path another way. Only give Commander to models and documents you trust.
 - **Chat list.** Hover a chat to see its full title. Each service shows its own icon in the provider popup and the Model menu.
 - **Models.** The popups under the chat list pick service and model. A new chat starts with the last chat's model, tools and approvals, or a fixed model chosen in Preferences. Services with no key or no working model are dimmed with the reason.

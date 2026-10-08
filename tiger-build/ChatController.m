@@ -839,6 +839,7 @@ static NSMutableArray *allControllers = nil;
     (void)sender;
     sidebarHidden = !sidebarHidden;
     [[NSUserDefaults standardUserDefaults] setBool:sidebarHidden forKey:@"TigerBuildSidebarHidden"];
+    [chatPane setNeedsDisplay:YES];
     [sidePane setHidden:sidebarHidden];
     [self layoutSubviews];
     [window makeFirstResponder:input];
@@ -875,6 +876,7 @@ static NSMutableArray *allControllers = nil;
     float innerH;
     float column;
     float fieldW;
+    float band;
     NSView *label = nil;
     NSArray *subs;
     unsigned i;
@@ -913,7 +915,9 @@ static NSMutableArray *allControllers = nil;
     fieldW = mainW - 8 - (9 + 76 + 76 + 7);
     if (fieldW < 80)
         fieldW = 80;
-    chatLayout = TBLayoutChatPane(mainW, mainH, [self inputHeightForWidth:fieldW - 70],
+    /* With the chat list folded away the service, model and Tools pickers move to a band across the top of the chat. */
+    band = sidebarHidden ? 34 : 0;
+    chatLayout = TBLayoutChatPane(mainW, mainH - band, [self inputHeightForWidth:fieldW - 70],
         [self relayStatusHeightForWidth:mainW - 16], [self thinkingHeightForWidth:mainW - 16]);
     inputHeight = chatLayout.fieldHeight;
     [label setHidden:YES];
@@ -922,9 +926,23 @@ static NSMutableArray *allControllers = nil;
     [workspacePopup setFrame:NSMakeRect(14, sideH - 38, column, 26)];
     [newButton setFrame:NSMakeRect(14, sideH - 76, column, 28)];
     [deleteButton setFrame:NSMakeRect(14, sideH - 112, column, 28)];
-    [modelPopup setFrame:NSMakeRect(14, 76, column, 26)];
-    [variantPopup setFrame:NSMakeRect(14, 42, column, 26)];
-    [toolsPopup setFrame:NSMakeRect(14, 8, column, 26)];
+    {
+        NSView *home = sidebarHidden ? chatPane : sidePane;
+        NSArray *pickers = [NSArray arrayWithObjects:modelPopup, variantPopup, toolsPopup, nil];
+        for (i = 0; i < [pickers count]; i++)
+            if ([[pickers objectAtIndex:i] superview] != home)
+                [home addSubview:[pickers objectAtIndex:i]];
+    }
+    if (sidebarHidden) {
+        float w = floorf((mainW - 18 - 12) / 3.0f);
+        [modelPopup setFrame:NSMakeRect(9, mainH - 30, w, 26)];
+        [variantPopup setFrame:NSMakeRect(9 + w + 6, mainH - 30, w, 26)];
+        [toolsPopup setFrame:NSMakeRect(9 + 2 * (w + 6), mainH - 30, w, 26)];
+    } else {
+        [modelPopup setFrame:NSMakeRect(14, 76, column, 26)];
+        [variantPopup setFrame:NSMakeRect(14, 42, column, 26)];
+        [toolsPopup setFrame:NSMakeRect(14, 8, column, 26)];
+    }
     [chatScroll setFrame:NSMakeRect(14, 110, column, MAX(40, sideH - 234))];
     {
         /* The relay problem wraps across the top; the context readout sits below it. */
