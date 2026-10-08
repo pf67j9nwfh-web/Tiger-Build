@@ -337,6 +337,13 @@ NSArray *TBMCPFunctionTools(id listed)
 /* ---- MCP over HTTP ---- */
 
 #import "TBHTTP.h"
+#import "TBOAuth.h"
+#import <unistd.h>
+
+@interface TBMCPHTTPClient (Legacy)
+- (id)postLegacy:(NSDictionary *)message wantId:(id)wanted timeout:(double)seconds;
+- (void)startLegacy;
+@end
 
 /* a dotted-quad address on a private network (10.x, 172.16 to 31, 192.168.x); a name that merely starts with those digits is not */
 static BOOL privateNetworkAddress(NSString *host)
@@ -366,6 +373,11 @@ static BOOL privateNetworkAddress(NSString *host)
     [token release];
     [session release];
     [failure release];
+    [postURL release];
+    [answers release];
+    [streamError release];
+    [sseParser release];
+    [lastChallenge release];
     [super dealloc];
 }
 
@@ -383,10 +395,35 @@ static BOOL privateNetworkAddress(NSString *host)
     [(TBHTTP *)current cancel];
 }
 
+/* the token to send: the one the server was given, or what signing in produced */
+- (NSString *)bearerNow
+{
+    if ([token length])
+        return token;
+    return [TBOAuth tokenForServer:url];
+}
+
+/* the server answered 401: sign in (once), then the caller tries again. NO when it cannot be done (the reason is raised). */
+- (BOOL)signInAfter401:(NSString *)challenge
+{
+    NSString *why = nil;
+    if ([token length] || freshAuth || [challenge rangeOfString:@"bearer" options:NSCaseInsensitiveSearch].location == NSNotFound)
+        return NO;
+    if (![TBOAuth authorizeServer:url challenge:challenge error:&why]) {
+        if ([why isEqualToString:@"cancelled"])
+            TBFail(@"Signing in to this server was cancelled.");
+        TBFail(@"%@", why ? why : @"Signing in failed.");
+    }
+    return YES;
+}
+
 /* One message out. Returns the reply with this id, or nil for a notification. */
 - (id)post:(NSDictionary *)message wantId:(id)wanted timeout:(double)seconds
 {
-    TBHTTP *http = [TBHTTP request:@"POST" url:url];
+    TBHTTP *http;
+    if (legacy)
+        return [self postLegacy:message wantId:wanted timeout:seconds];
+    http = [TBHTTP request:@"POST" url:url];
     int result;
     NSString *type;
     [http setHeader:@"Content-Type" value:@"application/json"];
@@ -394,13 +431,26 @@ static BOOL privateNetworkAddress(NSString *host)
     [http setHeader:@"MCP-Protocol-Version" value:@"2025-06-18"];
     if (session)
         [http setHeader:@"Mcp-Session-Id" value:session];
-    if ([token length])
-        [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:token]];
+    {
+        NSString *bearer = [self bearerNow];
+        if ([bearer length])
+            [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:bearer]];
+    }
     [http setBody:TBJSONData(message)];
     [http setIdleTimeout:seconds > 5 ? (int)seconds : 5];
     current = http;
     result = [http perform];
     current = nil;
+    if (result == TBNET_OK && [http status] == 401 && [self signInAfter401:[http responseHeader:@"WWW-Authenticate"]]) {
+        id again;
+        freshAuth = YES;
+        @try {
+            again = [self post:message wantId:wanted timeout:seconds];
+        } @finally {
+            freshAuth = NO;
+        }
+        return again;
+    }
     if (closed)
         TBFail(@"The MCP server connection was closed.");
     if (result != TBNET_OK) {
@@ -438,6 +488,167 @@ static BOOL privateNetworkAddress(NSString *host)
     }
 }
 
+/* ---- the older HTTP+SSE transport ---- */
+
+/* the address the server announced, which must be on the same site as the stream (the token goes there) */
+- (NSString *)resolvedEndpoint:(NSString *)announced
+{
+    NSURL *base = [NSURL URLWithString:url], *full = [NSURL URLWithString:announced relativeToURL:base];
+    NSURL *absolute = [full absoluteURL];
+    if (!absolute || ![[[absolute host] lowercaseString] isEqualToString:[[base host] lowercaseString]] || ![[absolute scheme] isEqualToString:[base scheme]]
+        || ([absolute port] ? [[absolute port] intValue] : 0) != ([base port] ? [[base port] intValue] : 0))
+        return nil;
+    return [absolute absoluteString];
+}
+
+/* On the reader thread: each event of the stream as it arrives */
+- (BOOL)http:(TBHTTP *)http gotData:(NSData *)data
+{
+    NSArray *events;
+    unsigned i;
+    if (closed)
+        return YES;
+    events = [sseParser feed:data];
+    for (i = 0; i < [events count]; i++) {
+        NSDictionary *event = [events objectAtIndex:i];
+        NSString *name = [event objectForKey:@"event"], *text = [event objectForKey:@"data"];
+        if ([name isEqualToString:@"endpoint"]) {
+            NSString *resolved = [self resolvedEndpoint:TBTrim(text)];
+            @synchronized(self) {
+                if (resolved && !postURL)
+                    postURL = [resolved copy];
+                else if (!resolved && !streamError)
+                    streamError = [@"The server named a place to send messages that is on another site." copy];
+            }
+        } else if ([name length] == 0 || [name isEqualToString:@"message"]) {
+            id json = TBJSONParseString(text, NULL);
+            if ([json isKindOfClass:[NSDictionary class]] && [json objectForKey:@"id"] && ([json objectForKey:@"result"] || [json objectForKey:@"error"])) {
+                @synchronized(self) {
+                    [answers setObject:json forKey:[[json objectForKey:@"id"] description]];
+                }
+            }
+        }
+    }
+    return NO;
+}
+
+- (void)readStream:(id)unused
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    TBHTTP *http = [TBHTTP request:@"GET" url:url];
+    int rc;
+    (void)unused;
+    [TBHTTP loadRoots];
+    [http setHeader:@"Accept" value:@"text/event-stream"];
+    {
+        NSString *bearer = [self bearerNow];
+        if ([bearer length])
+            [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:bearer]];
+    }
+    [http setIdleTimeout:3600];
+    [http setDelegate:self];
+    sseParser = [[TBSSE alloc] init];
+    current = http;
+    rc = [http perform];
+    current = nil;
+    @synchronized(self) {
+        if ([http status] == 401) {
+            [lastChallenge release];
+            lastChallenge = [[http responseHeader:@"WWW-Authenticate"] copy];
+        }
+        if (!streamError && !closed)
+            streamError = [(rc != TBNET_OK ? [http error] : ([http status] >= 300 ? [NSString stringWithFormat:@"HTTP %d", [http status]] : @"The server closed the stream.")) copy];
+    }
+    streamEnded = 1;
+    [pool release];
+}
+
+- (id)postLegacy:(NSDictionary *)message wantId:(id)wanted timeout:(double)seconds
+{
+    TBHTTP *http;
+    NSString *where;
+    double waited = 0;
+    @synchronized(self) { where = [[postURL copy] autorelease]; }
+    if (!where)
+        TBFail(@"The server has not said where to send messages.");
+    http = [TBHTTP request:@"POST" url:where];
+    [http setHeader:@"Content-Type" value:@"application/json"];
+    {
+        NSString *bearer = [self bearerNow];
+        if ([bearer length])
+            [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:bearer]];
+    }
+    [http setBody:TBJSONData(message)];
+    [http setIdleTimeout:30];
+    if ([http perform] != TBNET_OK)
+        TBFail(@"%@", [http error]);
+    if ([http status] < 200 || [http status] >= 300)
+        TBFail(@"HTTP %d", [http status]);
+    if (!wanted)
+        return nil;
+    for (;;) {
+        id reply = nil;
+        @synchronized(self) {
+            reply = [answers objectForKey:[wanted description]];
+            if (reply)
+                [answers removeObjectForKey:[wanted description]];
+        }
+        if (reply)
+            return reply;
+        if (closed)
+            TBFail(@"The MCP server connection was closed.");
+        if (streamEnded) {
+            NSString *why;
+            @synchronized(self) { why = [[streamError copy] autorelease]; }
+            TBFail(@"The MCP server's stream ended: %@", why ? why : @"closed");
+        }
+        if (waited >= seconds)
+            TBFail(@"The MCP server did not answer in time.");
+        usleep(40000);
+        waited += 0.04;
+    }
+}
+
+- (void)startLegacy
+{
+    double waited = 0;
+    legacy = YES;
+    streamEnded = 0;
+    [postURL release]; postURL = nil;
+    [answers release]; answers = [[NSMutableDictionary alloc] init];
+    [streamError release]; streamError = nil;
+    [NSThread detachNewThreadSelector:@selector(readStream:) toTarget:self withObject:nil];
+    for (;;) {
+        BOOL have;
+        @synchronized(self) { have = postURL != nil || streamError != nil; }
+        if (have || streamEnded || closed || waited > 20)
+            break;
+        usleep(50000);
+        waited += 0.05;
+    }
+    {
+        NSString *challenge = nil;
+        BOOL unauthorized;
+        @synchronized(self) {
+            unauthorized = !postURL && [streamError hasPrefix:@"HTTP 401"];
+            challenge = [[lastChallenge copy] autorelease];
+        }
+        if (unauthorized && !freshAuth && [self signInAfter401:challenge]) {
+            freshAuth = YES;
+            @try {
+                [self startLegacy];
+            } @finally {
+                freshAuth = NO;
+            }
+            return;
+        }
+    }
+    @synchronized(self) {
+        if (!postURL)
+            TBFail(@"%@", streamError ? streamError : @"The server did not say where to send messages (the older SSE transport needs an endpoint event).");
+    }
+}
+
 - (id)request:(NSString *)method params:(id)params timeout:(double)seconds
 {
     NSNumber *ident = [NSNumber numberWithInt:nextId++];
@@ -466,8 +677,27 @@ static BOOL privateNetworkAddress(NSString *host)
     if ([lower hasPrefix:@"http://"] && !([host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"] || [host isEqualToString:@"::1"] || [host hasSuffix:@".local"] || [host hasSuffix:@".lan"] || [host hasSuffix:@".home"]
         || privateNetworkAddress(host) || [[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowPlainMCP"]))
         TBFail(@"MCP servers outside your own network must use HTTPS.");
-    [self request:@"initialize" params:[NSDictionary dictionaryWithObjectsAndKeys:@"2025-06-18", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
-        [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.2", @"version", nil], @"clientInfo", nil] timeout:45];
+    {
+        NSDictionary *hello = [NSDictionary dictionaryWithObjectsAndKeys:@"2025-06-18", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
+            [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.2", @"version", nil], @"clientInfo", nil];
+        if ([[[parsed path] lowercaseString] hasSuffix:@"/sse"])
+            [self startLegacy];
+        else {
+            @try {
+                [self request:@"initialize" params:hello timeout:45];
+            } @catch (NSException *e) {
+                NSString *why = [e reason];
+                /* the answers of a server that only has the older transport (the specification's own way to tell) */
+                if ([why hasPrefix:@"HTTP 404"] || [why hasPrefix:@"HTTP 405"] || [why hasPrefix:@"HTTP 400"])
+                    [self startLegacy];
+                else
+                    [e raise];
+            }
+        }
+        if (legacy)
+            [self request:@"initialize" params:[NSDictionary dictionaryWithObjectsAndKeys:@"2024-11-05", @"protocolVersion", [NSDictionary dictionary], @"capabilities",
+                [NSDictionary dictionaryWithObjectsAndKeys:@"tigerbuild", @"name", @"2.2", @"version", nil], @"clientInfo", nil] timeout:45];
+    }
     [self notify:@"notifications/initialized" params:[NSDictionary dictionary]];
 }
 

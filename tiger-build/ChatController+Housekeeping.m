@@ -313,6 +313,17 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
     [self checkForUpdates:nil];
 }
 
+/* ---- MCP sign-ins ---- */
+
+- (void)forgetMCPSignIns:(id)sender
+{
+    (void)sender;
+    if (NSRunAlertPanel(@"Forget saved sign-ins?", @"Tiger Build will forget the access it was given by MCP servers that ask you to sign in. They will ask you to sign in again the next time they are used.",
+        @"Forget", @"Cancel", nil) != NSAlertDefaultReturn)
+        return;
+    [TBSettings clearName:@"mcp_oauth"];
+}
+
 /* ---- the uninstaller ---- */
 
 - (void)uninstallTigerBuild:(id)sender

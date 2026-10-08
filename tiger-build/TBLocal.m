@@ -7,6 +7,7 @@
 static NSMutableArray *cachedList = nil;
 static NSDate *cachedAt = nil;
 static NSMutableDictionary *ollamaContexts = nil;
+static NSMutableDictionary *routerPrices = nil;   /* model id -> {prompt, completion}, from OpenRouter's own list */
 
 static id getJSON(NSString *url, double timeout)
 {
@@ -97,6 +98,8 @@ static NSDictionary *ollamaLimits(NSString *origin, NSArray *names)
     if ([base length] == 0)
         TBFail(@"No local model server is set up.");
     origin = [base hasSuffix:@"/v1"] ? [base substringToIndex:[base length] - 3] : base;
+    if ([[[[NSURL URLWithString:base] host] lowercaseString] hasSuffix:@"openrouter.ai"])
+        return [self openRouterModelsWithTimeout:seconds base:base];
     v0 = TBArray(getJSON([origin stringByAppendingString:@"/api/v0/models"], seconds), @"data");
     v1 = TBArray(getJSON([base stringByAppendingString:@"/models"], seconds), @"data");
     for (i = 0; i < [v0 count]; i++) {
@@ -147,6 +150,49 @@ static NSDictionary *ollamaLimits(NSString *origin, NSArray *names)
     if ([models count] == 0 && [v0 count] == 0 && [v1 count] == 0)
         TBFail(@"Cannot reach the local model server.");
     return models;
+}
+
+/* OpenRouter has hundreds of models, many of which cannot use tools: those that can, by name, with the context length and price it gives */
++ (NSArray *)openRouterModelsWithTimeout:(double)seconds base:(NSString *)base
+{
+    NSArray *data = TBArray(getJSON([base stringByAppendingString:@"/models"], seconds), @"data");
+    NSMutableArray *models = [NSMutableArray array];
+    NSMutableDictionary *prices = [NSMutableDictionary dictionary];
+    unsigned i;
+    if ([data count] == 0)
+        TBFail(@"Cannot reach OpenRouter. Check the address and the key.");
+    for (i = 0; i < [data count]; i++) {
+        NSDictionary *item = [data objectAtIndex:i], *pricing = TBDictionary(item, @"pricing");
+        NSString *mid = TBString(item, @"id"), *name = TBString(item, @"name");
+        NSArray *params = TBArray(item, @"supported_parameters");
+        long long context = TBInteger(item, @"context_length");
+        NSString *modality = TBString(TBDictionary(item, @"architecture"), @"modality");
+        if ([mid length] == 0 || ([params count] && ![params containsObject:@"tools"]) || [[mid lowercaseString] rangeOfString:@"embed"].location != NSNotFound)
+            continue;
+        if ([modality length] && [modality rangeOfString:@"->text"].location == NSNotFound)
+            continue;   /* it does not answer in text */
+        [models addObject:[NSMutableDictionary dictionaryWithObjectsAndKeys:mid, @"id", [NSNumber numberWithLongLong:context > 0 ? context : 32768], @"context",
+            [name length] ? name : mid, @"title", nil]];
+        if ([TBString(pricing, @"prompt") length] || [TBString(pricing, @"completion") length])
+            [prices setObject:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithDouble:[TBString(pricing, @"prompt") doubleValue]], @"prompt",
+                [NSNumber numberWithDouble:[TBString(pricing, @"completion") doubleValue]], @"completion", nil] forKey:mid];
+    }
+    [models sortUsingDescriptors:[NSArray arrayWithObject:[[[NSSortDescriptor alloc] initWithKey:@"title" ascending:YES selector:@selector(caseInsensitiveCompare:)] autorelease]]];
+    @synchronized(self) {
+        [routerPrices release];
+        routerPrices = [prices retain];
+    }
+    if ([models count] == 0)
+        TBFail(@"OpenRouter listed no models that can use tools.");
+    return models;
+}
+
++ (NSDictionary *)pricesForModel:(NSString *)model
+{
+    @synchronized(self) {
+        return [[[routerPrices objectForKey:model] retain] autorelease];
+    }
+    return nil;
 }
 
 + (NSArray *)cachedModels

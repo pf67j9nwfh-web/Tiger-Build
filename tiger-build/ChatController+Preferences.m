@@ -425,7 +425,7 @@
     }
 
     /* ---- Local LLM server ---- */
-    tab = [self preferencesTab:@"Local LLM Server" in:tabs];
+    tab = [self preferencesTab:@"Local LLM" in:tabs];
     y = 284;
     field = [self preferencesRow:@"Local LLM server address" key:@"local_url" y:y secure:NO width:190
         help:@"LM Studio, Ollama or another OpenAI-compatible server. "
@@ -441,6 +441,10 @@
         help:@"Optional. Only needed if your local LLM server was set up to require a key. "
              @"LM Studio and Ollama do not require one unless you turn that on."
         removable:@"Remove" inView:tab];
+    y -= 38;
+    [self preferencesNote:@"OpenRouter works here too: use https://openrouter.ai/api and your OpenRouter key as the API key. Its model list then shows only the models that can use tools, "
+        @"by name, and the cost line is worked out from the prices OpenRouter gives."
+        frame:NSMakeRect(16, y - 30, 520, 44) inView:tab];
 
     /* ---- New chats ---- */
     tab = [self preferencesTab:@"General" in:tabs];

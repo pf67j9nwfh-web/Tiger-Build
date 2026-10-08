@@ -22,7 +22,7 @@ for f in $(cat $AOM/files.txt) config/aom_config.c; do
   case $f in config/*) src=$AOM/$f;; *) src=$AOM/src/libaom/$f;; esac
   clang -O1 -w -std=c99 -DNDEBUG -I$AOM/src/libaom -I$AOM -c $src -o "$OUT/aom/$(echo $f | tr / _).o"
 done
-COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m"
+COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m"
 COMMON_NO_MCP="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m"
 LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices -framework AudioToolbox -framework QTKit $TLS/build/libmbedtls-host.a -lz"
 build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
@@ -34,8 +34,8 @@ build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProvid
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"
-build commander ../tests/engine/commandertest.m TBMCP.m $COMMON_NO_MCP
-build commanderfull ../tests/engine/commanderfull.m TBMCP.m $COMMON_NO_MCP
+build commander ../tests/engine/commandertest.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
+build commanderfull ../tests/engine/commanderfull.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
 PORT=8795
 "$OUT/mock" $PORT > /dev/null 2>&1 &
 MOCK=$!

@@ -1,4 +1,5 @@
 #import "TBPricing.h"
+#import "TBLocal.h"
 #import "TBEngine.h"
 #import "TBJSON.h"
 #import "TBHTTP.h"
@@ -186,6 +187,14 @@ static double rate(NSDictionary *row, NSString *field, long long prompt)
 {
     NSDictionary *row = findRow(provider, model);
     long long input, cached, written, output, prompt;
+    if (!row && [provider isEqualToString:@"local"]) {
+        /* OpenRouter says what its models cost; other local servers cost nothing */
+        NSDictionary *own = [TBLocal pricesForModel:model];
+        if (!own)
+            return nil;
+        return [NSNumber numberWithDouble:(TBInteger(usage, @"input") + TBInteger(usage, @"cached") + TBInteger(usage, @"written")) * [[own objectForKey:@"prompt"] doubleValue]
+            + TBInteger(usage, @"output") * [[own objectForKey:@"completion"] doubleValue]];
+    }
     if (!row)
         return nil;
     input = TBInteger(usage, @"input");

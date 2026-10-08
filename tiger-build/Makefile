@@ -36,8 +36,8 @@ LIBS32 := $(TLS)/lib/libmbedtls32.a $(WEBP)/lib/libwebp32.a $(AOM)/lib/libaom32.
 LIBS64 := $(TLS)/lib/libmbedtls64ppc.a $(WEBP)/lib/libwebp64ppc.a $(AOM)/lib/libaom64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework AudioToolbox
 comma := ,
 LIBSX86 := $(TLS)/lib/libmbedtls64x86.a $(WEBP)/lib/libwebp64x86.a $(AOM)/lib/libaom64x86.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework AudioToolbox $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Runs.m ChatController+Housekeeping.m ChatController+Memory.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSSHServer.m TBTheme.m TBProviderIcons.m TranscriptView.m
-HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBOffice.h TBHEIC.h TBSpeech.h TBOutputs.h TBMedia.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Runs.m ChatController+Housekeeping.m ChatController+Memory.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBOAuth.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSSHServer.m TBTheme.m TBProviderIcons.m TranscriptView.m
+HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBOAuth.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBOffice.h TBHEIC.h TBSpeech.h TBOutputs.h TBMedia.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
@@ -71,18 +71,18 @@ endif
 	cp $(AOM)/LICENSE $(APP)/Contents/Resources/libaom-LICENSE.txt && cp $(AOM)/PATENTS $(APP)/Contents/Resources/libaom-PATENTS.txt
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
-convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m
+convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
 	mkdir -p build
 	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
-	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o convert32 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNet32.o $(LIBS32)
-	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -c -o build/TBNetX64.o TBNet.c && $(CC64) $(CFLAGSX86) -fobjc-exceptions -o convertX64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNetX64.o $(LIBSX86))
-	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -c -o build/TBNetP64.o TBNet.c && $(CC64) $(CFLAGSPPC64) -fobjc-exceptions -o convertP64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m build/TBNetP64.o $(LIBS64))
+	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o convert32 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m build/TBNet32.o $(LIBS32)
+	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -c -o build/TBNetX64.o TBNet.c && $(CC64) $(CFLAGSX86) -fobjc-exceptions -o convertX64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m build/TBNetX64.o $(LIBSX86))
+	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -c -o build/TBNetP64.o TBNet.c && $(CC64) $(CFLAGSPPC64) -fobjc-exceptions -o convertP64 -I. ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m build/TBNetP64.o $(LIBS64))
 
 # Commander's tools against the program in ../commander (make first): ./cmtest32 ../commander/ppc-commander
-cmtest: ../tests/engine/commanderfull.m TBMCP.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m
+cmtest: ../tests/engine/commanderfull.m TBMCP.m TBOAuth.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m
 	mkdir -p build
 	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
-	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o cmtest32 -I. ../tests/engine/commanderfull.m TBMCP.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m build/TBNet32.o $(LIBS32)
+	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o cmtest32 -I. ../tests/engine/commanderfull.m TBMCP.m TBOAuth.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m build/TBNet32.o $(LIBS32)
 
 tbtests: tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBSupport.h TBMarkup.h TBEmoji.h TBCompat.h
 	$(CC32) $(CFLAGS32) -o tbtests tests.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m -framework Foundation
@@ -96,7 +96,7 @@ clean:
 # The Quick Look generator for Leopard and Snow Leopard (HEIC, AVIF, WebP, docx, xlsx, pptx, OpenDocument), built with the converter's sources.
 # ppc and i386 (10.5 SDK, which has the QuickLook framework) and x86_64; installed in /Library/QuickLook.
 QLDIR := TigerBuild.qlgenerator
-QLSRC := ../quicklook/TBQuickLook.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m
+QLSRC := ../quicklook/TBQuickLook.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
 quicklook: $(QLSRC) TBNet.c ../quicklook/Info.plist
 	rm -rf $(QLDIR) build/ql && mkdir -p build/ql $(QLDIR)/Contents/MacOS $(QLDIR)/Contents/Resources
 	$(CC32) $(CFLAGS32) -isysroot $(SDK64) -mmacosx-version-min=10.5 -c -o build/ql/TBNet32.o TBNet.c

@@ -1,14 +1,14 @@
 # Changelog
 
-## 2.3 (in progress)
+## 2.2
+- **MCP servers over the older HTTP+SSE transport** (found automatically), and **OAuth sign-in** for servers that ask for it (discovery, self-registration, PKCE, browser sign-in on a loopback port, token refresh; Configuration, *Forget Saved MCP Sign-Ins...*).
+- **OpenRouter** through the Local LLM Server settings: the model list shows the tool-capable models by name with their context lengths, priced from OpenRouter's own list.
 - **Automatic memory per workspace** (optional): a few notes about you, kept up to date after each reply and told to the model in every chat of the workspace; viewable, editable and clearable.
 - **Audio and video attachments**: audio files are transcribed (up to 30 minutes, in pieces, with times) through the speech-to-text service you have a key for; videos give four pictures and the words of their sound (Tiger cannot read the sound of mp4 and mov files).
 - **Export a chat as PDF** (Chat, Export This Chat): paginated, with code blocks, headings and the chat's pictures.
 - **EPUB books** (title, author, chapter text and cover) and **ZIP archives** (the file list) can be attached and read by `convert_file`. **Quick Look** previews them too, and shows **Markdown** and **CSV** files as formatted pages.
 - **Uninstaller**: Configuration, *Uninstall Tiger Build...* (or `sudo /usr/local/tbssh/bin/tiger-build-uninstall`), with an option to delete your data and saved keys too.
 - **A sound when a reply finishes** off screen or in the background, and a Dock bounce; **spending limits** per chat and per day; **Check for Updates...** against the latest GitHub release (once a day at start, switchable). Preferences has a new Alerts tab.
-
-## 2.2
 - **JPEG XL pictures** (`.jxl`) can be attached and are read by `convert_file`: lossy and lossless, with transparency (shown on white), 16-bit and grey pictures, and animations (up to four frames of the first 120 are shown). The decoder is [jxldec](https://github.com/kjk/jxldec), plain C, built into the app for PowerPC and Intel; it matches libjxl to within one step on the files tried. See `third_party/jxldec`.
 - **Quick Look** (Leopard and Snow Leopard) shows JPEG XL pictures and previews `.json` files as text.
 

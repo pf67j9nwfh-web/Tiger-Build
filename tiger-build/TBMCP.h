@@ -40,7 +40,8 @@ NSString *TBMCPToolSummary(NSString *name, NSDictionary *arguments);
 NSArray *TBMCPFunctionTools(id listed);
 
 /* An MCP server reached over HTTP or HTTPS (Streamable HTTP: a POST per message, the answer as JSON or as an event stream).
-   The same calls as TBMCPClient. A token, if given, is sent as a bearer. OAuth and the old SSE transport are not supported. */
+   The same calls as TBMCPClient. A token, if given, is sent as a bearer. A server that does not take that (404, 405 or 400 to the first message) or whose address
+   ends in /sse is reached with the older HTTP+SSE transport: one long GET carries the answers, and the messages are POSTed to the address it announces. */
 @interface TBMCPHTTPClient : NSObject {
     NSString *url;
     NSString *token;
@@ -49,6 +50,14 @@ NSArray *TBMCPFunctionTools(id listed);
     volatile int closed;
     id current;
     NSString *failure;
+    BOOL legacy;                          /* the older HTTP+SSE transport */
+    NSString *postURL;                    /* where it said to send messages */
+    NSMutableDictionary *answers;         /* id -> reply, filled by the reader thread */
+    NSString *streamError;
+    volatile int streamEnded;
+    id sseParser;
+    BOOL freshAuth;
+    NSString *lastChallenge;
 }
 + (TBMCPHTTPClient *)clientWithURL:(NSString *)url token:(NSString *)token;
 - (void)start;

@@ -18,6 +18,7 @@
 - (void)checkForUpdates:(id)sender;
 - (void)checkForUpdatesAtLaunch;
 - (void)uninstallTigerBuild:(id)sender;
+- (void)forgetMCPSignIns:(id)sender;
 - (NSString *)supportDir;
 - (void)saveStore;
 - (void)flushStore;

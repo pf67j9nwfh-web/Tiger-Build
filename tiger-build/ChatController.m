@@ -1179,6 +1179,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             [item setTarget:self]; [menu addItem:item];
         }
         [menu addItem:[NSMenuItem separatorItem]];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Forget Saved MCP Sign-Ins..." action:@selector(forgetMCPSignIns:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [menu addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Uninstall Tiger Build..." action:@selector(uninstallTigerBuild:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [menu addItem:item];
         slot = [[[NSMenuItem alloc] initWithTitle:@"Configuration" action:NULL keyEquivalent:@""] autorelease];
