@@ -110,7 +110,7 @@
     NSSavePanel *panel;
     NSData *data;
     (void)sender;
-    if (busy) return;
+    if ([self anyRunActive]) return;
     panel = [NSSavePanel savePanel];
     [panel setRequiredFileType:@"plist"];
     if ([panel runModalForDirectory:[NSHomeDirectory() stringByAppendingPathComponent:@"Desktop"]
@@ -124,7 +124,7 @@
 {
     NSOpenPanel *panel;
     (void)sender;
-    if (busy) return;
+    if ([self anyRunActive]) return;
     panel = [NSOpenPanel openPanel];
     [panel setAllowsMultipleSelection:NO];
     if ([panel runModalForDirectory:nil file:nil types:[NSArray arrayWithObject:@"plist"]] != NSOKButton) return;

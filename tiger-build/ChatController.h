@@ -99,7 +99,10 @@
     NSTimer *relayTimer;
     BOOL relayReachable;
     double lastCatalog;
-    NSMutableArray *queuedSends;        /* messages typed in another chat while one was working: {chatId, text, notice} */
+    NSMutableDictionary *parkedRuns;    /* chat id -> TBRunSlot: replies still working in chats that are not on screen */
+    id displacedRun;                    /* while such a reply is handled, the run that is on screen waits here */
+    NSString *swappedKey;
+    BOOL swapped;
     NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 

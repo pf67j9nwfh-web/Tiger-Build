@@ -52,7 +52,7 @@
 }
 - (void)switchWorkspace:(NSString *)name
 {
-    if(busy||naming) {NSBeep();return;}
+    if([self anyRunActive]||naming) {NSBeep();return;}
     if([name isEqualToString:[self workspaceName]])return;
     [self forgetEdit];
     [self flushStore];
@@ -65,7 +65,7 @@
 - (void)chooseWorkspace:(id)sender
 {
     NSString *name=[sender isKindOfClass:[NSPopUpButton class]]?[[sender selectedItem] title]:[sender representedObject];
-    if(busy||naming){NSBeep();[self refillWorkspacePopup];return;}
+    if([self anyRunActive]||naming){NSBeep();[self refillWorkspacePopup];return;}
     [self switchWorkspace:name];
 }
 /* Remove one workspace and its chats. When none is left, a new empty Default
@@ -212,7 +212,7 @@
 - (void)workspaceCreateCancel:(id)sender {(void)sender;[NSApp stopModalWithCode:0];}
 - (void)newWorkspace:(id)sender
 {
-    (void)sender;if(busy||naming){NSBeep();return;}
+    (void)sender;if([self anyRunActive]||naming){NSBeep();return;}
     NSPanel *panel=[[[NSPanel alloc] initWithContentRect:NSMakeRect(0,0,420,145) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
     [panel setTitle:@"New Workspace / Project"];[panel center];
     NSTextField *field=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,76,380,24)] autorelease];

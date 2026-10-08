@@ -358,11 +358,19 @@ static NSString *newRunId(void)
 
 - (void)setThinkingText:(NSString *)text
 {
-    NSString *shown;
     if ((!text && !thinkingText) || [text isEqualToString:thinkingText])
         return;
     [thinkingText release];
     thinkingText = [text copy];
+    [self showThinkingText];
+}
+
+/* the thinking strip shows what thinkingText says (also when a chat with a reply of its own comes on screen) */
+- (void)showThinkingText
+{
+    NSString *text = thinkingText, *shown;
+    if (swapped)
+        return;   /* a reply that is not on screen: the strip is put right when it is swapped back out */
     if ([text length] == 0) {
         [thinkingField setStringValue:@""];
     } else {
@@ -402,7 +410,6 @@ static NSString *newRunId(void)
         return;
     }
     stopping = YES;
-    [self forgetQueuedSends];
     [self stopSpeaking:nil];
     if (sideRequest) {
         /* Still compacting, before the chat stream started. */
@@ -580,10 +587,6 @@ static NSString *newRunId(void)
         [sendButton setTitle:editBackup ? @"Resend" : @"Send"];
         [sendButton setEnabled:YES];
         [sendButton setToolTip:@"Send the message (Return)"];
-    } else if (streamingId && current && ![[current objectForKey:@"id"] isEqualToString:streamingId]) {
-        [sendButton setTitle:@"Queue"];
-        [sendButton setEnabled:YES];
-        [sendButton setToolTip:@"Another chat is working. This message is sent when it has finished."];
     } else if (guide) {
         [sendButton setTitle:[NSString stringWithFormat:@"Guide %C", (unichar)((pulse % 2) ? 0x25CB : 0x25CF)]];
         [sendButton setEnabled:YES];

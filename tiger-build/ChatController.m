@@ -483,6 +483,8 @@ static NSMutableArray *allControllers = nil;
         ChatController *other = [[allControllers objectAtIndex:i] nonretainedObjectValue];
         if (other != self && other->busy && other->streamingId && [other chatWithId:other->streamingId] == chat)
             return YES;
+        if (other != self && [other chatHasParkedRun:[chat objectForKey:@"id"]] && [other chatWithId:[chat objectForKey:@"id"]] == chat)
+            return YES;
     }
     return NO;
 }
@@ -499,7 +501,7 @@ static NSMutableArray *allControllers = nil;
 
 - (BOOL)isBusy
 {
-    return busy || naming;
+    return [self anyRunActive] || naming;
 }
 
 - (void)applicationWillTerminate:(NSNotification *)note
@@ -530,6 +532,7 @@ static NSMutableArray *allControllers = nil;
         return;
     if (editBackup && current != [chats objectAtIndex:index])
         [self cancelEdit:nil];
+    [self switchRunsToChat:[chats objectAtIndex:index]];
     current = [chats objectAtIndex:index];
     [self syncToolsButton];
     [self syncRunButtons];
@@ -538,6 +541,7 @@ static NSMutableArray *allControllers = nil;
     [transcript scrollToEnd];
     [self rememberContextLimit];
     [self updateContextReadout];
+    [self applyBusyUI];
 }
 
 - (void)reloadTableSelect:(int)row show:(BOOL)show
@@ -1948,7 +1952,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     chatId = [[chats objectAtIndex:row] objectForKey:@"id"];
     if (!title)
         title = @"";
-    if ((busy || naming) && streamingId && [streamingId isEqualToString:chatId])
+    if (((busy || naming) && streamingId && [streamingId isEqualToString:chatId]) || [self chatHasParkedRun:chatId])
         title = [NSString stringWithFormat:@"%C  %@", (unichar)0x2022, title];
     pictured = TBEmojiTitle(title, [[column dataCell] font]);
     return pictured ? (id)pictured : (id)TBDisplayText(title);
@@ -2184,6 +2188,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     /* A window closed in the middle of a reply must not leave the relay working. */
     if (busy && !stopping)
         [self stopRun:nil];
+    [self stopParkedRuns];
     for (i = 0; allControllers && i < [allControllers count]; i++) {
         if ([[allControllers objectAtIndex:i] nonretainedObjectValue] == self) {
             [allControllers removeObjectAtIndex:i];
@@ -2285,10 +2290,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if ([item action] == @selector(compactNow:) || [item action] == @selector(attachFile:) || [item action] == @selector(attachPDFPages:)
         || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:))
         return !busy;
-    if ([[[item menu] title] isEqualToString:@"Workspace"]) return !busy && !naming;
-    if ([[[item menu] title] isEqualToString:@"Configuration"]) return !busy;
+    if ([[[item menu] title] isEqualToString:@"Workspace"]) return ![self anyRunActive] && !naming;
+    if ([[[item menu] title] isEqualToString:@"Configuration"]) return ![self anyRunActive];
     if ([[[item menu] title] isEqualToString:@"History"])
-        return !busy;
+        return ![self anyRunActive];
     if ([item action] == @selector(deleteChat:))
         return !busy && [table selectedRow] >= 0;
     if ([item action] == @selector(chooseModel:) && [[item representedObject] isKindOfClass:[NSString class]]) {
@@ -2347,74 +2352,19 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [window makeFirstResponder:input];
 }
 
-/* ---- messages for a chat while another chat is working ---- */
-
-- (void)queueText:(NSString *)text inChat:(NSMutableDictionary *)chat
-{
-    NSMutableDictionary *userMessage = [NSMutableDictionary dictionary], *notice = [NSMutableDictionary dictionary];
-    [userMessage setObject:@"user" forKey:@"role"];
-    [userMessage setObject:text forKey:@"text"];
-    [userMessage setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
-    [notice setObject:@"status" forKey:@"role"];
-    [notice setObject:@"Waiting: this message is sent when the other chat has finished." forKey:@"text"];
-    [notice setObject:[NSNumber numberWithBool:YES] forKey:@"status"];
-    [[chat objectForKey:@"messages"] addObject:userMessage];
-    [[chat objectForKey:@"messages"] addObject:notice];
-    if (!queuedSends)
-        queuedSends = [[NSMutableArray alloc] init];
-    [queuedSends addObject:[NSDictionary dictionaryWithObjectsAndKeys:[chat objectForKey:@"id"], @"chatId", notice, @"notice", nil]];
-    if ([[chat objectForKey:@"title"] isEqualToString:@"New Chat"]) {
-        [chat setObject:[text length] > 26 ? [[text substringToIndex:26] stringByAppendingString:@"..."] : text forKey:@"title"];
-        [self reloadTableSelect:[table selectedRow] show:NO];
-    }
-    [self saveStore];
-    [self refreshTranscriptIfCurrent:chat];
-}
-
-/* The first waiting message whose chat is still there goes now. */
-- (void)startQueuedSend
-{
-    while ([queuedSends count] && !busy) {
-        NSDictionary *entry = [[[queuedSends objectAtIndex:0] retain] autorelease];
-        NSMutableDictionary *chat = [self chatWithId:[entry objectForKey:@"chatId"]], *open;
-        [queuedSends removeObjectAtIndex:0];
-        if (!chat)
-            continue;
-        [[chat objectForKey:@"messages"] removeObject:[entry objectForKey:@"notice"]];
-        open = [NSMutableDictionary dictionary];
-        [open setObject:@"assistant" forKey:@"role"];
-        [open setObject:@"" forKey:@"text"];
-        [open setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
-        [open setObject:[NSNumber numberWithBool:YES] forKey:@"open"];
-        [[chat objectForKey:@"messages"] addObject:open];
-        [self saveStore];
-        [self refreshTranscriptIfCurrent:chat];
-        [streamingId release];
-        streamingId = [[chat objectForKey:@"id"] copy];
-        [self setBusy:YES];
-        return;
-    }
-}
-
-- (void)forgetQueuedSends
-{
-    unsigned i;
-    for (i = 0; i < [queuedSends count]; i++) {
-        NSDictionary *entry = [queuedSends objectAtIndex:i];
-        NSMutableDictionary *chat = [self chatWithId:[entry objectForKey:@"chatId"]];
-        [[chat objectForKey:@"messages"] removeObject:[entry objectForKey:@"notice"]];
-        [self refreshTranscriptIfCurrent:chat];
-    }
-    [queuedSends removeAllObjects];
-}
-
+/* A reply of the chat on screen starts or ends. For a reply that is swapped in from another chat only the state changes; the screen is put right when
+   the swap is undone (applyBusyUI). */
 - (void)setBusy:(BOOL)flag
 {
     busy = flag;
-    [workspacePopup setEnabled:!flag];
-    /* The message box stays usable while a model works, for guidance. */
-    [input setEnabled:YES];
-    [deleteButton setEnabled:!flag];
+    if (swapped) {
+        if (!flag) {
+            stopping = NO;
+            [thinkingText release];
+            thinkingText = nil;
+        }
+        return;
+    }
     if (flag) {
         [self startPulse];
     } else {
@@ -2422,17 +2372,33 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         stopping = NO;
         [self setThinkingText:nil];
     }
+    [self applyBusyUI];
+    if (!flag)
+        [window makeFirstResponder:input];
+}
+
+/* The controls for the chat on screen: Stop and Send, the delete button, the thinking strip, the title, the chat list's dots. The workspace
+   selector waits for every reply, parked ones too. */
+- (void)applyBusyUI
+{
+    BOOL any = [self anyRunActive];
+    if (swapped)
+        return;
+    [workspacePopup setEnabled:!any];
+    /* The message box stays usable while a model works, for guidance. */
+    [input setEnabled:YES];
+    [deleteButton setEnabled:!busy];
+    if (busy)
+        [self startPulse];
+    else
+        [self stopPulse];
+    [self showThinkingText];
     [self syncRunButtons];
-    [window setTitle:flag ? [NSString stringWithFormat:@"Tiger Build - %@ - Working...",[self workspaceName]]
+    [window setTitle:any ? [NSString stringWithFormat:@"Tiger Build - %@ - Working...",[self workspaceName]]
         : [NSString stringWithFormat:@"Tiger Build - %@",[self workspaceName]]];
     suppressSelection = YES;
     [table reloadData];
     suppressSelection = NO;
-    if (!flag) {
-        [window makeFirstResponder:input];
-        if ([queuedSends count])
-            [self performSelector:@selector(startQueuedSend) withObject:nil afterDelay:0.3];
-    }
     [self layoutPanes];
 }
 
@@ -2888,6 +2854,17 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 - (void)compactionArrived:(EngineRequest *)request
 {
     NSDictionary *info = [request context];
+    NSString *forChat = [[[info objectForKey:@"chat"] objectForKey:@"id"] copy];
+    if (!busy || ![streamingId isEqualToString:forChat]) {
+        /* the summary is for a chat that is not on screen */
+        if (forChat && [self enterRunOfTurn:nil orChat:forChat]) {
+            [self compactionArrived:request];
+            [self leaveRun];
+        }
+        [forChat release];
+        return;
+    }
+    [forChat release];
     if (stopping || !busy)
         return;
     sideRequest = nil;
@@ -3116,20 +3093,6 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         text = [[editor string] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     else
         text = [[input stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (busy && streamingId && ![[current objectForKey:@"id"] isEqualToString:streamingId]) {
-        /* Another chat is working: this message waits and is sent when that one finishes. */
-        if ([text length] == 0) {
-            NSBeep();
-            return;
-        }
-        [input setStringValue:@""];
-        if (editor)
-            [editor setString:@""];
-        inputHeight = TB_FIELD_MIN;
-        [self layoutPanes];
-        [self queueText:text inChat:current];
-        return;
-    }
     if (busy) {
         /* A model is working: what is typed now is guidance for it. */
         if ([text length] == 0 || ![self guidanceAvailable]) {
@@ -3250,8 +3213,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 /* The engine's frames arrive on the main thread. */
 - (void)localTurn:(TBLocalTurn *)turn bytes:(NSData *)bytes
 {
-    if (turn != localTurn)
+    if (turn != localTurn) {
+        /* a reply in a chat that is not on screen */
+        if ([self enterRunOfTurn:turn orChat:nil]) {
+            [self localTurn:turn bytes:bytes];
+            [self leaveRun];
+        }
         return;
+    }
     [frameBuffer appendData:bytes];
     if (streamDepth == 0) {
         streamDepth = 1;
@@ -3266,8 +3235,13 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (void)localTurnEnded:(TBLocalTurn *)turn
 {
-    if (turn != localTurn)
+    if (turn != localTurn) {
+        if ([self enterRunOfTurn:turn orChat:nil]) {
+            [self localTurnEnded:turn];
+            [self leaveRun];
+        }
         return;
+    }
     if (streamDepth) {
         streamEndDeferred = 1;
         return;

@@ -66,9 +66,14 @@
 - (void)storeChanged:(NSNotification *)note;
 - (void)storesReplaced:(NSNotification *)note;
 - (void)startTurn;
-- (void)queueText:(NSString *)text inChat:(NSMutableDictionary *)chat;
-- (void)startQueuedSend;
-- (void)forgetQueuedSends;
+- (BOOL)anyRunActive;
+- (BOOL)chatHasParkedRun:(NSString *)chatId;
+- (void)switchRunsToChat:(NSDictionary *)chat;
+- (BOOL)enterRunOfTurn:(id)turn orChat:(NSString *)chatId;
+- (void)leaveRun;
+- (void)stopParkedRuns;
+- (void)applyBusyUI;
+- (void)showThinkingText;
 - (void)finishWithoutStream:(NSMutableDictionary *)chat;
 - (NSMutableDictionary *)chatWithId:(NSString *)chatId;
 - (void)addStatus:(NSString *)text toChat:(NSMutableDictionary *)chat;
