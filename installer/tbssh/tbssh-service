@@ -5,7 +5,9 @@
 # could not read its host key. The system's Authorization dialog runs this with root's rights but the signed-in user's launchd, so it
 # first becomes root all the way (the real user id too) and, on 10.5 and later, switches into the system launchd's namespace.
 if [ "$(id -ru)" != 0 ]; then
-  exec /usr/bin/perl -e '$< = 0; $> = 0; $( = 0; $) = 0; exec @ARGV' /bin/sh "$0" "$@"
+  [ -z "$TBSSH_REEXEC" ] || { echo "tbssh-service could not become root" >&2; exit 1; }
+  # (perl turns on taint checking when the real and effective ids differ, so the environment is replaced and the arguments checked first)
+  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = $ARGV[0] =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = $ARGV[1] =~ m{^(on|off)$} or die "usage\n"; $< = 0; $> = 0; $( = 0; $) = 0; exec "/bin/sh", $s, $a' "$0" "$1"
 fi
 for f in /usr/local/tbssh/sbin/sshd /usr/local/tbssh/libexec/sshd-session /usr/local/tbssh/libexec/sshd-auth /usr/local/tbssh/etc/sshd_config /Library/LaunchDaemons/local.tigerbuild.sshd.plist; do
   [ -f "$f" ] || { echo "Tiger Build's SSH server is not installed (missing $f)" >&2; exit 1; }
