@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2.3 (in progress)
+- **Audio and video attachments**: audio files are transcribed (up to 30 minutes, in pieces, with times) through the speech-to-text service you have a key for; videos give four pictures and the words of their sound (Tiger cannot read the sound of mp4 and mov files).
 - **Export a chat as PDF** (Chat, Export This Chat): paginated, with code blocks, headings and the chat's pictures.
 - **EPUB books** (title, author, chapter text and cover) and **ZIP archives** (the file list) can be attached and read by `convert_file`. **Quick Look** previews them too, and shows **Markdown** and **CSV** files as formatted pages.
 - **Uninstaller**: Configuration, *Uninstall Tiger Build...* (or `sudo /usr/local/tbssh/bin/tiger-build-uninstall`), with an option to delete your data and saved keys too.

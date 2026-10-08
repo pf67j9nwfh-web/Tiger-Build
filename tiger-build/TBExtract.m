@@ -7,6 +7,12 @@
 #import "webp/decode.h"
 #import "webp/demux.h"
 #import "TBHEIC.h"
+#import "TBSpeech.h"
+#import <unistd.h>
+#import <AudioToolbox/AudioToolbox.h>
+#if TB_INLINE_VIDEO
+#import <QTKit/QTKit.h>
+#endif
 #import "../third_party/jxldec/jxl.h"
 #import "TBOffice.h"
 #import "TBSupport.h"
@@ -1581,7 +1587,7 @@ static NSArray *types(int which)
 {
     switch (which) {
     case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jxl", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
-    case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", @"epub", @"zip", nil];
+    case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", @"epub", @"zip", @"mp3", @"m4a", @"aac", @"wav", @"aif", @"aiff", @"aifc", @"caf", @"au", @"snd", @"amr", @"mp2", @"mov", @"mp4", @"m4v", @"mpg", @"mpeg", @"3gp", @"3g2", @"avi", @"qt", nil];
     }
     return [NSArray arrayWithObjects:@"pages", @"numbers", @"key", nil];
 }
@@ -1751,6 +1757,270 @@ static NSString *epubText(TBZip *zip, NSData **cover)
     return out;
 }
 
+/* ---- audio and video files ----
+   The sound is turned into 16 kHz mono WAV by the system's afconvert and sent for transcription in pieces of three minutes (the same speech-to-text as
+   dictation: OpenAI, Mistral or Google, whichever has a key). A video also gives up to four pictures from it, taken by QuickTime. */
+
+static NSArray *audioTypes(void) { return [NSArray arrayWithObjects:@"mp3", @"m4a", @"aac", @"wav", @"aif", @"aiff", @"aifc", @"caf", @"au", @"snd", @"amr", @"mp2", nil]; }
+static NSArray *videoTypes(void) { return [NSArray arrayWithObjects:@"mov", @"mp4", @"m4v", @"mpg", @"mpeg", @"3gp", @"3g2", @"avi", @"qt", nil]; }
+
+static NSString *clockText(double seconds)
+{
+    int s = (int)(seconds + 0.5);
+    return s >= 3600 ? [NSString stringWithFormat:@"%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60] : [NSString stringWithFormat:@"%d:%02d", s / 60, s % 60];
+}
+
+static NSData *wavChunk(const unsigned char *pcm, unsigned length)
+{
+    NSMutableData *out = [NSMutableData dataWithCapacity:length + 44];
+    unsigned char h[44];
+    unsigned rate = 16000, bytes = rate * 2;
+    memcpy(h, "RIFF", 4); h[4] = (length + 36) & 255; h[5] = ((length + 36) >> 8) & 255; h[6] = ((length + 36) >> 16) & 255; h[7] = ((length + 36) >> 24) & 255;
+    memcpy(h + 8, "WAVEfmt ", 8);
+    h[16] = 16; h[17] = h[18] = h[19] = 0;
+    h[20] = 1; h[21] = 0;           /* PCM */
+    h[22] = 1; h[23] = 0;           /* mono */
+    h[24] = rate & 255; h[25] = (rate >> 8) & 255; h[26] = h[27] = 0;
+    h[28] = bytes & 255; h[29] = (bytes >> 8) & 255; h[30] = (bytes >> 16) & 255; h[31] = 0;
+    h[32] = 2; h[33] = 0;           /* bytes per frame */
+    h[34] = 16; h[35] = 0;          /* bits */
+    memcpy(h + 36, "data", 4);
+    h[40] = length & 255; h[41] = (length >> 8) & 255; h[42] = (length >> 16) & 255; h[43] = (length >> 24) & 255;
+    [out appendBytes:h length:44];
+    [out appendBytes:pcm length:length];
+    return out;
+}
+
+/* The sound of a file as 16 kHz mono 16-bit samples (native byte order), up to `maxFrames` of them. nil when the system cannot read it.
+   CoreAudio (ExtAudioFile, in Tiger and later) does the decoding, so mp3, AAC and the rest need no program of their own. */
+static NSData *pcmOfFile(NSString *path, double *seconds, unsigned maxFrames)
+{
+    FSRef ref;
+    ExtAudioFileRef file = NULL;
+    AudioStreamBasicDescription source, client;
+    UInt32 size = sizeof source;
+    SInt64 frames = 0;
+    NSMutableData *out;
+    if (FSPathMakeRef((const UInt8 *)[path fileSystemRepresentation], &ref, NULL) != noErr)
+        return nil;
+    if (ExtAudioFileOpen(&ref, &file) != noErr || !file)
+        return nil;
+    if (ExtAudioFileGetProperty(file, kExtAudioFileProperty_FileDataFormat, &size, &source) != noErr || source.mSampleRate <= 0) {
+        ExtAudioFileDispose(file);
+        return nil;
+    }
+    size = sizeof frames;
+    if (ExtAudioFileGetProperty(file, kExtAudioFileProperty_FileLengthFrames, &size, &frames) == noErr && frames > 0)
+        *seconds = frames / source.mSampleRate;
+    memset(&client, 0, sizeof client);
+    client.mSampleRate = 16000;
+    client.mFormatID = kAudioFormatLinearPCM;
+    client.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+#if defined(__BIG_ENDIAN__)
+    client.mFormatFlags |= kAudioFormatFlagIsBigEndian;
+#endif
+    client.mChannelsPerFrame = 1;
+    client.mBitsPerChannel = 16;
+    client.mFramesPerPacket = 1;
+    client.mBytesPerFrame = client.mBytesPerPacket = 2;
+    if (ExtAudioFileSetProperty(file, kExtAudioFileProperty_ClientDataFormat, sizeof client, &client) != noErr) {
+        ExtAudioFileDispose(file);
+        return nil;
+    }
+    out = [NSMutableData data];
+    for (;;) {
+        short buffer[16000];
+        AudioBufferList list;
+        UInt32 want = 16000;
+        list.mNumberBuffers = 1;
+        list.mBuffers[0].mNumberChannels = 1;
+        list.mBuffers[0].mDataByteSize = sizeof buffer;
+        list.mBuffers[0].mData = buffer;
+        if (ExtAudioFileRead(file, &want, &list) != noErr || want == 0)
+            break;
+        [out appendBytes:buffer length:want * 2];
+        if ([out length] / 2 >= maxFrames)
+            break;
+    }
+    ExtAudioFileDispose(file);
+    if ([out length] / 2 < maxFrames)
+        *seconds = [out length] / 32000.0;   /* all of it was read: this is the real length (some files report a wrong one) */
+    return [out length] ? out : nil;
+}
+
+/* The words in an audio file (nil with *why set when it could not be done). *seconds is its length. */
+static NSString *transcribeFile(NSString *path, double *seconds, NSString **why)
+{
+    unsigned limitFrames = 30 * 60 * 16000;
+    NSData *pcm = pcmOfFile(path, seconds, limitFrames + 16000);
+    const unsigned char *b;
+    unsigned long pcmLength, i;
+    NSMutableString *out = [NSMutableString string];
+    Class speech = NSClassFromString(@"TBSpeech");
+    if (!pcm) {
+        *why = @"This Mac could not read the sound in this file.";
+        return nil;
+    }
+    b = [pcm bytes];
+    pcmLength = [pcm length];
+    if (pcmLength < 3200) {
+        *why = @"There is no sound in this file.";
+        return nil;
+    }
+    {
+        /* CoreAudio gives native-endian samples; a WAV holds little-endian ones */
+#if defined(__BIG_ENDIAN__)
+        NSMutableData *swapped = [NSMutableData dataWithData:pcm];
+        unsigned char *w = [swapped mutableBytes];
+        for (i = 0; i + 1 < pcmLength; i += 2) {
+            unsigned char t = w[i];
+            w[i] = w[i + 1];
+            w[i + 1] = t;
+        }
+        pcm = swapped;
+        b = [pcm bytes];
+#endif
+    }
+    if (getenv("TB_AUDIO_DECODE_ONLY"))   /* for trying the decoding on a Mac without sending anything */
+        return [NSString stringWithFormat:@"(decoded %lu samples, first %d %d %d)\n", pcmLength / 2, ((short *)[pcm bytes])[100], ((short *)[pcm bytes])[2000], ((short *)[pcm bytes])[4000]];
+    if (!speech) {
+        *why = @"Transcription is not available in this program.";
+        return nil;
+    }
+    {
+        unsigned long chunk = 180 * 32000, limit = 30 * 60 * 32000;
+        unsigned long end = pcmLength < limit ? pcmLength : limit;
+        for (i = 0; i < end; i += chunk) {
+            unsigned long part = end - i < chunk ? end - i : chunk;
+            int status = 0;
+            NSString *problem = nil, *words;
+            if (part < 6400)
+                break;   /* under a fifth of a second left */
+            words = [speech transcribe:wavChunk(b + i, (unsigned)part) language:@"" status:&status problem:&problem];
+            if (!words) {
+                if (![out length]) {
+                    *why = problem ? problem : @"The speech could not be transcribed.";
+                    return nil;
+                }
+                [out appendFormat:@"\n[%@] (this part could not be transcribed: %@)\n", clockText(i / 32000.0), problem];
+                continue;
+            }
+            [out appendFormat:@"[%@] %@\n\n", clockText(i / 32000.0), words];
+        }
+        if (pcmLength > limit)
+            [out appendFormat:@"(Only the first 30 minutes were transcribed.)\n"];
+    }
+    return out;
+}
+
+#if TB_INLINE_VIDEO
+/* QuickTime, asked on the main thread (QTKit wants it): the length, size and up to four pictures (TIFF) of a video file */
+@interface TBMoviePeek : NSObject
++ (NSDictionary *)peek:(NSString *)path;
++ (void)peekOnMain:(NSMutableDictionary *)job;
+@end
+
+@implementation TBMoviePeek
++ (void)peekOnMain:(NSMutableDictionary *)job
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSError *error = nil;
+    QTMovie *movie = [QTMovie movieWithFile:[job objectForKey:@"path"] error:&error];
+    if (movie) {
+        QTTime duration = [movie duration];
+        double seconds = duration.timeScale ? (double)duration.timeValue / duration.timeScale : 0;
+        NSSize size = [[movie attributeForKey:QTMovieNaturalSizeAttribute] sizeValue];
+        NSMutableArray *frames = [NSMutableArray array];
+        int i;
+        for (i = 0; i < 4 && size.width > 0; i++) {
+            double t = seconds * (0.04 + 0.9 * i / 3.0);
+            NSImage *image = nil;
+            @try {
+                image = [movie frameImageAtTime:QTMakeTime((long long)(t * duration.timeScale), duration.timeScale)];
+            } @catch (NSException *e) {
+                image = nil;
+            }
+            if (image && [image TIFFRepresentation])
+                [frames addObject:[image TIFFRepresentation]];
+        }
+        [job setObject:[NSNumber numberWithDouble:seconds] forKey:@"seconds"];
+        [job setObject:[NSNumber numberWithFloat:size.width] forKey:@"width"];
+        [job setObject:[NSNumber numberWithFloat:size.height] forKey:@"height"];
+        [job setObject:frames forKey:@"frames"];
+    }
+    [pool release];
+}
+
++ (NSDictionary *)peek:(NSString *)path
+{
+    NSMutableDictionary *job = [NSMutableDictionary dictionaryWithObject:path forKey:@"path"];
+    if (pthread_main_np())
+        [self peekOnMain:job];
+    else if (NSClassFromString(@"NSApplication") && [NSApp isRunning])
+        [self performSelectorOnMainThread:@selector(peekOnMain:) withObject:job waitUntilDone:YES];
+    else
+        return nil;   /* no main thread to ask (a Quick Look generator): no pictures */
+    return [job objectForKey:@"frames"] ? job : nil;
+}
+@end
+#endif
+
+static NSDictionary *mediaReply(NSString *name, NSData *data, NSString *ext)
+{
+    static unsigned counter = 0;
+    NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"tb-media-%u-%u", (unsigned)getpid(), ++counter]];
+    NSString *path = [dir stringByAppendingPathComponent:[@"sound." stringByAppendingString:ext]];
+    BOOL video = [videoTypes() containsObject:ext];
+    NSMutableString *text = [NSMutableString string];
+    NSMutableArray *images = [NSMutableArray array];
+    NSString *why = nil, *words = nil, *note;
+    double seconds = 0;
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir attributes:[NSDictionary dictionaryWithObject:[NSNumber numberWithInt:0700] forKey:NSFilePosixPermissions]];
+    if (![data writeToFile:path atomically:NO]) {
+        [[NSFileManager defaultManager] removeFileAtPath:dir handler:nil];
+        fail(@"The file could not be read.");
+    }
+#if TB_INLINE_VIDEO
+    if (video && TBInlineVideoAvailable()) {
+        NSDictionary *peek = nil;
+        @try {
+            peek = [TBMoviePeek peek:path];
+        } @catch (NSException *e) {
+            peek = nil;   /* QuickTime cannot open a window here (no one is logged in): the sound alone */
+        }
+        if (peek) {
+            NSArray *frames = [peek objectForKey:@"frames"];
+            unsigned i;
+            seconds = [[peek objectForKey:@"seconds"] doubleValue];
+            [text appendFormat:@"Video %@: %@, %.0f x %.0f.\n\n", name, clockText(seconds), [[peek objectForKey:@"width"] doubleValue], [[peek objectForKey:@"height"] doubleValue]];
+            for (i = 0; i < [frames count]; i++) {
+                NSData *jpeg = jpegFrom([frames objectAtIndex:i], 1280);
+                if (jpeg)
+                    [images addObject:jpeg];
+            }
+        }
+    }
+#endif
+    words = transcribeFile(path, &seconds, &why);
+    [[NSFileManager defaultManager] removeFileAtPath:dir handler:nil];
+    if (video && ![text length])
+        [text appendFormat:@"Video %@: %@.\n\n", name, seconds > 0 ? clockText(seconds) : @"length unknown"];
+    if (!video)
+        [text appendFormat:@"Audio %@: %@.\n\n", name, seconds > 0 ? clockText(seconds) : @"length unknown"];
+    if (words) {
+        [text appendString:@"Transcript:\n\n"];
+        [text appendString:words];
+        note = video ? @"The pictures are four moments of the video; the words were transcribed from its sound." : @"The words were transcribed from this recording by a speech-to-text service.";
+    } else {
+        if (video && [images count])
+            [text appendFormat:@"(The sound was not transcribed: %@)\n", why];
+        else
+            fail(@"%@", why ? why : @"This file could not be read.");
+        note = @"The pictures are four moments of the video; its sound could not be transcribed.";
+    }
+    return [NSDictionary dictionaryWithObjectsAndKeys:text, @"text", images, @"images", note, @"note", nil];
+}
+
 @implementation TBExtract
 
 + (BOOL)handles:(NSString *)name
@@ -1762,6 +2032,11 @@ static NSString *epubText(TBZip *zip, NSData **cover)
 + (NSDictionary *)extractName:(NSString *)name data:(NSData *)data
 {
     NSDictionary *result = nil;
+    {
+        NSString *ext = [[name pathExtension] lowercaseString];
+        if ([audioTypes() containsObject:ext] || [videoTypes() containsObject:ext])
+            return mediaReply(name, data, ext);   /* minutes of network and decoding must not hold up the others */
+    }
     pthread_mutex_lock(&gate);
     NS_DURING
         result = [self convert:name data:data];

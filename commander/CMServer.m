@@ -95,7 +95,7 @@ static NSArray *toolDefs(void)
     [t addObject:def(@"get_recent_tool_calls", @"Recent local tool-call history with truncated arguments and output.",
         P(@"maxResults", @"number", @"How many calls, default 20, max 100", @"toolName", @"string", @"Optional tool name filter", @"since", @"string", @"Optional ISO timestamp; return calls at or after it"), NONE)];
     if (CMConvertAvailable())
-        [t addObject:def(@"convert_file", @"Read a file this Mac cannot open by itself, with Tiger Build's converter: Word, Excel and PowerPoint (also the old .doc .xls .ppt), OpenDocument, Pages, Keynote and Numbers files give their text; HEIC, AVIF, WebP, JPEG XL, GIF, TIFF and other pictures give an upright JPEG you can look at. Returns the text and, when there is one, the first picture.",
+        [t addObject:def(@"convert_file", @"Read a file this Mac cannot open by itself, with Tiger Build's converter: Word, Excel and PowerPoint (also the old .doc .xls .ppt), OpenDocument, Pages, Keynote and Numbers files give their text; HEIC, AVIF, WebP, JPEG XL, GIF, TIFF and other pictures give an upright JPEG you can look at; EPUB books give their text and ZIP files their list; audio and video files give a transcript (and pictures from a video) when a speech-to-text key is saved in Tiger Build. Returns the text and, when there is one, the first picture.",
             P(@"path", @"string", @"The file on this Mac"), P(@"path"))];
     if (CMScreenEnabled()) {
         NSString *where = @"Coordinates are pixels of the picture from the last take_screenshot (or screen points if none was taken). Take a screenshot first, act, then take another to see the result.";

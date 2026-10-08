@@ -466,7 +466,7 @@ static unsigned pdfPageCount(NSString *path)
     }
     text = TBReadTextFile(path, TB_ATTACH_TEXT_MAX, NULL);
     if (!text) {
-        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, EPUB books, ZIP archives (their file list), RTF and HTML documents, and pictures (including HEIC, AVIF, WebP and JPEG XL) can be attached.", name];
+        *problem = [NSString stringWithFormat:@"%@ does not look like a text file. Text and code files, PDFs, Word, Excel, PowerPoint, Pages, Numbers and Keynote files, EPUB books, ZIP archives (their file list), audio and video files (transcribed, and pictures from a video), RTF and HTML documents, and pictures (including HEIC, AVIF, WebP and JPEG XL) can be attached.", name];
         return nil;
     }
     one = [self textAttachmentWithText:text name:name size:size problem:problem];
@@ -917,7 +917,7 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
 - (BOOL)relayConverts:(NSString *)path
 {
     NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"ppt", @"xls", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
-        @"heic", @"heif", @"webp", @"avif", @"jxl", @"gif", @"jpg", @"jpeg", @"epub", @"zip", nil];
+        @"heic", @"heif", @"webp", @"avif", @"jxl", @"gif", @"jpg", @"jpeg", @"epub", @"zip", @"mp3", @"m4a", @"aac", @"wav", @"aif", @"aiff", @"caf", @"mov", @"mp4", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", nil];
     return [kinds containsObject:[[path pathExtension] lowercaseString]];
 }
 
