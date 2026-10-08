@@ -127,7 +127,10 @@
     /* The same tool switches as the chat before it. */
     if([last isKindOfClass:[NSDictionary class]]) {
         if([[last objectForKey:@"servers"] isKindOfClass:[NSDictionary class]]) {
-            [chat setObject:[NSMutableDictionary dictionaryWithDictionary:[last objectForKey:@"servers"]] forKey:@"servers"];
+            NSMutableDictionary *same=[NSMutableDictionary dictionaryWithDictionary:[last objectForKey:@"servers"]];
+            /* administrator, download and screen control are chosen again for each chat */
+            [same removeObjectForKey:@"sudo"];[same removeObjectForKey:@"download"];[same removeObjectForKey:@"screen"];
+            [chat setObject:same forKey:@"servers"];
             if([[last objectForKey:@"servers"] objectForKey:@"commander"])
                 [chat setObject:[[last objectForKey:@"servers"] objectForKey:@"commander"] forKey:@"tools"];
         }
