@@ -1273,6 +1273,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Model Parameters..." action:@selector(editParameters:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Attach PDF Pages..." action:@selector(attachPDFPages:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Export This Chat..." action:@selector(exportChat:) keyEquivalent:@""] autorelease];

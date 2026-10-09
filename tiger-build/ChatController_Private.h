@@ -28,6 +28,9 @@
 - (NSString *)memoryRequestFragment;
 - (void)updateMemoryAfterReply:(NSMutableDictionary *)chat;
 - (void)editMemory:(id)sender;
+- (IBAction)editParameters:(id)sender;
+- (void)endInstructionsOK:(id)sender;
+- (void)endInstructionsCancel:(id)sender;
 - (void)buildAlertsTab:(NSTabView *)tabs;
 - (void)loadAlertOptions;
 - (void)saveAlertOptions;

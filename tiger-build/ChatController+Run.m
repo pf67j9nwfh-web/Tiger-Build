@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBJSON.h"
 #import "TBTheme.h"
 #import "TranscriptView.h"
 #import <stdlib.h>

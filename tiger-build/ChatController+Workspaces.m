@@ -124,6 +124,8 @@
     }
     if([[workspaceSettings objectForKey:@"instructions"] length])
         [chat setObject:[workspaceSettings objectForKey:@"instructions"] forKey:@"instructions"];
+    if([[workspaceSettings objectForKey:@"params"] isKindOfClass:[NSDictionary class]])
+        [chat setObject:[workspaceSettings objectForKey:@"params"] forKey:@"params"];
     /* The same tool switches as the chat before it. */
     if([last isKindOfClass:[NSDictionary class]]) {
         if([[last objectForKey:@"servers"] isKindOfClass:[NSDictionary class]]) {
