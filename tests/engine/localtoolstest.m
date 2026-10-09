@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import "TBLocalTools.h"
 #import "TBSkills.h"
+#import "TBModelProfiles.h"
 #import "TBEngine.h"
 
 static int failures = 0;
@@ -85,6 +86,23 @@ int main(int argc, char **argv)
         expectThat(reason != nil && [TBSkills systemNote] == nil, @"skills: a switched-off skill cannot be loaded or listed");
         [TBSkills setName:@"Tax-Prep" enabled:YES];
         expectThat([[[TBSkills parse:@"---\nname: x\ndescription: \"quoted: yes\"\n---\nBody"] objectForKey:@"description"] isEqualToString:@"quoted: yes"], @"skills: header values may be quoted");
+    }
+    {
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tb-notes-test.plist"];
+        NSArray *keys = [NSArray arrayWithObjects:@"claude|claude-haiku-5-5", @"claude|claude-opus-5-5", @"gemini|gemini-x", nil];
+        NSString *line;
+        [m removeFileAtPath:file handler:nil];
+        [[NSUserDefaults standardUserDefaults] setObject:file forKey:@"TBModelNotesPath"];
+        line = [TBModelProfiles lineForProvider:@"claude" model:@"claude-haiku-5-5" title:@"Haiku 5.5" vision:YES context:200000 price:[NSNumber numberWithDouble:6.0]];
+        expectThat([line hasPrefix:@"claude|claude-haiku-5-5|Haiku 5.5; "] && [line rangeOfString:@"fast and inexpensive"].location != NSNotFound && [line rangeOfString:@"sees pictures"].location != NSNotFound && [line rangeOfString:@"200k context"].location != NSNotFound && [line rangeOfString:@"$6.00"].location != NSNotFound, @"model notes: a line is made at once from what the app knows");
+        expectThat([[TBModelProfiles lineForProvider:@"claude" model:@"claude-opus-5-5" title:@"Opus 5.5" vision:NO context:0 price:nil] rangeOfString:@"most capable tier"].location != NSNotFound, @"model notes: name hints");
+        expectThat([[TBModelProfiles keysNeedingNotes:keys] count] == 3, @"model notes: all three need notes at first");
+        [TBModelProfiles storeReply:@"claude|claude-haiku-5-5|Quick, cheap, good for short answers\nnot a line\nother|model|ignored" asked:keys];
+        expectThat([[TBModelProfiles noteForKey:@"claude|claude-haiku-5-5"] hasPrefix:@"Quick, cheap"] && [[TBModelProfiles noteForKey:@"other|model"] length] == 0, @"model notes: stored for asked models only");
+        expectThat([[TBModelProfiles keysNeedingNotes:keys] count] == 0, @"model notes: unanswered ones are not asked again for a week");
+        expectThat([[TBModelProfiles lineForProvider:@"claude" model:@"claude-haiku-5-5" title:@"Haiku 5.5" vision:NO context:0 price:nil] hasSuffix:@"Quick, cheap, good for short answers"], @"model notes: the note rides on the line");
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBModelNotesPath"];
+        [m removeFileAtPath:file handler:nil];
     }
     [pool release];
     return failures ? 1 : 0;

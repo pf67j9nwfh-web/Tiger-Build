@@ -337,7 +337,24 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             }
             return textReply(200, @"ok\n");
         }
-        if ([path isEqualToString:@"/v1/title"] || [path isEqualToString:@"/v1/summarize"] || [path isEqualToString:@"/v1/memory"]) {
+        if ([path isEqualToString:@"/v1/profile"]) {
+            id incoming = TBJSONParse(body, NULL);
+            TBSession *session;
+            NSArray *messages;
+            NSString *text;
+            if (![incoming isKindOfClass:[NSDictionary class]])
+                return textReply(400, @"request was not JSON\n");
+            messages = cleanedMessages(incoming, YES);
+            session = [[[TBSession alloc] initWithRun:[TBRun runWithId:[NSString stringWithFormat:@"profile-%p", body]] options:nil frames:nil] autorelease];
+            text = [session researchProvider:[TBProviders normalize:TBString(incoming, @"provider")] model:[TBString(incoming, @"model") length] ? TBString(incoming, @"model") : nil
+                system:@"You write short notes on AI models so another assistant can choose the best model for a task. For each model line you are given (provider|model|description), say in at most 25 words "
+                       @"what the model is best at, how fast and costly it is relative to its provider's other models, and any weakness. Search the web if you are unsure what a model is; "
+                       @"use at most three searches in all. Reply with one line per model in the form provider|model|note, copying the first two fields exactly, and nothing else."
+                prompt:TBString([messages lastObject], @"content")];
+            [TBRun finish:session->run];
+            return textReply(200, text);
+        }
+        if ([path isEqualToString:@"/v1/title"] || [path isEqualToString:@"/v1/summarize"] || [path isEqualToString:@"/v1/memory"] || [path isEqualToString:@"/v1/route"]) {
             id incoming = TBJSONParse(body, NULL);
             NSArray *messages;
             NSString *provider, *system, *text;
@@ -348,7 +365,12 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             provider = [TBProviders normalize:TBString(incoming, @"provider")];
             system = [path isEqualToString:@"/v1/title"]
                 ? @"You name chats. Reply with a short title of at most six words. No quotes."
-                : ([path isEqualToString:@"/v1/memory"]
+                : ([path isEqualToString:@"/v1/route"]
+                ? @"You choose which AI model should answer a person's first message in a chat. You get a list of models, one per line as provider|model|description, and the message. "
+                  @"Pick the single most suitable one: the strongest for hard reasoning, maths or programming; a fast, inexpensive one for simple questions and casual chat; "
+                  @"one that sees pictures when files are attached; one with a long context for big documents. When unsure, prefer a capable general model. "
+                  @"Reply with exactly one line copied from the list's first two fields, as provider|model, and nothing else."
+                : [path isEqualToString:@"/v1/memory"]
                 ? @"You keep a short memory of a person for an AI assistant: lasting facts and preferences the PERSON stated about themselves, their work, their projects and how they like answers "
                   @"(for example their name, role, tools, machines, ongoing projects, preferred style). You are given the current memory and the latest exchange. "
                   @"Add only what the person themselves said and what will still matter in later chats; correct entries that are now wrong; drop what is out of date. "

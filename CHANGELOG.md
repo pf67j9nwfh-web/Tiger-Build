@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2.2
+- **Auto model** (optional, Preferences, General): the first message of a new chat is read by the model you choose, which picks the most suitable of your usable models; the chat then uses it as if you had picked it. A chat's context readout and longest answer now follow its model when it changes.
+- **Export a chat as JSON for other tools**: ChatGPT-style and Claude-style `conversations.json`, and LibreChat JSON.
 - **Skills** (folders with a `SKILL.md`, Claude-skill compatible; Chat, *Skills...*), **subagents** (`run_subagents`: parallel helpers on Macs with several cores, off until switched on in Tool Settings and per chat), **model parameters** (temperature, top P, longest answer, per chat or workspace; refused values are dropped with a note), and **bookmarks** (star a message, jump from Chat, *Bookmarks*).
 - **Fix**: requests to a server on a port other than 80 or 443 now name the port in the `Host` header.
 - **Saved and scheduled prompts**, **Try Last Message with Another Model**, **Quick Ask** (with an optional global shortcut and a Services entry), a **Cost Report**, **import of ChatGPT and Claude exports**, a **lock** with a password (Preferences, Privacy), and **Copy Diagnostics**.

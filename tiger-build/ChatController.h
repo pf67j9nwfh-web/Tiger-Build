@@ -92,6 +92,9 @@
     float inputHeight;
     BOOL naming;
     NSMutableArray *localModels;
+    BOOL modelNotesBusy;
+    NSArray *modelNotesAsked;
+    NSArray *autoCandidates;           /* the models offered to the auto-mode chooser while it thinks */
     NSMutableDictionary *prefsFields;
     NSWindow *prefsWindow;
     NSMutableDictionary *contextPending;

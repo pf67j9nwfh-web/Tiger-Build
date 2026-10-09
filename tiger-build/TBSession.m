@@ -1327,3 +1327,27 @@ static unsigned long contentSize(NSArray *log)
 }
 
 @end
+
+@implementation TBSession (Research)
+
+- (NSString *)researchProvider:(NSString *)provider model:(NSString *)model system:(NSString *)system prompt:(NSString *)prompt
+{
+    NSMutableDictionary *servers = [NSMutableDictionary dictionary];
+    NSArray *off = [NSArray arrayWithObjects:@"commander", @"toolbox", @"consult", @"knowledge", @"skills", @"media", nil];
+    NSArray *mcp = [TBIntegrations servers];
+    TBCollectFrames *collector = [[[TBCollectFrames alloc] init] autorelease];
+    TBSession *inner;
+    NSString *text;
+    unsigned i;
+    for (i = 0; i < [off count]; i++)
+        [servers setObject:[NSNumber numberWithBool:NO] forKey:[off objectAtIndex:i]];
+    for (i = 0; i < [mcp count]; i++)
+        [servers setObject:[NSNumber numberWithBool:NO] forKey:[@"mcp_" stringByAppendingString:TBString([mcp objectAtIndex:i], @"id")]];
+    inner = [[[TBSession alloc] initWithRun:run options:[TBSession cleanOptions:[NSDictionary dictionaryWithObjectsAndKeys:servers, @"servers", system, @"instructions", nil]] frames:collector] autorelease];
+    [inner turn:[NSArray arrayWithObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role", prompt, @"content", nil]] useTools:YES provider:provider model:model systemOverride:nil];
+    text = TBTrim([collector->text componentsJoinedByString:@""]);
+    [inner closeTools];
+    return text;
+}
+
+@end

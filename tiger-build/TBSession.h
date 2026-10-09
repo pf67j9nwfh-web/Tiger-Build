@@ -58,6 +58,11 @@ NSString *TBCommanderProgram(void);
 - (NSString *)runSubagents:(NSDictionary *)args;
 @end
 
+@interface TBSession (Research)
+/* A reply that may use web search and nothing else (no Commander, no other tools): notes on models. */
+- (NSString *)researchProvider:(NSString *)provider model:(NSString *)model system:(NSString *)system prompt:(NSString *)prompt;
+@end
+
 @interface TBSession (Loop)
 /* A plain reply with no tools: titles, summaries, a consulted model. */
 - (NSString *)completeProvider:(NSString *)provider model:(NSString *)model system:(NSString *)system messages:(NSArray *)messages;

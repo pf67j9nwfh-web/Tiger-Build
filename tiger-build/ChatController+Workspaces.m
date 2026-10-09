@@ -111,7 +111,8 @@
     NSDictionary *last=[workspaceSettings objectForKey:@"last"];
     NSString *wanted=[[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildNewChatModel"];
     NSString *provider=nil;NSString *model=nil;
-    if([wanted length]&&![wanted isEqualToString:@"last"]) {
+    if([wanted isEqualToString:@"auto"])[chat setObject:[NSNumber numberWithBool:YES] forKey:@"autoPending"];
+    if([wanted length]&&![wanted isEqualToString:@"last"]&&![wanted isEqualToString:@"auto"]) {
         NSRange bar=[wanted rangeOfString:@"|"];
         if(bar.location!=NSNotFound){provider=[wanted substringToIndex:bar.location];model=[wanted substringFromIndex:bar.location+1];}
     } else if([last isKindOfClass:[NSDictionary class]]) {

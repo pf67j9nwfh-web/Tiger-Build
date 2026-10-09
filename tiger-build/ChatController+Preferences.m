@@ -183,8 +183,11 @@
     (void)sender;
     {
         NSString *choice = [[[prefsFields objectForKey:@"new_chat_model"] selectedItem] representedObject];
+        NSString *router = [[[prefsFields objectForKey:@"auto_router"] selectedItem] representedObject];
         if (choice)
             [[NSUserDefaults standardUserDefaults] setObject:choice forKey:@"TigerBuildNewChatModel"];
+        if (router)
+            [[NSUserDefaults standardUserDefaults] setObject:router forKey:@"TigerBuildAutoRouter"];
     }
     [self saveSSHFields];
     [self saveCommanderOptions];
@@ -355,6 +358,8 @@
     [popup removeAllItems];
     [popup addItemWithTitle:@"The model last used (default)"];
     [[popup lastItem] setRepresentedObject:@"last"];
+    [popup addItemWithTitle:@"Choose the best model for the first message (auto)"];
+    [[popup lastItem] setRepresentedObject:@"auto"];
     for (i = 0; i < [providers count]; i++) {
         NSString *pid = [[providers objectAtIndex:i] objectForKey:@"id"];
         NSArray *models = [pid isEqualToString:@"local"] ? localModels : [[ModelCatalog shared] modelsForProvider:pid];
@@ -364,6 +369,27 @@
             NSDictionary *model = [models objectAtIndex:j];
             [popup addItemWithTitle:[NSString stringWithFormat:@"%@: %@", [[ModelCatalog shared] titleForProvider:pid], [model objectForKey:@"title"]]];
             [[popup lastItem] setRepresentedObject:[NSString stringWithFormat:@"%@|%@", pid, [model objectForKey:@"id"]]];
+        }
+    }
+    {
+        NSPopUpButton *router = [prefsFields objectForKey:@"auto_router"];
+        NSString *chosen = [[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildAutoRouter"];
+        if (router) {
+            [router removeAllItems];
+            [router addItemWithTitle:@"The model the chat starts with"];
+            [[router lastItem] setRepresentedObject:@""];
+            for (i = 1; i < (unsigned)[popup numberOfItems]; i++) {
+                NSString *key = [[popup itemAtIndex:i] representedObject];
+                if ([key rangeOfString:@"|"].location == NSNotFound)
+                    continue;
+                [router addItemWithTitle:[[popup itemAtIndex:i] title]];
+                [[router lastItem] setRepresentedObject:key];
+            }
+            for (i = 0; i < (unsigned)[router numberOfItems]; i++)
+                if ([[[router itemAtIndex:i] representedObject] isEqualToString:chosen ? chosen : @""]) {
+                    [router selectItemAtIndex:i];
+                    break;
+                }
         }
     }
     if ([saved length] == 0)
@@ -457,9 +483,21 @@
         [prefsFields setObject:popup forKey:@"new_chat_model"];
     }
     y -= 34;
+    [self preferencesLabel:@"Auto mode asks" frame:NSMakeRect(16, y + 2, 150, 18) inView:tab];
+    {
+        NSPopUpButton *router = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(170, y - 2, 366, 26) pullsDown:NO] autorelease];
+        [router setFont:[NSFont systemFontOfSize:12]];
+        [tab addSubview:router];
+        [prefsFields setObject:router forKey:@"auto_router"];
+    }
+    y -= 34;
+    [self preferencesButton:@"Update Model Notes Now" frame:NSMakeRect(170, y, 190, 28) action:@selector(updateModelNotes:) inView:tab];
+    y -= 32;
     [self preferencesNote:@"\"The model last used\" starts a new chat with the model, tools and approvals of your most recent chat in the workspace. "
-        @"Or pick one model for every new chat."
-        frame:NSMakeRect(16, y - 24, 520, 44) inView:tab];
+        @"Or pick one model for every new chat. With auto, the first message you send is read by the model chosen under \"Auto mode asks\", which picks the most suitable model for it; "
+        @"the chat then simply uses that model, and you can change it at any time. "
+        @"It sees every model you can use, each with facts the app knows and a short note the chosen model writes in the background (searching the web when it needs to), so choosing is quick."
+        frame:NSMakeRect(16, y - 46, 520, 70) inView:tab];
     y -= 96;
     [self preferencesHeading:@"Settings backup" y:y inView:tab];
     y -= 36;

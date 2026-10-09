@@ -359,7 +359,7 @@ static NSMutableArray *allControllers = nil;
             continue;
         [chat setObject:provider forKey:@"provider"];
         [chat setObject:[self defaultModelForProvider:provider] forKey:@"model"];
-        [chat removeObjectForKey:@"contextLimit"];
+        [self modelDidChangeForChat:chat];
     }
 }
 
@@ -1622,6 +1622,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         return;
     [self setRelayProblem:nil];
     [self moveUntouchedChatsToUsableProvider];
+    [self scheduleModelNotes];
     /* Keep a copy so the menus match the relay next launch, even offline. */
     [[text dataUsingEncoding:NSUTF8StringEncoding]
         writeToFile:[[self supportDir] stringByAppendingPathComponent:@"models.txt"] atomically:YES];
@@ -1769,7 +1770,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [self refreshLocalModels];
     if (![self model:[current objectForKey:@"model"] allowedForProvider:provider])
         [current setObject:[self defaultModelForProvider:provider] forKey:@"model"];
-    [current removeObjectForKey:@"contextLimit"];
+    [current removeObjectForKey:@"autoPending"];
+    [self modelDidChangeForChat:current];
+    [self rememberLastUsed];
     [self saveStore];
     [self syncModelMenu];
     [self rememberContextLimit];
@@ -1790,7 +1793,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     if (![self model:model allowedForProvider:provider])
         return;
     [current setObject:model forKey:@"model"];
-    [current removeObjectForKey:@"contextLimit"];
+    [current removeObjectForKey:@"autoPending"];
+    [self modelDidChangeForChat:current];
+    [self rememberLastUsed];
     [self saveStore];
     [self rememberContextLimit];
     [self updateContextReadout];
@@ -2908,7 +2913,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     if (current && [[self providerForChat:current] isEqualToString:@"local"]) {
         if (![self model:[current objectForKey:@"model"] allowedForProvider:@"local"])
             [current setObject:[self defaultModelForProvider:@"local"] forKey:@"model"];
-        [current removeObjectForKey:@"contextLimit"];
+        [self modelDidChangeForChat:current];
         [self syncModelMenu];
         [self rememberContextLimit];
         [self updateContextReadout];
@@ -3242,6 +3247,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             return;
         }
     }
+    [self reconcileModelOfChat:current];
     if (![self providerUsable:[self providerForChat:current]]) {
         NSString *pid = [self providerForChat:current];
         NSString *note = [self providerNote:pid];
@@ -3299,6 +3305,9 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     streamingId = [[current objectForKey:@"id"] copy];
     [self rememberLastUsed];
     [self setBusy:YES];
+    /* Auto mode: the chat's model is chosen from its first message; routeArrived: carries on from there. */
+    if ([self routeChatIfPending:[self chatWithId:streamingId]])
+        return;
     /* A long chat is summarized first; compactionArrived: then starts the stream. */
     if ([self startCompactionIfNeeded])
         return;

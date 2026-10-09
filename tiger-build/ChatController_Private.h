@@ -31,6 +31,13 @@
 - (IBAction)editParameters:(id)sender;
 - (void)bookmarkMessage:(NSMutableDictionary *)message;
 - (IBAction)showSkills:(id)sender;
+- (void)modelDidChangeForChat:(NSMutableDictionary *)chat;
+- (void)reconcileModelOfChat:(NSMutableDictionary *)chat;
+- (BOOL)autoModelWanted;
+- (void)scheduleModelNotes;
+- (IBAction)updateModelNotes:(id)sender;
+- (NSString *)routerSelection;
+- (BOOL)routeChatIfPending:(NSMutableDictionary *)chat;
 - (void)fillBookmarksMenu:(NSMenu *)menu;
 - (void)openFindResult:(NSDictionary *)hit;
 - (void)endInstructionsOK:(id)sender;
