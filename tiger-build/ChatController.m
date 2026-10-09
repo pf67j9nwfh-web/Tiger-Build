@@ -1278,6 +1278,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             [slot setSubmenu:sub];
             [chat addItem:slot];
         }
+        item = [[[NSMenuItem alloc] initWithTitle:@"Skills..." action:@selector(showSkills:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Model Parameters..." action:@selector(editParameters:) keyEquivalent:@""] autorelease];

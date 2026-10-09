@@ -1,6 +1,7 @@
 /* The web page reader, the knowledge folder and its path checks: localtoolstest (from tiger-build/; reads a page only when TB_TEST_PAGE is set) */
 #import <Foundation/Foundation.h>
 #import "TBLocalTools.h"
+#import "TBSkills.h"
 #import "TBEngine.h"
 
 static int failures = 0;
@@ -57,6 +58,34 @@ int main(int argc, char **argv)
     expectThat(reason != nil, @"read page: only http and https");
     [m removeFileAtPath:root handler:nil];
     fprintf(stderr, failures ? "%d FAILED\n" : "all passed\n", failures);
+    {
+        NSString *home = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tb-skills-home"];
+        NSString *folder;
+        [m removeFileAtPath:home handler:nil];
+        [m createDirectoryAtPath:home attributes:nil];
+        [[NSUserDefaults standardUserDefaults] setObject:[home stringByAppendingPathComponent:@"skills"] forKey:@"TBSkillsRoot"];
+        expectThat([[TBSkills all] count] == 0 && [TBSkills systemNote] == nil, @"skills: none to begin with, nothing said to the model");
+        expectThat([TBSkills createNamed:@"Tax Prep" description:@"Help with the tax forms" body:@"Ask for the W-2 first."], @"skills: a skill can be created");
+        folder = [[TBSkills root] stringByAppendingPathComponent:@"Tax-Prep"];
+        [@"Line 14 is the total." writeToFile:[folder stringByAppendingPathComponent:@"guide.txt"] atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+        expectThat([[[TBSkills all] objectAtIndex:0] objectForKey:@"description"] != nil && [[TBSkills systemNote] rangeOfString:@"Tax-Prep: Help with the tax forms"].location != NSNotFound, @"skills: the note lists name and description");
+        text = [TBSkills load:@"tax-prep"];
+        expectThat([text hasPrefix:@"Ask for the W-2 first."] && [text rangeOfString:@"- guide.txt"].location != NSNotFound, @"skills: load gives the instructions and the other files");
+        expectThat([[TBSkills readFile:@"guide.txt" ofSkill:@"Tax-Prep"] hasPrefix:@"Line 14"], @"skills: a file of the skill can be read");
+        reason = nil;
+        @try { [TBSkills readFile:@"../../../etc/hosts" ofSkill:@"Tax-Prep"]; } @catch (NSException *e) { reason = [e reason]; }
+        expectThat(reason != nil, @"skills: a path that climbs out is refused");
+        reason = nil;
+        symlink("/etc/hosts", [[folder stringByAppendingPathComponent:@"link.txt"] fileSystemRepresentation]);
+        @try { [TBSkills readFile:@"link.txt" ofSkill:@"Tax-Prep"]; } @catch (NSException *e) { reason = [e reason]; }
+        expectThat(reason != nil, @"skills: a link that leaves the folder is refused");
+        [TBSkills setName:@"Tax-Prep" enabled:NO];
+        reason = nil;
+        @try { [TBSkills load:@"Tax-Prep"]; } @catch (NSException *e) { reason = [e reason]; }
+        expectThat(reason != nil && [TBSkills systemNote] == nil, @"skills: a switched-off skill cannot be loaded or listed");
+        [TBSkills setName:@"Tax-Prep" enabled:YES];
+        expectThat([[[TBSkills parse:@"---\nname: x\ndescription: \"quoted: yes\"\n---\nBody"] objectForKey:@"description"] isEqualToString:@"quoted: yes"], @"skills: header values may be quoted");
+    }
     [pool release];
     return failures ? 1 : 0;
 }

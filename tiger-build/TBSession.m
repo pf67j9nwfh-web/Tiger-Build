@@ -9,6 +9,7 @@
 #import "TBHTTP.h"
 #import "TBPricing.h"
 #import "TBLocal.h"
+#import "TBSkills.h"
 
 static NSString *const kSystem = @"You are an assistant chatting inside Tiger Build on {machine} running "
     "{os}. You have ppc-commander tools that read files, "
@@ -27,6 +28,7 @@ static BOOL mentionsWord(NSString *line, NSString *word);
 static NSString *const kLimitNote = @"\n\n[The reply stopped here because the model reached its output limit. Say \"continue\" and it will pick up where it left off.]";
 static NSString *const kStepNote = @"\n\n[Stopped after %d tool steps in one turn. Say \"continue\" to keep going.]";
 static NSString *const kConsultTool = @"consult_model";
+static NSString *const kSubTool = @"run_subagents";
 static NSString *const kScreenshotTool = @"take_screenshot";
 static const double kCompactAt = 0.80;
 
@@ -392,6 +394,9 @@ static NSArray *withoutPictures(NSArray *messages)
 - (void)dealloc
 {
     [self closeTools];
+    [subPrefix release];
+    [turnProvider release];
+    [turnModel release];
     [run release];
     [options release];
     [client release];
@@ -462,6 +467,8 @@ static NSArray *withoutPictures(NSArray *messages)
 {
     NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:@"TBTool.max_tool_steps"];
     int steps = saved ? [saved intValue] : 40;
+    if (subPrefix)
+        return steps > 0 && steps < 25 ? steps : 25;   /* a subagent gets a shorter leash */
     if (steps == 0)
         return INT_MAX;   /* 0 turns the limit off */
     return steps < 1 ? 40 : (steps > 1000 ? 1000 : steps);
@@ -493,6 +500,8 @@ static NSArray *withoutPictures(NSArray *messages)
         [skip addObject:@"screen"];
     if ((CFBooleanRef)[servers objectForKey:@"macapps"] != kCFBooleanTrue)
         [skip addObject:@"macapps"];
+    if ((CFBooleanRef)[servers objectForKey:@"subagents"] != kCFBooleanTrue || subPrefix)
+        [skip addObject:@"subagents"];
     return skip;
 }
 
@@ -543,6 +552,8 @@ static NSArray *withoutPictures(NSArray *messages)
         return @"media";
     if ([name isEqualToString:kConsultTool])
         return @"consult";
+    if ([name isEqualToString:kSubTool])
+        return @"subagents";
     if ([extras ownerOf:name])
         return [extras ownerOf:name];
     if ([name hasPrefix:@"screen_"])
@@ -577,12 +588,17 @@ static NSDictionary *callArguments(NSDictionary *call)
     return [args isKindOfClass:[NSDictionary class]] ? args : [NSDictionary dictionary];
 }
 
+- (NSString *)scoped:(NSString *)callId
+{
+    return subPrefix ? [subPrefix stringByAppendingString:callId] : callId;
+}
+
 - (NSString *)toolEventForCall:(NSDictionary *)call phase:(NSString *)phase output:(NSString *)output failed:(BOOL)failed elapsed:(double)elapsed
 {
     NSDictionary *args = callArguments(call);
     NSString *name = [TBString(call, @"name") length] ? TBString(call, @"name") : @"tool";
     id detail = TBValue(args, @"command");
-    NSString *callId = [TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : name);
+    NSString *callId = [self scoped:[TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : name)];
     NSMutableDictionary *event;
     NSString *shown, *outText;
     NSDictionary *stats;
@@ -664,7 +680,7 @@ static BOOL mentionsWord(NSString *line, NSString *word)
         return YES;
     if (![self needsApprovalForKey:key] || [alwaysAllowed containsObject:key])
         return YES;
-    callId = [TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : ([name length] ? name : @"call"));
+    callId = [self scoped:[TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : ([name length] ? name : @"call"))];
     [run ask:callId];
     args = callArguments(call);
     detail = nil;
@@ -702,6 +718,8 @@ static BOOL mentionsWord(NSString *line, NSString *word)
         return @"Generating a video. This can take a minute...";
     if ([name isEqualToString:kConsultTool])
         return @"Asking another model...";
+    if ([name isEqualToString:kSubTool])
+        return @"Subagents are working...";
     return @"";
 }
 
@@ -765,6 +783,8 @@ static BOOL mentionsWord(NSString *line, NSString *word)
 {
     NSString *chosen = [TBProviders resolveModel:requested provider:provider];
     NSArray *messages = incoming;
+    [turnProvider release]; turnProvider = [provider copy];
+    [turnModel release]; turnModel = [chosen copy];
     NSMutableArray *tools = [NSMutableArray array];
     NSSet *skip = [self skipKeys];
     NSString *system;
@@ -808,7 +828,7 @@ static BOOL mentionsWord(NSString *line, NSString *word)
     NSMutableString *system = [NSMutableString stringWithString:kSystem];
     NSArray *media;
     unsigned i;
-    BOOL hasStart = NO, hasScreenshot = NO, hasRepo = NO, hasView = NO, hasSave = NO, hasConsult = NO;
+    BOOL hasStart = NO, hasScreenshot = NO, hasRepo = NO, hasView = NO, hasSave = NO, hasConsult = NO, hasSkills = NO, hasSubs = NO;
     [system replaceOccurrencesOfString:@"{machine}" withString:[self machine] options:0 range:NSMakeRange(0, [system length])];
     [system replaceOccurrencesOfString:@"{os}" withString:[self osName] options:0 range:NSMakeRange(0, [system length])];
     media = [skip containsObject:@"media"] ? nil : [self mediaToolsForProvider:provider];
@@ -826,6 +846,8 @@ static BOOL mentionsWord(NSString *line, NSString *word)
         if ([n isEqualToString:@"view_image"]) hasView = YES;
         if ([n isEqualToString:@"agent_save_file"]) hasSave = YES;
         if ([n isEqualToString:kConsultTool]) hasConsult = YES;
+        if ([n isEqualToString:@"skill_load"]) hasSkills = YES;
+        if ([n isEqualToString:kSubTool]) hasSubs = YES;
     }
     if (!useTools) {
         [system appendString:@" ppc-commander is turned off for this chat. Do not claim you can read files or run commands on the Mac. If asked to, say those tools are off for this chat."];
@@ -852,6 +874,11 @@ static BOOL mentionsWord(NSString *line, NSString *word)
     if (hasSave)
         [system appendString:@" Attached files appear in the conversation (documents as text, pictures as pictures). To give the person a new or changed file, "
             "call agent_save_file with its whole content; a name ending .docx, .xlsx or .pdf makes a real file from plain text (for .xlsx, tab or comma separated rows)."];
+    if (hasSkills)
+        [system appendString:[TBSkills systemNote]];
+    if (hasSubs)
+        [system appendString:@" You may call run_subagents to hand independent parts of a big task to helpers that work at the same time (research several things, check several files, try several approaches). "
+            "Give each task everything the helper needs, since it cannot see this chat. Only use it when the parts really are independent; for a small job just do it yourself."];
     if (hasConsult)
         [system appendString:@" You may use consult_model to get a second opinion from another model on hard decisions or reviews. Do not use it for simple questions."];
     if ([TBString(options, @"instructions") length])
@@ -1046,6 +1073,14 @@ NSString *TBCommanderProgram(void)
         args = [self capCommandWait:args];
     if ([name isEqualToString:@"generate_image"] || [name isEqualToString:@"generate_video"])
         return [self runMediaCall:name arguments:args provider:provider];
+    if ([name isEqualToString:kSubTool]) {
+        @try {
+            return [NSDictionary dictionaryWithObjectsAndKeys:[self runSubagents:args], @"output", [NSNumber numberWithBool:NO], @"failed", nil];
+        } @catch (NSException *exception) {
+            [run check];
+            return [NSDictionary dictionaryWithObjectsAndKeys:[@"error: " stringByAppendingString:[exception reason]], @"output", [NSNumber numberWithBool:YES], @"failed", nil];
+        }
+    }
     if ([name isEqualToString:kConsultTool]) {
         @try {
             return [NSDictionary dictionaryWithObjectsAndKeys:[self consult:args], @"output", [NSNumber numberWithBool:NO], @"failed", nil];

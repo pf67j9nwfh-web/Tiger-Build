@@ -1,5 +1,6 @@
 #import "TBExtras.h"
 #import "TBLocalTools.h"
+#import "TBSkills.h"
 #import "TBEngine.h"
 #import "TBIntegrations.h"
 #import "TBSSH.h"
@@ -376,6 +377,12 @@ static NSString *imageSearch(NSString *query, TBRun *run)
         [tools addObject:function(@"knowledge_open", @"Read a whole file from the knowledge folder (the first 30,000 characters), by the path that knowledge_search showed.",
             [NSArray arrayWithObject:@"path"], [NSArray arrayWithObject:@"The path inside the knowledge folder."], [NSArray arrayWithObject:@"path"])];
     }
+    if ([[TBSkills enabled] count] && ![skip containsObject:@"skills"]) {
+        [tools addObject:function(@"skill_load", @"Load one of the person's skills by name: its instructions, and the list of any other files in it.",
+            [NSArray arrayWithObject:@"name"], [NSArray arrayWithObject:@"The skill's name, as listed in the system prompt."], [NSArray arrayWithObject:@"name"])];
+        [tools addObject:function(@"skill_read_file", @"Read a file that belongs to a skill (the first 60,000 characters), by the path skill_load listed.",
+            [NSArray arrayWithObjects:@"name", @"path", nil], [NSArray arrayWithObjects:@"The skill's name.", @"The path inside the skill's folder.", nil], [NSArray arrayWithObjects:@"name", @"path", nil])];
+    }
     if ([skip containsObject:@"macapps"] == NO) {
         [tools addObject:function(@"mac_calendar_events", @"List the events in this Mac's Calendar (iCal) from a few days ago to some days ahead. Read only. Opens the Calendar application if it is not running.",
             [NSArray arrayWithObjects:@"days", @"days_back", nil], [NSArray arrayWithObjects:@"How many days ahead to list (default 7, at most 60).", @"How many days back to include (default 0, at most 30).", nil], [NSArray array])];
@@ -413,7 +420,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     for (i = 0; i < [tools count]; i++) {
         NSString *n = TBString([tools objectAtIndex:i], @"name");
         [owners setObject:([n isEqualToString:@"agent_web_search"] || [n isEqualToString:@"agent_image_search"] || [n isEqualToString:@"agent_show_image"] || [n isEqualToString:@"agent_read_page"]) ? @"search"
-            : ([n isEqualToString:@"agent_download_file"] ? @"download" : ([n hasPrefix:@"knowledge_"] ? @"knowledge" : ([n hasPrefix:@"mac_"] ? @"macapps" : @"toolbox"))) forKey:n];
+            : ([n isEqualToString:@"agent_download_file"] ? @"download" : ([n hasPrefix:@"knowledge_"] ? @"knowledge" : ([n hasPrefix:@"skill_"] ? @"skills" : ([n hasPrefix:@"mac_"] ? @"macapps" : @"toolbox")))) forKey:n];
     }
     for (i = 0; i < [servers count]; i++) {
         NSDictionary *server = [servers objectAtIndex:i];
@@ -544,6 +551,10 @@ static NSString *imageSearch(NSString *query, TBRun *run)
         }
         if ([name isEqualToString:@"agent_read_page"])
             return result([TBLocalTools readPage:TBString(args, @"url") run:run], NO, nil);
+        if ([name isEqualToString:@"skill_load"])
+            return result([TBSkills load:TBString(args, @"name")], NO, nil);
+        if ([name isEqualToString:@"skill_read_file"])
+            return result([TBSkills readFile:TBString(args, @"path") ofSkill:TBString(args, @"name")], NO, nil);
         if ([name isEqualToString:@"knowledge_search"])
             return result([TBLocalTools knowledgeSearch:TBString(args, @"query") root:knowledgeRoot], NO, nil);
         if ([name isEqualToString:@"knowledge_open"])

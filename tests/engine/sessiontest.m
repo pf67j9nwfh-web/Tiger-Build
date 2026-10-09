@@ -214,6 +214,36 @@ int main(int argc, char **argv)
         && [[[[[[seen objectAtIndex:1] objectForKey:@"body"] objectForKey:@"input"] objectAtIndex:0] objectForKey:@"call_id"] isEqualToString:@"fc_9"], @"grok loop: the tool result goes back with the response id");
     expectThat([[[[[[seen objectAtIndex:0] objectForKey:@"body"] objectForKey:@"tools"] lastObject] objectForKey:@"type"] isEqualToString:@"web_search"], @"grok loop: native search offered");
 
+    /* subagents: the parent calls run_subagents, two helpers answer, the parent answers */
+    fetch(@"/reset");
+    [d setObject:[base stringByAppendingString:@"/sub-claude"] forKey:@"TBBaseURL.claude"];
+    [d setObject:[NSNumber numberWithBool:YES] forKey:@"TBTool.subagents_enabled"];
+    f = turn(@"claude", @"claude-sonnet-5", [NSDictionary dictionaryWithObject:[NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"subagents"] forKey:@"servers"], nil, NULL);
+    seen = fetch(@"/seen");
+    expectThat([seen count] == 4, @"subagents: one request for the parent, one for each helper, one to finish");
+    expectThat([[f joined:@"t"] rangeOfString:@"Hi there"].location != NSNotFound, @"subagents: the parent answers last");
+    {
+        unsigned n, results = 0;
+        BOOL clash = NO;
+        NSMutableSet *ids = [NSMutableSet set];
+        for (n = 0; n < 8; n++) {
+            NSDictionary *card = [f plist:@"a" index:n];
+            if (!card) break;
+            if ([[card objectForKey:@"phase"] isEqualToString:@"result"]) results++;
+        }
+        (void)ids; (void)clash;
+        expectThat(results >= 1 && [[[f plist:@"a" index:1] objectForKey:@"output"] rangeOfString:@"### Subagent 2"].location != NSNotFound
+            || [[[f plist:@"a" index:2] objectForKey:@"output"] rangeOfString:@"### Subagent 2"].location != NSNotFound, @"subagents: both answers come back as the tool result");
+    }
+    seen = fetch(@"/seen");
+    expectThat([[TBJSONString([seen lastObject]) description] rangeOfString:@"### Subagent 1"].location != NSNotFound, @"subagents: the parent's last request carries the helpers' answers");
+    fetch(@"/reset");
+    f = turn(@"claude", @"claude-sonnet-5", nil, nil, NULL);
+    seen = fetch(@"/seen");
+    expectThat([[TBJSONString([seen objectAtIndex:0]) description] rangeOfString:@"run_subagents"].location == NSNotFound, @"subagents: not offered unless the chat turns them on");
+    [d setObject:[base stringByAppendingString:@"/loop-claude"] forKey:@"TBBaseURL.claude"];
+    [d removeObjectForKey:@"TBTool.subagents_enabled"];
+
     /* Commander that cannot be started: no Commander tools, said so */
     fetch(@"/reset");
     [d setObject:@"/nonexistent/ppc-commander" forKey:@"TBCommanderPath"];

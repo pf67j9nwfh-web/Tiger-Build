@@ -165,7 +165,8 @@
         [tab addSubview:tavily];[fields setObject:tavily forKey:@"tavily_api_key"];y-=28;
         NSButton *clearT=[[[NSButton alloc] initWithFrame:NSMakeRect(190,y,350,22)] autorelease];
         [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];y-=40;
-        [self integrationSwitch:@"Let models download files over https (off by default; each chat chooses, and it asks first)" key:@"download_enabled" y:y in:tab];
+        [self integrationSwitch:@"Let models download files over https (off by default; each chat chooses, and it asks first)" key:@"download_enabled" y:y in:tab];y-=26;
+        [self integrationSwitch:@"Let models start subagents: helpers that work on parts of a task at the same time (off by default; each chat chooses)" key:@"subagents_enabled" y:y in:tab];
 
         tab=[self integrationTab:@"MCP Servers" in:tabs];
         [self integrationLabel:@"Custom servers are programs on this Mac, programs on another computer over SSH, or http:// and https:// addresses. Only add ones you trust."
@@ -219,7 +220,7 @@
 - (void)loadIntegrationForm:(NSDictionary *)data
 {
     NSMutableDictionary *fields=[self integrationFields];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"download_enabled",@"claude_thinking",nil];
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"download_enabled",@"subagents_enabled",@"claude_thinking",nil];
     unsigned i;
     for(i=0;i<[keys count];i++)[[fields objectForKey:[keys objectAtIndex:i]] setState:[[data objectForKey:[keys objectAtIndex:i]] boolValue]?NSOnState:NSOffState];
     [(TBServerSource *)[fields objectForKey:@"source"] setServers:[data objectForKey:@"servers"]];

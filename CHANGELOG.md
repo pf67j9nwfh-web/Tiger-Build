@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2.2
+- **Skills** (folders with a `SKILL.md`, Claude-skill compatible; Chat, *Skills...*), **subagents** (`run_subagents`: parallel helpers on Macs with several cores, off until switched on in Tool Settings and per chat), **model parameters** (temperature, top P, longest answer, per chat or workspace; refused values are dropped with a note), and **bookmarks** (star a message, jump from Chat, *Bookmarks*).
 - **Fix**: requests to a server on a port other than 80 or 443 now name the port in the `Host` header.
 - **Saved and scheduled prompts**, **Try Last Message with Another Model**, **Quick Ask** (with an optional global shortcut and a Services entry), a **Cost Report**, **import of ChatGPT and Claude exports**, a **lock** with a password (Preferences, Privacy), and **Copy Diagnostics**.
 - **Three more tools for the model**: reading a web page by its address, a per-workspace **knowledge folder** it can search and open, and read-only **Calendar, Contacts and Mail** questions (`mac_calendar_events`, `mac_contacts_search`, `mac_mail_unread`).

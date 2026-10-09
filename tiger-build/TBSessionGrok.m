@@ -454,6 +454,11 @@ static NSString *eventErrorMessage(NSDictionary *event)
         if (consult)
             [tools addObject:consult];
     }
+    if ([TBSettings flag:@"subagents_enabled"] && ![skip containsObject:@"subagents"]) {
+        NSDictionary *sub = [self subagentDefinition];
+        if (sub)
+            [tools addObject:sub];
+    }
     if (!extras)
         extras = [[TBExtras alloc] initWithRun:run];
         [extras setKnowledgeRoot:TBString(options, @"knowledge")];

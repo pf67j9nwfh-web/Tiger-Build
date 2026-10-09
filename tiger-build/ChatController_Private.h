@@ -30,6 +30,7 @@
 - (void)editMemory:(id)sender;
 - (IBAction)editParameters:(id)sender;
 - (void)bookmarkMessage:(NSMutableDictionary *)message;
+- (IBAction)showSkills:(id)sender;
 - (void)fillBookmarksMenu:(NSMenu *)menu;
 - (void)openFindResult:(NSDictionary *)hit;
 - (void)endInstructionsOK:(id)sender;

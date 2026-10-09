@@ -243,7 +243,7 @@ static NSString *kAccount = @"keys";
     if ([defaults objectForKey:key])
         return [defaults boolForKey:key];
     /* Defaults, as the relay's integrations.py had them. */
-    if ([name isEqualToString:@"ppc_approval"] || [name isEqualToString:@"toolbox_enabled"] || [name isEqualToString:@"download_enabled"])
+    if ([name isEqualToString:@"ppc_approval"] || [name isEqualToString:@"toolbox_enabled"] || [name isEqualToString:@"download_enabled"] || [name isEqualToString:@"subagents_enabled"])
         return NO;
     return YES;
 }

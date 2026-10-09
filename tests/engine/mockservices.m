@@ -93,7 +93,7 @@ static NSArray *openaiChunks(BOOL tools)
 }
 
 
-static NSArray *anthropicEvents(BOOL tools, BOOL thinking)
+static NSArray *anthropicEventsTool(BOOL tools, BOOL thinking, NSString *toolName, NSString *json1, NSString *json2)
 {
     NSMutableArray *e = [NSMutableArray array];
     int index = 0;
@@ -111,9 +111,9 @@ static NSArray *anthropicEvents(BOOL tools, BOOL thinking)
     [e addObject:E(@"content_block_stop", D(@"content_block_stop", @"type", N(index), @"index"))];
     index++;
     if (tools) {
-        [e addObject:E(@"content_block_start", D(@"content_block_start", @"type", N(index), @"index", D(@"tool_use", @"type", @"toolu_1", @"id", @"start_process", @"name", [NSDictionary dictionary], @"input"), @"content_block"))];
-        [e addObject:E(@"content_block_delta", D(@"content_block_delta", @"type", N(index), @"index", D(@"input_json_delta", @"type", @"{\"command\":", @"partial_json"), @"delta"))];
-        [e addObject:E(@"content_block_delta", D(@"content_block_delta", @"type", N(index), @"index", D(@"input_json_delta", @"type", @"\"ls\"}", @"partial_json"), @"delta"))];
+        [e addObject:E(@"content_block_start", D(@"content_block_start", @"type", N(index), @"index", D(@"tool_use", @"type", @"toolu_1", @"id", toolName, @"name", [NSDictionary dictionary], @"input"), @"content_block"))];
+        [e addObject:E(@"content_block_delta", D(@"content_block_delta", @"type", N(index), @"index", D(@"input_json_delta", @"type", json1, @"partial_json"), @"delta"))];
+        [e addObject:E(@"content_block_delta", D(@"content_block_delta", @"type", N(index), @"index", D(@"input_json_delta", @"type", json2, @"partial_json"), @"delta"))];
         [e addObject:E(@"content_block_stop", D(@"content_block_stop", @"type", N(index), @"index"))];
     }
     [e addObject:E(@"message_delta", D(@"message_delta", @"type", D(tools ? @"tool_use" : @"end_turn", @"stop_reason"), @"delta", D(N(33), @"output_tokens"), @"usage"))];
@@ -122,6 +122,11 @@ static NSArray *anthropicEvents(BOOL tools, BOOL thinking)
 }
 
 
+
+static NSArray *anthropicEvents(BOOL tools, BOOL thinking)
+{
+    return anthropicEventsTool(tools, thinking, @"start_process", @"{\"command\":", @"\"ls\"}");
+}
 
 /* ---- the older HTTP+SSE transport: GET /legacy/sse holds a stream open; messages POSTed to /legacy/messages?sid=N are answered on it ---- */
 static NSMutableDictionary *legacyQueues;   /* sid -> NSMutableArray of JSON strings */
@@ -412,6 +417,15 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendChunked(fd, 200, sse(anthropicEvents(!answered, NO)));
         else
             sendChunked(fd, 200, sse(openaiChunks(!answered)));
+    } else if ([path isEqualToString:@"/sub-claude"]) {
+        /* the parent calls run_subagents with two tasks; each subagent answers at once; the parent then answers */
+        NSString *text = TBJSONString(request);
+        if ([text rangeOfString:@"tool_result"].location != NSNotFound)
+            sendChunked(fd, 200, sse(anthropicEvents(NO, NO)));
+        else if ([text rangeOfString:@"SUBTASK"].location != NSNotFound)
+            sendChunked(fd, 200, sse(anthropicEvents(NO, NO)));
+        else
+            sendChunked(fd, 200, sse(anthropicEventsTool(YES, NO, @"run_subagents", @"{\"tasks\":[{\"task\":\"SUBTASK one\"},", @"{\"task\":\"SUBTASK two\"}]}")));
     } else if ([path isEqualToString:@"/grok"]) {
         NSArray *items;
         if ([request objectForKey:@"previous_response_id"])

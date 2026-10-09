@@ -26,6 +26,9 @@
     NSArray *commanderTools;
     NSString *grokKey;
     id extras;
+    NSString *subPrefix;             /* set on a subagent: its tool call ids start with this so they cannot clash with the parent's */
+    NSString *turnProvider;
+    NSString *turnModel;
     NSMutableSet *alwaysAllowed;     /* tool keys the person chose "Always Allow" for during this turn */
 }
 + (NSDictionary *)cleanOptions:(id)incoming;
@@ -48,6 +51,11 @@ NSString *TBCommanderProgram(void);
 + (void)forgetCommanderTools;
 /* What the last look at Commander found wrong, or "". */
 + (NSString *)cachedCommanderProblem;
+@end
+
+@interface TBSession (Subagents)
+- (NSDictionary *)subagentDefinition;
+- (NSString *)runSubagents:(NSDictionary *)args;
 @end
 
 @interface TBSession (Loop)
