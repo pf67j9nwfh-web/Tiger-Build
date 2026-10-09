@@ -6,7 +6,7 @@
 | `libwebp/` | libwebp 1.5.0 (decoder) | BSD-3-Clause | WebP pictures |
 | `libde265/` | libde265 1.0.15 | LGPL-3.0 (separate dylib) | HEIC pictures |
 | `libaom/` | libaom 3.11.0 (AV1 decoder) | BSD-2-Clause + patent grant | AVIF pictures |
-| `jxldec/` | jxldec (JPEG XL decoder, plain C) with changes for the old Macs | no licence published, see its README | JPEG XL pictures |
+| `jxldec/` | jxldec (JPEG XL decoder, plain C) with changes for the old Macs | MIT (stated by the author, see its README) | JPEG XL pictures |
 | `openssh/` | OpenSSH 10.6p1 | BSD, ISC | the bundled ssh client and Tiger Build's SSH server |
 | `sshfs/` | sshfs 2.2 with MacFUSE's patch, glib 2.16.6 static | GPL-2.0, LGPL-2.1 | Mounting another computer's folder over the bundled ssh (needs MacFUSE) |
 | `libressl/` | LibreSSL 4.3.3 (libcrypto, static) | ISC, OpenSSL/SSLeay | RSA, ECDSA and the old algorithms in OpenSSH |
