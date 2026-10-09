@@ -19,6 +19,9 @@
 - (void)rememberContextLimit;
 - (void)updateContextReadout;
 - (void)syncModelMenu;
+- (NSMenu *)modelMenu;
+- (void)fillProviderMenu:(NSMenu *)menu;
+- (void)fillProviderPopup;
 - (void)setBusy:(BOOL)flag;
 - (void)rememberLastUsed;
 @end
@@ -56,6 +59,21 @@
 }
 
 /* ---- picking the model ---- */
+
+/* Auto appears in the provider list when Preferences say so, and always while it is the default for new chats. */
+- (BOOL)autoListed
+{
+    return [[NSUserDefaults standardUserDefaults] boolForKey:@"TigerBuildAutoListed"] || [self autoModelWanted];
+}
+
+- (void)autoListingChanged
+{
+    NSMenu *menu = [self modelMenu];
+    if (menu)
+        [self fillProviderMenu:menu];
+    [self fillProviderPopup];
+    [self syncModelMenu];
+}
 
 - (BOOL)autoModelWanted
 {
@@ -186,6 +204,8 @@
     if (![[chat objectForKey:@"autoPending"] boolValue])
         return NO;
     [chat removeObjectForKey:@"autoPending"];
+    if (![self autoListed])
+        return NO;
     if (!router)
         router = [NSString stringWithFormat:@"%@|%@", [self providerForChat:chat], [self modelForChat:chat]];
     candidates = [self routingCandidatesForChat:chat];

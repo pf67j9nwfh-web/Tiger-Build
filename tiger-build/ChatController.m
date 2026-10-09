@@ -28,6 +28,8 @@ static NSMutableArray *extraWindows = nil;
 - (void)focusInputIfNotEditing;
 - (void)cancelPendingInputFocus;
 - (void)beginRenameForRow:(int)row;
+- (void)endRenameFromClick;
+- (void)finishRenameAndFocusInput:(BOOL)focus;
 - (void)placeRenameField;
 - (float)clampedSidebar:(float)proposed;
 - (float)inputHeightForWidth:(float)width;
@@ -125,6 +127,13 @@ static NSMutableArray *allControllers = nil;
 - (void)setController:(ChatController *)owner
 {
     controller = owner;
+}
+
+/* A click on anything else ends a rename in progress */
+- (void)mouseDown:(NSEvent *)event
+{
+    [controller endRenameFromClick];
+    [super mouseDown:event];
 }
 
 /* Brushed metal shows through; the other looks paint over it */
@@ -1089,6 +1098,9 @@ static NSMutableArray *allControllers = nil;
 /* Shortcuts live on items inside submenus too, so walk the whole tree. */
 static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
+    /* the ones added in 2.2 that take Option as well */
+    NSSet *optionOnly = [NSSet setWithObjects:@"copyDiagnostics:", @"checkForUpdates:", @"forgetMCPSignIns:", @"uninstallTigerBuild:", @"showSkills:", @"editParameters:",
+        @"quickAsk:", @"showCostReport:", @"importOtherExport:", @"lockNow:", @"commanderRemote:", nil];
     unsigned i;
     for (i = 0; i < [menu numberOfItems]; i++) {
         NSMenuItem *item = [menu itemAtIndex:i];
@@ -1104,7 +1116,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
                 || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
                 || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
-                || [item action] == @selector(showAppearance:) || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:))
+                || [item action] == @selector(showAppearance:) || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:)
+                || [optionOnly containsObject:NSStringFromSelector([item action])])
                 mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
             [item setKeyEquivalentModifierMask:mask];
@@ -1271,6 +1284,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         }
         item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Bookmark Last Message" action:@selector(bookmarkLastMessage:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Pin Chat" action:@selector(togglePin:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         {
             NSMenuItem *slot = [[[NSMenuItem alloc] initWithTitle:@"Bookmarks" action:NULL keyEquivalent:@""] autorelease];
             NSMenu *sub = [[[NSMenu alloc] initWithTitle:@"Bookmarks"] autorelease];
@@ -1421,7 +1438,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"e",@"exportHistory:",@"i",@"importHistory:",
             @"H",@"clearAllHistory:",@"u",@"commanderStart:",@"U",@"commanderStop:",@"a",@"commanderAutostart:",
             @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
-            @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",nil];
+            @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",
+            @"D",@"copyDiagnostics:",@"U",@"checkForUpdates:",@"F",@"forgetMCPSignIns:",@"X",@"uninstallTigerBuild:",
+            @"b",@"bookmarkLastMessage:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
+            @"S",@"savePromptFromInput:",@"L",@"managePrompts:",@"O",@"tryWithAnotherModel:",@"j",@"quickAsk:",
+            @"c",@"showCostReport:",@"I",@"importOtherExport:",@"x",@"lockNow:",@"u",@"commanderRemote:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
             applyMenuShortcuts([[bar itemAtIndex:g] submenu], shortcuts);
@@ -1494,6 +1515,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [[menu itemAtIndex:[menu numberOfItems]-1] setImage:TBProviderIcon([item objectForKey:@"id"])];
         [[menu itemAtIndex:[menu numberOfItems]-1] setKeyEquivalent:[NSString stringWithFormat:@"%d",(int)i+1]];
     }
+    if ([self autoListed]) {
+        [self addModelItem:@"Auto" identifier:@"auto" toMenu:menu];
+        [[menu itemAtIndex:[menu numberOfItems]-1] setKeyEquivalent:[NSString stringWithFormat:@"%d",(int)[providers count]+1]];
+    }
 }
 
 - (void)fillProviderPopup
@@ -1512,6 +1537,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         [[modelPopup lastItem] setImage:TBProviderIcon(pid)];
         /* Local stays enabled so choosing it asks the server for models again. */
         [[modelPopup lastItem] setEnabled:([pid isEqualToString:@"local"] || [self providerNote:pid] == nil)];
+    }
+    if ([self autoListed]) {
+        [modelPopup addItemWithTitle:@"Auto"];
+        [[modelPopup lastItem] setRepresentedObject:@"auto"];
     }
     [self applyPopupTheme:modelPopup];
 }
@@ -1693,6 +1722,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         return;
     provider = [self providerForChat:current];
     [variantPopup removeAllItems];
+    if ([[current objectForKey:@"autoPending"] boolValue] && [self autoListed]) {
+        [self addVariantTitle:@"Auto" model:@"auto"];
+        [self applyPopupTheme:variantPopup];
+        return;
+    }
     if ([provider isEqualToString:@"local"]) {
         list = localModels;
         if ([list count] == 0)
@@ -1722,7 +1756,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 - (void)syncModelMenu
 {
     NSMenu *modelMenu = [self modelMenu];
-    NSString *selected = [self providerForChat:current];
+    NSString *selected = [[current objectForKey:@"autoPending"] boolValue] && [self autoListed] ? @"auto" : [self providerForChat:current];
     int i;
     if (modelMenu) {
         for (i = 0; i < [modelMenu numberOfItems]; i++) {
@@ -1756,6 +1790,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         provider = [[sender selectedItem] representedObject];
     if (!provider || [provider length] == 0)
         return;
+    if ([provider isEqualToString:@"auto"]) {
+        /* the chat keeps its own provider and model until its first message picks one */
+        [current setObject:[NSNumber numberWithBool:YES] forKey:@"autoPending"];
+        [self saveStore];
+        [self syncModelMenu];
+        return;
+    }
     if (![provider isEqualToString:@"local"] && [self providerNote:provider]) {
         NSString *note = [self providerNote:provider];
         NSBeep();
@@ -1790,7 +1831,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     else if ([sender isKindOfClass:[NSPopUpButton class]])
         model = [[sender selectedItem] representedObject];
     provider = [self providerForChat:current];
-    if (![self model:model allowedForProvider:provider])
+    if ([model isEqualToString:@"auto"] || ![self model:model allowedForProvider:provider])
         return;
     [current setObject:model forKey:@"model"];
     [current removeObjectForKey:@"autoPending"];
@@ -2016,6 +2057,8 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         title = @"";
     if (((busy || naming) && streamingId && [streamingId isEqualToString:chatId]) || [self chatHasParkedRun:chatId])
         title = [NSString stringWithFormat:@"%C  %@", (unichar)0x2022, title];
+    if ([[[chats objectAtIndex:row] objectForKey:@"pinned"] boolValue])
+        title = [NSString stringWithFormat:@"%C %@", (unichar)0x2605, title];
     pictured = TBEmojiTitle(title, [[column dataCell] font]);
     return pictured ? (id)pictured : (id)TBDisplayText(title);
 }
@@ -2122,11 +2165,29 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self performSelector:@selector(selectRenameText) withObject:nil afterDelay:0.0];
 }
 
+/* Clicking elsewhere (or tabbing away) while the name box is open keeps what was typed and closes the box. */
+- (void)endRenameFromClick
+{
+    if (renameRow >= 0 && renameField)
+        [self finishRenameAndFocusInput:NO];
+}
+
+- (void)controlTextDidEndEditing:(NSNotification *)note
+{
+    if ([note object] == renameField && renameRow >= 0)
+        [self finishRenameAndFocusInput:NO];
+}
+
 - (IBAction)commitRename:(id)sender
+{
+    (void)sender;
+    [self finishRenameAndFocusInput:YES];
+}
+
+- (void)finishRenameAndFocusInput:(BOOL)focus
 {
     NSString *title;
     int row;
-    (void)sender;
     if (renameRow < 0 || !renameField)
         return;
     row = renameRow;
@@ -2150,7 +2211,8 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         suppressSelection = NO;
         [self showChatAtIndex:row];
     }
-    [window makeFirstResponder:input];
+    if (focus)
+        [window makeFirstResponder:input];
 }
 
 - (void)cancelRename:(id)sender
@@ -2360,9 +2422,15 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return ![self anyRunActive];
     if ([item action] == @selector(deleteChat:))
         return !busy && [table selectedRow] >= 0;
+    if ([item action] == @selector(bookmarkLastMessage:))
+        return current != nil;
+    if ([item action] == @selector(togglePin:)) {
+        [item setTitle:[[current objectForKey:@"pinned"] boolValue] ? @"Unpin Chat" : @"Pin Chat"];
+        return !busy && current != nil;
+    }
     if ([item action] == @selector(chooseModel:) && [[item representedObject] isKindOfClass:[NSString class]]) {
         NSString *pid = [item representedObject];
-        return [pid isEqualToString:@"local"] || [self providerNote:pid] == nil;
+        return [pid isEqualToString:@"auto"] || [pid isEqualToString:@"local"] || [self providerNote:pid] == nil;
     }
     return YES;
 }
@@ -2408,11 +2476,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 - (IBAction)newChat:(id)sender
 {
     NSMutableDictionary *chat;
+    int row;
     (void)sender;
     chat = [self blankChat];
-    [chats insertObject:chat atIndex:0];
+    row = [self insertChatAtTop:chat];
     [self saveStore];
-    [self reloadTableSelect:0 show:YES];
+    [self reloadTableSelect:row show:YES];
     [window makeFirstResponder:input];
 }
 

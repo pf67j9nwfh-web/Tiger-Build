@@ -29,11 +29,16 @@
 - (void)updateMemoryAfterReply:(NSMutableDictionary *)chat;
 - (void)editMemory:(id)sender;
 - (IBAction)editParameters:(id)sender;
+- (IBAction)bookmarkLastMessage:(id)sender;
 - (void)bookmarkMessage:(NSMutableDictionary *)message;
 - (IBAction)showSkills:(id)sender;
 - (void)modelDidChangeForChat:(NSMutableDictionary *)chat;
 - (void)reconcileModelOfChat:(NSMutableDictionary *)chat;
 - (BOOL)autoModelWanted;
+- (BOOL)autoListed;
+- (int)insertChatAtTop:(NSMutableDictionary *)chat;
+- (IBAction)togglePin:(id)sender;
+- (void)autoListingChanged;
 - (void)scheduleModelNotes;
 - (IBAction)updateModelNotes:(id)sender;
 - (NSString *)routerSelection;

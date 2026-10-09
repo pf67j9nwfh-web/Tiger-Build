@@ -17,6 +17,21 @@
     [self refreshTranscriptIfCurrent:current];
 }
 
+/* Chat, Bookmark Last Message: for a Mac with no right button, or when the star is hard to hit */
+- (IBAction)bookmarkLastMessage:(id)sender
+{
+    NSArray *messages = [current objectForKey:@"messages"];
+    int i;
+    (void)sender;
+    for (i = (int)[messages count] - 1; i >= 0; i--) {
+        NSMutableDictionary *message = [messages objectAtIndex:i];
+        if ([[message objectForKey:@"status"] boolValue] || [message objectForKey:@"activityKind"] || [[message objectForKey:@"text"] length] == 0)
+            continue;
+        [self bookmarkMessage:message];
+        return;
+    }
+}
+
 - (NSArray *)bookmarkHits
 {
     NSMutableArray *found = [NSMutableArray array];

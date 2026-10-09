@@ -372,6 +372,38 @@ NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font)
 
 #endif
 
+/* The bookmark star at a bubble's top corner: an outline to click, filled yellow once the message is bookmarked. */
+static NSRect bookmarkStarRect(NSRect bubble, BOOL fromUser, float fullWidth)
+{
+    /* beside the bubble, away from the page edge; inside its top corner when there is no room */
+    float x = fromUser ? NSMinX(bubble) - 22 : NSMaxX(bubble) + 4;
+    if (x < 2 || x + 18 > fullWidth - 2)
+        x = NSMaxX(bubble) - 24;
+    return NSMakeRect(x, NSMaxY(bubble) - 24, 18, 18);
+}
+
+static void drawBookmarkStar(NSRect bubble, BOOL fromUser, float fullWidth, BOOL filled)
+{
+    NSBezierPath *star = [NSBezierPath bezierPath];
+    NSRect hit = bookmarkStarRect(bubble, fromUser, fullWidth);
+    float cx = NSMidX(hit), cy = NSMidY(hit);
+    int k;
+    for (k = 0; k < 10; k++) {
+        float angle = 3.14159265f / 2 + k * 3.14159265f / 5, r = (k % 2) ? 3.2f : 7.0f;
+        NSPoint p = NSMakePoint(cx + r * cosf(angle), cy + r * sinf(angle));
+        if (k == 0) [star moveToPoint:p]; else [star lineToPoint:p];
+    }
+    [star closePath];
+    if (filled) {
+        [[NSColor colorWithCalibratedRed:0.95 green:0.75 blue:0.1 alpha:1.0] set];
+        [star fill];
+    } else {
+        [[NSColor colorWithCalibratedWhite:0.5 alpha:0.45] set];
+        [star setLineWidth:1.0];
+        [star stroke];
+    }
+}
+
 static void appendRoundedRect(NSBezierPath *path, NSRect rect, float radius)
 {
     float x = NSMinX(rect);
@@ -1714,20 +1746,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 continue;
             }
             paintBubble(rect, fromUser);
-            if ([[[box objectForKey:@"message"] objectForKey:@"bookmark"] boolValue]) {
-                /* a small star at the bubble's top corner */
-                NSBezierPath *star = [NSBezierPath bezierPath];
-                float cx = NSMaxX(rect) - 14, cy = NSMaxY(rect) - 12;
-                int k;
-                for (k = 0; k < 10; k++) {
-                    float angle = 3.14159265f / 2 + k * 3.14159265f / 5, r = (k % 2) ? 3.0f : 7.0f;
-                    NSPoint p = NSMakePoint(cx + r * cosf(angle), cy + r * sinf(angle));
-                    if (k == 0) [star moveToPoint:p]; else [star lineToPoint:p];
-                }
-                [star closePath];
-                [[NSColor colorWithCalibratedRed:0.95 green:0.75 blue:0.1 alpha:1.0] set];
-                [star fill];
-            }
+            if ([box objectForKey:@"message"] && ![[box objectForKey:@"activity"] boolValue])
+                drawBookmarkStar(rect, fromUser, layoutWidth, [[[box objectForKey:@"message"] objectForKey:@"bookmark"] boolValue]);
             if ([box objectForKey:@"drawnPanels"])
                 [self drawCodePanels:[box objectForKey:@"drawnPanels"]];
             if ([box objectForKey:@"fileRect"]) {
@@ -1901,6 +1921,13 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 - (void)mouseDown:(NSEvent *)event
 {
     NSPoint point=[self convertPoint:[event locationInWindow] fromView:nil];unsigned i;
+    for(i=0;i<[boxes count];i++) {
+        NSDictionary *starBox=[boxes objectAtIndex:i];
+        if([starBox objectForKey:@"message"]&&![[starBox objectForKey:@"status"] boolValue]&&![[starBox objectForKey:@"activity"] boolValue]&&![[starBox objectForKey:@"typing"] boolValue]
+            &&[dropTarget respondsToSelector:@selector(bookmarkMessage:)]&&NSPointInRect(point,bookmarkStarRect([[starBox objectForKey:@"rect"] rectValue],[[starBox objectForKey:@"user"] boolValue],layoutWidth))) {
+            [dropTarget performSelector:@selector(bookmarkMessage:) withObject:[starBox objectForKey:@"message"]];return;
+        }
+    }
     for(i=0;i<[boxes count];i++) {
         NSDictionary *fileBox=[boxes objectAtIndex:i];
         if([fileBox objectForKey:@"fileRect"]&&NSPointInRect(point,[[fileBox objectForKey:@"fileRect"] rectValue])) {

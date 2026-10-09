@@ -133,14 +133,15 @@
         [tabs setFont:[NSFont systemFontOfSize:12]];[view addSubview:tabs];
         NSView *tab=[self integrationTab:@"Built-in Tools" in:tabs];
         float y=292;
-        [self integrationSwitch:@"Commander (built in): read and edit files and run commands on the chat's Mac" key:@"ppc_enabled" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Ask first before Commander runs a tool (a chat can change this)" key:@"ppc_approval" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Agent toolbox (UTC time and scratch notes)" key:@"toolbox_enabled" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Ask other models: lets a model get a second opinion (a chat turns it on)" key:@"consult_enabled" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Web and picture search for other providers" key:@"search_enabled" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Grok native web search" key:@"grok_native_search" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Gemini searches with Google (needs a Gemini key)" key:@"gemini_native_search" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=40;
+        [self integrationSwitch:@"Commander (built in): read and edit files and run commands on the chat's Mac" key:@"ppc_enabled" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Ask first before Commander runs a tool (a chat can change this)" key:@"ppc_approval" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Agent toolbox (UTC time and scratch notes)" key:@"toolbox_enabled" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Ask other models: lets a model get a second opinion (a chat turns it on)" key:@"consult_enabled" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Let models start subagents: parallel helpers (off by default; a chat turns it on)" key:@"subagents_enabled" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Web and picture search for other providers" key:@"search_enabled" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Grok native web search" key:@"grok_native_search" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Gemini searches with Google (needs a Gemini key)" key:@"gemini_native_search" y:y in:tab];y-=23;
+        [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=34;
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
         NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
         [steps setToolTip:@"A reply may use this many tool steps (1 to 1000; 0 means no limit, which can run up cost) before Tiger Build stops it and says so. Say continue to go on."];
@@ -165,8 +166,7 @@
         [tab addSubview:tavily];[fields setObject:tavily forKey:@"tavily_api_key"];y-=28;
         NSButton *clearT=[[[NSButton alloc] initWithFrame:NSMakeRect(190,y,350,22)] autorelease];
         [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];y-=40;
-        [self integrationSwitch:@"Let models download files over https (off by default; each chat chooses, and it asks first)" key:@"download_enabled" y:y in:tab];y-=26;
-        [self integrationSwitch:@"Let models start subagents: helpers that work on parts of a task at the same time (off by default; each chat chooses)" key:@"subagents_enabled" y:y in:tab];
+        [self integrationSwitch:@"Let models download files over https (off by default)" key:@"download_enabled" y:y in:tab];y-=26;
 
         tab=[self integrationTab:@"MCP Servers" in:tabs];
         [self integrationLabel:@"Custom servers are programs on this Mac, programs on another computer over SSH, or http:// and https:// addresses. Only add ones you trust."
@@ -447,7 +447,7 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
 - (NSDictionary *)integrationFormData
 {
     NSMutableDictionary *fields=[self integrationFields];NSMutableDictionary *data=[NSMutableDictionary dictionary];
-    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"download_enabled",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
+    NSArray *keys=[NSArray arrayWithObjects:@"ppc_enabled",@"ppc_approval",@"toolbox_enabled",@"consult_enabled",@"search_enabled",@"grok_native_search",@"gemini_native_search",@"download_enabled",@"subagents_enabled",@"claude_thinking",@"clear_search_key",@"clear_tavily_key",nil];unsigned i;
     for(i=0;i<[keys count];i++)[data setObject:[NSNumber numberWithBool:[[fields objectForKey:[keys objectAtIndex:i]] state]==NSOnState] forKey:[keys objectAtIndex:i]];
     [data setObject:[[fields objectForKey:@"search_api_key"] stringValue] forKey:@"search_api_key"];
     [data setObject:[[fields objectForKey:@"tavily_api_key"] stringValue] forKey:@"tavily_api_key"];

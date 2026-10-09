@@ -209,9 +209,11 @@ static NSString *safeFileStem(NSString *title)
     [copy removeObjectForKey:@"ctxTokens"];
     [copy removeObjectForKey:@"ctxAt"];
     [self forgetEdit];
-    [chats insertObject:copy atIndex:0];
-    [self saveStore];
-    [self reloadTableSelect:0 show:YES];
+    {
+        int row = [self insertChatAtTop:copy];
+        [self saveStore];
+        [self reloadTableSelect:row show:YES];
+    }
 }
 
 - (NSString *)readableChat:(NSDictionary *)chat markdown:(BOOL)markdown
@@ -561,9 +563,11 @@ static void appendMessageText(NSMutableAttributedString *out, NSString *text, NS
         [chat setObject:@"Imported Chat" forKey:@"title"];
     [chat setObject:[NSNumber numberWithBool:NO] forKey:@"autoTitle"];
     [self forgetEdit];
-    [chats insertObject:chat atIndex:0];
-    [self saveStore];
-    [self reloadTableSelect:0 show:YES];
+    {
+        int row = [self insertChatAtTop:chat];
+        [self saveStore];
+        [self reloadTableSelect:row show:YES];
+    }
 }
 
 @end

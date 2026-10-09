@@ -576,9 +576,11 @@ static OSStatus hotKeyHandler(EventHandlerCallRef next, EventRef event, void *co
         [copy removeObjectForKey:@"contextLimit"];
         [copy removeObjectForKey:@"usage"];
         [self forgetEdit];
-        [chats insertObject:copy atIndex:0];
-        [self saveStore];
-        [self reloadTableSelect:0 show:YES];
+        {
+            int row = [self insertChatAtTop:copy];
+            [self saveStore];
+            [self reloadTableSelect:row show:YES];
+        }
         [input setStringValue:question];
         [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];
     }

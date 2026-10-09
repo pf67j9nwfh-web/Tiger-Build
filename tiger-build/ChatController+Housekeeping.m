@@ -67,7 +67,9 @@ static double numberOf(id v)
     [self alertsCheck:@"Play a sound when a reply finishes off screen or in the background" key:@"alerts.sound" y:y in:tab];
     y -= 22;
     [self alertsCheck:@"Bounce the Dock icon too, while Tiger Build is in the background" key:@"alerts.bounce" y:y in:tab];
-    y -= 32;
+    y -= 22;
+    [self alertsCheck:@"Play the sound for the chat on screen too, even with Tiger Build in front" key:@"alerts.always" y:y in:tab];
+    y -= 30;
     [self preferencesHeading:@"Updates" y:y inView:tab];
     y -= 26;
     [self alertsCheck:@"Look for a newer version when Tiger Build starts" key:@"alerts.updates" y:y in:tab];
@@ -75,21 +77,20 @@ static double numberOf(id v)
     y -= 20;
     [self preferencesNote:@"At most once a day. Asks github.com for the latest release of Tiger Build and tells you if it is newer. Nothing else is sent."
         frame:NSMakeRect(34, y - 14, 380, 30) inView:tab];
-    y -= 46;
+    y -= 38;
     [self preferencesHeading:@"Spending limits (estimates)" y:y inView:tab];
     y -= 26;
     [self alertsMoney:@"Stop a reply when its chat has cost more than $" key:@"spend.chat" y:y in:tab];
     y -= 26;
     [self alertsMoney:@"Stop replies when today's total passes $" key:@"spend.day" y:y in:tab];
-    y -= 24;
+    y -= 22;
     {
         NSTextField *today = [self preferencesLabel:@"" frame:NSMakeRect(16, y, 520, 16) inView:tab];
         [today setFont:[NSFont systemFontOfSize:11]];
         [prefsFields setObject:today forKey:@"spend.today"];
     }
-    [self preferencesNote:@"A blank box means no limit. Costs are estimates, so a limit is approximate: a reply stops when the total passes it, and the chat or day stays "
-        @"blocked until you raise or clear the limit."
-        frame:NSMakeRect(16, y - 56, 520, 52) inView:tab];
+    [self preferencesNote:@"A blank box means no limit. Costs are estimates, so a limit is approximate; a chat or day stays blocked until you raise or clear it."
+        frame:NSMakeRect(16, y - 36, 520, 30) inView:tab];
 }
 
 - (void)loadAlertOptions
@@ -100,6 +101,7 @@ static double numberOf(id v)
     [[prefsFields objectForKey:@"quickask.key"] setState:[defaults boolForKey:@"TBQuickAskKey"] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.sound"] setState:flagDefault(@"TBSoundOnFinish", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.bounce"] setState:flagDefault(@"TBBounceOnFinish", YES) ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"alerts.always"] setState:flagDefault(@"TBSoundAlways", NO) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.updates"] setState:flagDefault(@"TBCheckUpdates", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"spend.chat"] setStringValue:chat > 0 ? [NSString stringWithFormat:@"%g", chat] : @""];
     [[prefsFields objectForKey:@"spend.day"] setStringValue:day > 0 ? [NSString stringWithFormat:@"%g", day] : @""];
@@ -117,6 +119,7 @@ static double numberOf(id v)
     [self applyQuickAskHotKey];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.sound"] state] == NSOnState forKey:@"TBSoundOnFinish"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.bounce"] state] == NSOnState forKey:@"TBBounceOnFinish"];
+    [defaults setBool:[[prefsFields objectForKey:@"alerts.always"] state] == NSOnState forKey:@"TBSoundAlways"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.updates"] state] == NSOnState forKey:@"TBCheckUpdates"];
     if (chat > 0) [defaults setObject:[NSNumber numberWithDouble:chat] forKey:@"TBSpendChatLimit"]; else [defaults removeObjectForKey:@"TBSpendChatLimit"];
     if (day > 0) [defaults setObject:[NSNumber numberWithDouble:day] forKey:@"TBSpendDayLimit"]; else [defaults removeObjectForKey:@"TBSpendDayLimit"];
@@ -128,7 +131,7 @@ static double numberOf(id v)
 - (void)noteReplyFinished:(BOOL)offScreen
 {
     BOOL active = [NSApp isActive];
-    if (active && !offScreen)
+    if (active && !offScreen && !flagDefault(@"TBSoundAlways", NO))
         return;
     if (flagDefault(@"TBSoundOnFinish", YES)) {
         NSSound *sound = [NSSound soundNamed:@"Glass"];

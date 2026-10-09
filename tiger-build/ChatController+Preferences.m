@@ -188,6 +188,8 @@
             [[NSUserDefaults standardUserDefaults] setObject:choice forKey:@"TigerBuildNewChatModel"];
         if (router)
             [[NSUserDefaults standardUserDefaults] setObject:router forKey:@"TigerBuildAutoRouter"];
+        [[NSUserDefaults standardUserDefaults] setBool:[[prefsFields objectForKey:@"auto_listed"] state] == NSOnState forKey:@"TigerBuildAutoListed"];
+        [self autoListingChanged];
     }
     [self saveSSHFields];
     [self saveCommanderOptions];
@@ -392,6 +394,7 @@
                 }
         }
     }
+    [[prefsFields objectForKey:@"auto_listed"] setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TigerBuildAutoListed"] ? NSOnState : NSOffState];
     if ([saved length] == 0)
         saved = @"last";
     for (i = 0; i < (unsigned)[popup numberOfItems]; i++) {
@@ -492,6 +495,14 @@
     }
     y -= 34;
     [self preferencesButton:@"Update Model Notes Now" frame:NSMakeRect(170, y, 190, 28) action:@selector(updateModelNotes:) inView:tab];
+    {
+        NSButton *listed = [[[NSButton alloc] initWithFrame:NSMakeRect(372, y + 3, 170, 20)] autorelease];
+        [listed setButtonType:NSSwitchButton];
+        [listed setTitle:@"Show Auto in model list"];
+        [listed setFont:[NSFont systemFontOfSize:12]];
+        [tab addSubview:listed];
+        [prefsFields setObject:listed forKey:@"auto_listed"];
+    }
     y -= 32;
     [self preferencesNote:@"\"The model last used\" starts a new chat with the model, tools and approvals of your most recent chat in the workspace. Or pick one model for every new chat. "
         @"With auto, the model under \"Auto mode asks\" reads your first message and picks the most suitable model from all you can use; the chat then simply uses it. "
