@@ -493,10 +493,9 @@
     y -= 34;
     [self preferencesButton:@"Update Model Notes Now" frame:NSMakeRect(170, y, 190, 28) action:@selector(updateModelNotes:) inView:tab];
     y -= 32;
-    [self preferencesNote:@"\"The model last used\" starts a new chat with the model, tools and approvals of your most recent chat in the workspace. "
-        @"Or pick one model for every new chat. With auto, the first message you send is read by the model chosen under \"Auto mode asks\", which picks the most suitable model for it; "
-        @"the chat then simply uses that model, and you can change it at any time. "
-        @"It sees every model you can use, each with facts the app knows and a short note the chosen model writes in the background (searching the web when it needs to), so choosing is quick."
+    [self preferencesNote:@"\"The model last used\" starts a new chat with the model, tools and approvals of your most recent chat in the workspace. Or pick one model for every new chat. "
+        @"With auto, the model under \"Auto mode asks\" reads your first message and picks the most suitable model from all you can use; the chat then simply uses it. "
+        @"Short notes on each model, which that model writes in the background, help it choose."
         frame:NSMakeRect(16, y - 46, 520, 70) inView:tab];
     y -= 96;
     [self preferencesHeading:@"Settings backup" y:y inView:tab];
