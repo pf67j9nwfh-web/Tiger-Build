@@ -3,7 +3,11 @@
 
 /* Chat, Skills...: the list of skills with a switch for each, New (name, description, instructions), Import Folder, Delete and Show in Finder. */
 
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
+@interface TBSkillsWindow : NSObject <NSTableViewDataSource> {
+#else
 @interface TBSkillsWindow : NSObject {
+#endif
     NSWindow *window;
     NSTableView *table;
     NSArray *rows;
@@ -103,8 +107,8 @@ static TBSkillsWindow *shared = nil;
     int result;
     (void)sender;
     [panel setTitle:@"New Skill"];
-    [nameField setPlaceholderString:@"Name (letters, numbers, dashes)"];
-    [descField setPlaceholderString:@"When to use it, in one sentence"];
+    [[nameField cell] setPlaceholderString:@"Name (letters, numbers, dashes)"];
+    [[descField cell] setPlaceholderString:@"When to use it, in one sentence"];
     [scroll setHasVerticalScroller:YES]; [scroll setBorderType:NSBezelBorder];
     [view setMinSize:NSMakeSize(0, 190)]; [view setMaxSize:NSMakeSize(1000000, 1000000)];
     [view setVerticallyResizable:YES]; [view setAutoresizingMask:NSViewWidthSizable];
@@ -171,7 +175,7 @@ static TBSkillsWindow *shared = nil;
         return;
     {
         NSString *folder = [skill objectForKey:@"folder"];
-        int tag = 0;
+        NSInteger tag = 0;
         [[NSWorkspace sharedWorkspace] performFileOperation:NSWorkspaceRecycleOperation source:[folder stringByDeletingLastPathComponent]
             destination:@"" files:[NSArray arrayWithObject:[folder lastPathComponent]] tag:&tag];
     }
