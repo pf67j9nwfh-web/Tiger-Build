@@ -1271,6 +1271,13 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         }
         item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        {
+            NSMenuItem *slot = [[[NSMenuItem alloc] initWithTitle:@"Bookmarks" action:NULL keyEquivalent:@""] autorelease];
+            NSMenu *sub = [[[NSMenu alloc] initWithTitle:@"Bookmarks"] autorelease];
+            [sub setDelegate:self];
+            [slot setSubmenu:sub];
+            [chat addItem:slot];
+        }
         item = [[[NSMenuItem alloc] initWithTitle:@"Custom Instructions..." action:@selector(editInstructions:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Model Parameters..." action:@selector(editParameters:) keyEquivalent:@""] autorelease];

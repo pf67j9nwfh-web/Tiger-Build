@@ -256,6 +256,10 @@ static NSArray *loginItems(void)
 {
     NSDictionary *state;
     BOOL enabled;
+    if ([[menu title] isEqualToString:@"Bookmarks"]) {
+        [self fillBookmarksMenu:menu];
+        return;
+    }
     if (![[menu title] isEqualToString:@"Commander"])
         return;
     state = [self commanderCommand:@"status"];

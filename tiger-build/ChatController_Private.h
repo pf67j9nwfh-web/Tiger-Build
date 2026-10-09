@@ -29,6 +29,9 @@
 - (void)updateMemoryAfterReply:(NSMutableDictionary *)chat;
 - (void)editMemory:(id)sender;
 - (IBAction)editParameters:(id)sender;
+- (void)bookmarkMessage:(NSMutableDictionary *)message;
+- (void)fillBookmarksMenu:(NSMenu *)menu;
+- (void)openFindResult:(NSDictionary *)hit;
 - (void)endInstructionsOK:(id)sender;
 - (void)endInstructionsCancel:(id)sender;
 - (void)buildAlertsTab:(NSTabView *)tabs;

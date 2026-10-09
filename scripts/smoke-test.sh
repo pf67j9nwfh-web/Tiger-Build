@@ -27,7 +27,7 @@ check speech.wav "decoded"
 r 'rm -rf ~/tb-fixtures /tmp/tb-smoke.jpg'
 
 before=$(r 'ls ~/Library/Logs/CrashReporter ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci "^TigerBuild"')
-r 'killall TigerBuild 2>/dev/null; sleep 1; cd ~/TigerBuild-dev && (./TigerBuild.app/Contents/MacOS/TigerBuild > /dev/null 2>&1 &); sleep 20; ps ax | grep -c "[T]igerBuild.app/Contents/MacOS"' | grep -q '^1$' && ok "app starts and stays up" || bad "app starts and stays up (a Keychain prompt waiting for an answer counts as up)"
+r 'killall TigerBuild 2>/dev/null; sleep 1; cd ~/TigerBuild-dev && (./TigerBuild.app/Contents/MacOS/TigerBuild > /dev/null 2>&1 &); sleep 20; ps ax | grep -c "[T]igerBuild.app/Contents/MacOS/TigerBuild$"' | grep -q '^1$' && ok "app starts and stays up" || bad "app starts and stays up (a Keychain prompt waiting for an answer counts as up)"
 after=$(r 'ls ~/Library/Logs/CrashReporter ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -ci "^TigerBuild"')
 [ "$before" = "$after" ] && ok "no new crash report" || bad "no new crash report"
 r 'killall TigerBuild 2>/dev/null; true'

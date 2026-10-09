@@ -1714,6 +1714,20 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 continue;
             }
             paintBubble(rect, fromUser);
+            if ([[[box objectForKey:@"message"] objectForKey:@"bookmark"] boolValue]) {
+                /* a small star at the bubble's top corner */
+                NSBezierPath *star = [NSBezierPath bezierPath];
+                float cx = NSMaxX(rect) - 14, cy = NSMaxY(rect) - 12;
+                int k;
+                for (k = 0; k < 10; k++) {
+                    float angle = 3.14159265f / 2 + k * 3.14159265f / 5, r = (k % 2) ? 3.0f : 7.0f;
+                    NSPoint p = NSMakePoint(cx + r * cosf(angle), cy + r * sinf(angle));
+                    if (k == 0) [star moveToPoint:p]; else [star lineToPoint:p];
+                }
+                [star closePath];
+                [[NSColor colorWithCalibratedRed:0.95 green:0.75 blue:0.1 alpha:1.0] set];
+                [star fill];
+            }
             if ([box objectForKey:@"drawnPanels"])
                 [self drawCodePanels:[box objectForKey:@"drawnPanels"]];
             if ([box objectForKey:@"fileRect"]) {
@@ -1768,6 +1782,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         [menu addItem:[NSMenuItem separatorItem]];
         if(fromPerson&&[dropTarget respondsToSelector:@selector(editFromMessage:)]) {
             item=[[[NSMenuItem alloc] initWithTitle:@"Edit From Here" action:@selector(editFromHere:) keyEquivalent:@""] autorelease];
+            [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
+        }
+        if([dropTarget respondsToSelector:@selector(bookmarkMessage:)]) {
+            item=[[[NSMenuItem alloc] initWithTitle:[[message objectForKey:@"bookmark"] boolValue]?@"Remove Bookmark":@"Bookmark This Message" action:@selector(bookmarkHere:) keyEquivalent:@""] autorelease];
             [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
         }
         if([dropTarget respondsToSelector:@selector(branchFromMessage:)]) {
@@ -1863,6 +1881,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 - (void)editFromHere:(id)sender
 {
     [dropTarget performSelector:@selector(editFromMessage:) withObject:[sender representedObject]];
+}
+
+- (void)bookmarkHere:(id)sender
+{
+    [dropTarget performSelector:@selector(bookmarkMessage:) withObject:[sender representedObject]];
 }
 
 - (void)branchFromHere:(id)sender
