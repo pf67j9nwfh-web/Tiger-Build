@@ -203,6 +203,15 @@ static NSString *eventErrorMessage(NSDictionary *event)
         [payload setObject:tools forKey:@"tools"];
         [payload setObject:@"auto" forKey:@"tool_choice"];
     }
+    {
+        NSDictionary *params = TBDictionary(options, @"params");
+        if ([params objectForKey:@"temperature"])
+            [payload setObject:[params objectForKey:@"temperature"] forKey:@"temperature"];
+        if ([params objectForKey:@"top_p"])
+            [payload setObject:[params objectForKey:@"top_p"] forKey:@"top_p"];
+        if ([params objectForKey:@"max_tokens"])
+            [payload setObject:[params objectForKey:@"max_tokens"] forKey:@"max_output_tokens"];
+    }
     for (;;) {
         TBGrokStream *stream = nil;
         NSDictionary *completed;
@@ -212,7 +221,28 @@ static NSString *eventErrorMessage(NSDictionary *event)
         if (roundIndex)
             [self emit:@"s" text:@"Working on the next step..."];
         @try {
-            stream = [self postGrok:payload];
+            for (;;) {
+                @try {
+                    stream = [self postGrok:payload];
+                    break;
+                } @catch (NSException *refused) {
+                    /* a choice the model does not take: leave it out and say so */
+                    NSString *why = [refused reason];
+                    NSArray *names = [NSArray arrayWithObjects:@"temperature", @"top_p", @"max_output_tokens", nil];
+                    BOOL removed = NO;
+                    unsigned n;
+                    for (n = 0; n < [names count]; n++) {
+                        NSString *name = [names objectAtIndex:n];
+                        if ([payload objectForKey:name] && [why rangeOfString:name].location != NSNotFound) {
+                            [payload removeObjectForKey:name];
+                            [self emit:@"s" text:[NSString stringWithFormat:@"This model does not take %@, so it was left out.", name]];
+                            removed = YES;
+                        }
+                    }
+                    if (!removed)
+                        @throw;
+                }
+            }
         } @catch (NSException *exception) {
             [run check];
             if ([lastOutput length]) {

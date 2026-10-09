@@ -212,6 +212,7 @@ static id cleanObject(id data)
     NSString *instructions = @"";
     NSString *memory = @"";
     NSString *knowledge = @"";
+    NSMutableDictionary *params = [NSMutableDictionary dictionary];
     NSString *names[2] = {@"servers", @"approve"};
     NSMutableDictionary *tables[2];
     int t;
@@ -222,6 +223,16 @@ static id cleanObject(id data)
         id rootValue = TBValue(incoming, @"root");
         id memoryValue = TBValue(incoming, @"memory");
         id knowledgeValue = TBValue(incoming, @"knowledge");
+        id paramValue = TBValue(incoming, @"params");
+        if ([paramValue isKindOfClass:[NSDictionary class]]) {
+            id t = [paramValue objectForKey:@"temperature"], p = [paramValue objectForKey:@"top_p"], m = [paramValue objectForKey:@"max_tokens"];
+            if ([t isKindOfClass:[NSNumber class]] && [t doubleValue] >= 0 && [t doubleValue] <= 2)
+                [params setObject:t forKey:@"temperature"];
+            if ([p isKindOfClass:[NSNumber class]] && [p doubleValue] > 0 && [p doubleValue] <= 1)
+                [params setObject:p forKey:@"top_p"];
+            if ([m isKindOfClass:[NSNumber class]] && [m intValue] >= 16 && [m intValue] <= 400000)
+                [params setObject:[NSNumber numberWithInt:[m intValue]] forKey:@"max_tokens"];
+        }
         if ([knowledgeValue isKindOfClass:[NSString class]]) {
             NSString *k = TBTrim(knowledgeValue);
             if ([k hasPrefix:@"/"] && [k length] <= 300 && [k rangeOfString:@"\n"].location == NSNotFound) {
@@ -259,7 +270,7 @@ static id cleanObject(id data)
             }
         }
     }
-    return [NSDictionary dictionaryWithObjectsAndKeys:servers, @"servers", approve, @"approve", root, @"root", instructions, @"instructions", memory, @"memory", knowledge, @"knowledge", nil];
+    return [NSDictionary dictionaryWithObjectsAndKeys:servers, @"servers", approve, @"approve", root, @"root", instructions, @"instructions", memory, @"memory", knowledge, @"knowledge", params, @"params", nil];
 }
 
 /* Whether a model can look at a picture. A wrong guess only costs a tool. */
@@ -1188,6 +1199,7 @@ static unsigned long contentSize(NSArray *log)
         }
         round = [[[TBRound alloc] init] autorelease];
         round->run = [run retain];
+        round->params = [TBDictionary(options, @"params") retain];
         round->sink = [[[TBTextCollector alloc] initWithSink:sink spoken:spoken] autorelease];
         @try {
             [TBProviders streamRound:provider system:system log:log tools:tools round:round model:model];
@@ -1200,6 +1212,11 @@ static unsigned long contentSize(NSArray *log)
             @throw;
         }
         [run check];
+        {
+            unsigned d;
+            for (d = 0; d < [round->droppedParams count]; d++)
+                [self emit:@"s" text:[NSString stringWithFormat:@"This model does not take %@, so it was left out.", [round->droppedParams objectAtIndex:d]]];
+        }
         sawText = [spoken length] > 0;
         if (sawText)
             anyText = YES;

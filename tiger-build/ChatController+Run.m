@@ -159,6 +159,11 @@ static NSString *newRunId(void)
     if ([[chat objectForKey:@"instructions"] length] > 0)
         [out appendFormat:@",\"instructions\":\"%@\"", TBJSONEscape([chat objectForKey:@"instructions"])];
     [out appendString:[self memoryRequestFragment]];
+    {
+        NSDictionary *params = [chat objectForKey:@"params"];
+        if ([params isKindOfClass:[NSDictionary class]] && [params count])
+            [out appendFormat:@",\"params\":%@", TBJSONString(params)];
+    }
     if ([[workspaceSettings objectForKey:@"knowledgeRoot"] length])
         [out appendFormat:@",\"knowledge\":\"%@\"", TBJSONEscape([workspaceSettings objectForKey:@"knowledgeRoot"])];
     return out;

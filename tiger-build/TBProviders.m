@@ -14,6 +14,7 @@
     self = [super init];
     if (self) {
         calls = [[NSMutableArray alloc] init];
+        droppedParams = [[NSMutableArray alloc] init];
         usage = [[NSMutableDictionary alloc] initWithObjectsAndKeys:[NSNumber numberWithLongLong:0], @"input", [NSNumber numberWithLongLong:0], @"cached",
             [NSNumber numberWithLongLong:0], @"written", [NSNumber numberWithLongLong:0], @"output", nil];
     }
@@ -26,6 +27,8 @@
     [calls release];
     [claudeBlocks release];
     [usage release];
+    [params release];
+    [droppedParams release];
     [super dealloc];
 }
 
@@ -1267,6 +1270,34 @@ static NSDictionary *standardHeaders(NSString *key)
     return h;
 }
 
+/* ---- the person's sampling choices (temperature, top_p, max tokens): added when set, left out again when a model refuses one ---- */
+
+static NSNumber *paramNumber(TBRound *round, NSString *key)
+{
+    id v = [round->params objectForKey:key];
+    return [v isKindOfClass:[NSNumber class]] ? v : nil;
+}
+
+/* A refusal that names one of these fields: take it (them) out of the payload so the request can be tried again. YES when something was removed.
+   When it names several and says they cannot go together ("temperature and top_p cannot both be specified"), only the last is taken out. */
+static BOOL dropRefusedParams(NSString *message, NSMutableDictionary *payload, NSArray *names, TBRound *round)
+{
+    NSMutableArray *named = [NSMutableArray array];
+    unsigned i;
+    for (i = 0; i < [names count]; i++) {
+        NSString *name = [names objectAtIndex:i];
+        if ([payload objectForKey:name] && [message rangeOfString:name].location != NSNotFound)
+            [named addObject:name];
+    }
+    if ([named count] > 1 && ([message rangeOfString:@"both"].location != NSNotFound || [message rangeOfString:@"together"].location != NSNotFound))
+        named = [NSMutableArray arrayWithObject:[named lastObject]];
+    for (i = 0; i < [named count]; i++) {
+        [payload removeObjectForKey:[named objectAtIndex:i]];
+        [round->droppedParams addObject:[named objectAtIndex:i]];
+    }
+    return [named count] > 0;
+}
+
 @implementation TBProviders (Streaming)
 
 + (void)streamOpenAICompatible:(NSString *)url key:(NSString *)key model:(NSString *)model system:(NSString *)system log:(NSArray *)log
@@ -1298,7 +1329,13 @@ static NSDictionary *standardHeaders(NSString *key)
     askMistral = thinking && [url isEqualToString:mistralURL] && ![noReasoning containsObject:model];
     if (askMistral)
         [payload setObject:@"high" forKey:@"reasoning_effort"];
-    for (attempt = 0; attempt < 2; attempt++) {
+    if (paramNumber(round, @"temperature"))
+        [payload setObject:paramNumber(round, @"temperature") forKey:@"temperature"];
+    if (paramNumber(round, @"top_p"))
+        [payload setObject:paramNumber(round, @"top_p") forKey:@"top_p"];
+    if (paramNumber(round, @"max_tokens"))
+        [payload setObject:paramNumber(round, @"max_tokens") forKey:[url isEqualToString:openaiURL] ? @"max_completion_tokens" : @"max_tokens"];
+    for (attempt = 0; attempt < 5; attempt++) {
         [streamer release];
         streamer = [[TBStreamer alloc] initFor:StreamOpenAI round:round thinking:thinking];
         http = postStream(url, payload, standardHeaders(key), round, streamer);
@@ -1310,6 +1347,8 @@ static NSDictionary *standardHeaders(NSString *key)
                 [payload removeObjectForKey:@"stream_options"];
                 continue;
             }
+            if (dropRefusedParams(text, payload, [NSArray arrayWithObjects:@"temperature", @"top_p", @"max_completion_tokens", @"max_tokens", nil], round))
+                continue;
             if (attempt == 0 && askMistral && [text rangeOfString:@"reasoning_effort"].location != NSNotFound) {
                 [payload removeObjectForKey:@"reasoning_effort"];
                 [noReasoning addObject:model];
@@ -1375,8 +1414,18 @@ static NSDictionary *standardHeaders(NSString *key)
     }
     if (thinking)
         [payload setObject:[NSDictionary dictionaryWithObject:@"auto" forKey:@"summary"] forKey:@"reasoning"];
+    if (paramNumber(round, @"temperature"))
+        [payload setObject:paramNumber(round, @"temperature") forKey:@"temperature"];
+    if (paramNumber(round, @"top_p"))
+        [payload setObject:paramNumber(round, @"top_p") forKey:@"top_p"];
+    if (paramNumber(round, @"max_tokens"))
+        [payload setObject:paramNumber(round, @"max_tokens") forKey:@"max_output_tokens"];
     streamer = [[[TBStreamer alloc] initFor:StreamResponses round:round thinking:thinking] autorelease];
     http = postStream(url, payload, standardHeaders(key), round, streamer);
+    while ([http status] >= 400 && dropRefusedParams(refusal(http), payload, [NSArray arrayWithObjects:@"temperature", @"top_p", @"max_output_tokens", nil], round)) {
+        streamer = [[[TBStreamer alloc] initFor:StreamResponses round:round thinking:thinking] autorelease];
+        http = postStream(url, payload, standardHeaders(key), round, streamer);
+    }
     if ([http status] >= 400) {
         if (!thinking)
             TBFail(@"%@", refusal(http));
@@ -1533,6 +1582,12 @@ static int claudeLimitIn(NSString *message)
         [NSNumber numberWithBool:YES], @"stream", claudeCacheMarks(system, messages), @"system", messages, @"messages", nil];
     if ([tools count])
         [payload setObject:anthropicTools(tools) forKey:@"tools"];
+    if (paramNumber(round, @"temperature"))
+        [payload setObject:paramNumber(round, @"temperature") forKey:@"temperature"];
+    if (paramNumber(round, @"top_p"))
+        [payload setObject:paramNumber(round, @"top_p") forKey:@"top_p"];
+    if (paramNumber(round, @"max_tokens"))
+        [payload setObject:paramNumber(round, @"max_tokens") forKey:@"max_tokens"];
     if (showThinking(round)) {
         /* Adaptive thinking text is omitted unless display is "summarized"; older models take a bounded budget. */
         if ([claudeThinkingType(model) isEqualToString:@"adaptive"])
@@ -1544,7 +1599,7 @@ static int claudeLimitIn(NSString *message)
         @"TigerBuild/2.0", @"User-Agent", nil];
     if ([workspace length])
         [headers setObject:workspace forKey:@"anthropic-workspace-id"];
-    for (attempt = 0; attempt < 2; attempt++) {
+    for (attempt = 0; attempt < 5; attempt++) {
         streamer = [[[TBStreamer alloc] initFor:StreamClaude round:round thinking:YES] autorelease];
         http = postStream(url, payload, headers, round, streamer);
         if ([http status] < 400)
@@ -1552,6 +1607,8 @@ static int claudeLimitIn(NSString *message)
         {
             NSString *text = refusal(http);
             int limit;
+            if (dropRefusedParams(text, payload, [NSArray arrayWithObjects:@"temperature", @"top_p", nil], round))
+                continue;
             if (attempt == 0 && [text rangeOfString:@"cache_control"].location != NSNotFound) {
                 withoutCacheMarks(payload);
                 continue;
@@ -1611,16 +1668,33 @@ static int claudeLimitIn(NSString *message)
     TBHTTP *http;
     if (declared)
         [payload setObject:declared forKey:@"tools"];
-    if (thinking)
-        [payload setObject:[NSDictionary dictionaryWithObject:[NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"includeThoughts"] forKey:@"thinkingConfig"]
-                    forKey:@"generationConfig"];
+    {
+        NSMutableDictionary *config = [NSMutableDictionary dictionary];
+        if (thinking)
+            [config setObject:[NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"includeThoughts"] forKey:@"thinkingConfig"];
+        if (paramNumber(round, @"temperature"))
+            [config setObject:paramNumber(round, @"temperature") forKey:@"temperature"];
+        if (paramNumber(round, @"top_p"))
+            [config setObject:paramNumber(round, @"top_p") forKey:@"topP"];
+        if (paramNumber(round, @"max_tokens"))
+            [config setObject:paramNumber(round, @"max_tokens") forKey:@"maxOutputTokens"];
+        if ([config count])
+            [payload setObject:config forKey:@"generationConfig"];
+    }
     streamer = [[[TBStreamer alloc] initFor:StreamGemini round:round thinking:thinking] autorelease];
     http = postStream(url, payload, headers, round, streamer);
+    while ([http status] >= 400 && [payload objectForKey:@"generationConfig"]
+        && dropRefusedParams(refusal(http), [payload objectForKey:@"generationConfig"], [NSArray arrayWithObjects:@"temperature", @"topP", @"maxOutputTokens", nil], round)) {
+        streamer = [[[TBStreamer alloc] initFor:StreamGemini round:round thinking:thinking] autorelease];
+        http = postStream(url, payload, headers, round, streamer);
+    }
     if ([http status] >= 400) {
         if (!thinking)
             TBFail(@"%@", refusal(http));
         /* Models without thinking reject thinkingConfig; answer without it. */
-        [payload removeObjectForKey:@"generationConfig"];
+        [[payload objectForKey:@"generationConfig"] removeObjectForKey:@"thinkingConfig"];
+        if (![[payload objectForKey:@"generationConfig"] count])
+            [payload removeObjectForKey:@"generationConfig"];
         thinking = NO;
         streamer = [[[TBStreamer alloc] initFor:StreamGemini round:round thinking:NO] autorelease];
         http = postStream(url, payload, headers, round, streamer);
