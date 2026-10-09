@@ -99,6 +99,8 @@ int main(int argc, char **argv)
         expectThat([[TBModelProfiles keysNeedingNotes:keys] count] == 3, @"model notes: all three need notes at first");
         [TBModelProfiles storeReply:@"claude|claude-haiku-5-5|Quick, cheap, good for short answers\nnot a line\nother|model|ignored" asked:keys];
         expectThat([[TBModelProfiles noteForKey:@"claude|claude-haiku-5-5"] hasPrefix:@"Quick, cheap"] && [[TBModelProfiles noteForKey:@"other|model"] length] == 0, @"model notes: stored for asked models only");
+        [TBModelProfiles storeReply:@"gemini|gemini-x (Gemini X)|Brand new, tiny" asked:keys];
+        expectThat([[TBModelProfiles noteForKey:@"gemini|gemini-x"] hasPrefix:@"Brand new"], @"model notes: a title copied after the model id is ignored");
         expectThat([[TBModelProfiles keysNeedingNotes:keys] count] == 0, @"model notes: unanswered ones are not asked again for a week");
         expectThat([[TBModelProfiles lineForProvider:@"claude" model:@"claude-haiku-5-5" title:@"Haiku 5.5" vision:NO context:0 price:nil] hasSuffix:@"Quick, cheap, good for short answers"], @"model notes: the note rides on the line");
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBModelNotesPath"];

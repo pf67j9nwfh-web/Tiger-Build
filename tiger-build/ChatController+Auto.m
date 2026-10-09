@@ -130,18 +130,19 @@
     NSMutableString *body;
     NSMutableArray *batch = [NSMutableArray array];
     unsigned i;
-    if (![self autoModelWanted] || modelNotesBusy || !router || CFAbsoluteTimeGetCurrent() - [TBModelProfiles lastRefresh] < 3600)
+    if (![self autoModelWanted] || modelNotesBusy || !router || [[NSDate date] timeIntervalSince1970] - [TBModelProfiles lastRefresh] < 3600)
         return;
     need = [TBModelProfiles keysNeedingNotes:[self allModelKeys]];
     if (![need count])
         return;
-    for (i = 0; i < [need count] && i < 30; i++)
+    for (i = 0; i < [need count] && i < 15; i++)
         [batch addObject:[need objectAtIndex:i]];
     prompt = [NSMutableString string];
     for (i = 0; i < [batch count]; i++) {
         NSArray *parts = [[batch objectAtIndex:i] componentsSeparatedByString:@"|"];
-        NSString *title = [[ModelCatalog shared] titleForProvider:[parts objectAtIndex:0]];
-        [prompt appendFormat:@"%@ (%@)\n", [batch objectAtIndex:i], title];
+        NSString *mid = [parts objectAtIndex:1];
+        [prompt appendFormat:@"%@\n", [TBModelProfiles lineForProvider:[parts objectAtIndex:0] model:mid title:mid vision:[TBSession supportsImages:[parts objectAtIndex:0] model:mid]
+            context:[TBProviders contextLimitForModel:mid] price:[self millionTokenPrice:[parts objectAtIndex:0] model:mid]]];
     }
     body = [NSMutableString stringWithString:@"{\"messages\":[{\"role\":\"user\",\"content\":\""];
     [body appendString:TBJSONEscape(prompt)];

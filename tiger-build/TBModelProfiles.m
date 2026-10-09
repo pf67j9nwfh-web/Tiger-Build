@@ -112,8 +112,11 @@ static BOOL has(NSString *id, NSArray *words)
         NSString *key, *note;
         if ([parts count] < 3)
             continue;
-        key = [NSString stringWithFormat:@"%@|%@", [[parts objectAtIndex:0] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@" -*`\t"]],
-            [[parts objectAtIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
+        NSString *second = [[parts objectAtIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSRange bracket = [second rangeOfString:@" ("];
+        if (bracket.location != NSNotFound)
+            second = [second substringToIndex:bracket.location];   /* a title the reply copied along */
+        key = [NSString stringWithFormat:@"%@|%@", [[parts objectAtIndex:0] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@" -*`\t"]], second];
         note = [[[parts subarrayWithRange:NSMakeRange(2, [parts count] - 2)] componentsJoinedByString:@"|"] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (![keys containsObject:key] || [note length] == 0)
             continue;
@@ -124,7 +127,7 @@ static BOOL has(NSString *id, NSArray *words)
     save();
 }
 
-+ (double)lastRefresh { return [[NSUserDefaults standardUserDefaults] doubleForKey:@"TBModelNotesRefreshed"]; }
-+ (void)setLastRefresh:(double)when { [[NSUserDefaults standardUserDefaults] setDouble:when forKey:@"TBModelNotesRefreshed"]; }
++ (double)lastRefresh { return [[[NSUserDefaults standardUserDefaults] objectForKey:@"TBModelNotesRefreshed"] doubleValue]; }
++ (void)setLastRefresh:(double)when { [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithDouble:when] forKey:@"TBModelNotesRefreshed"]; }
 
 @end

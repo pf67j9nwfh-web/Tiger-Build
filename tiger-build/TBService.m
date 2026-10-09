@@ -349,7 +349,7 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             text = [session researchProvider:[TBProviders normalize:TBString(incoming, @"provider")] model:[TBString(incoming, @"model") length] ? TBString(incoming, @"model") : nil
                 system:@"You write short notes on AI models so another assistant can choose the best model for a task. For each model line you are given (provider|model|description), say in at most 25 words "
                        @"what the model is best at, how fast and costly it is relative to its provider's other models, and any weakness. Search the web if you are unsure what a model is; "
-                       @"use at most three searches in all. Reply with one line per model in the form provider|model|note, copying the first two fields exactly, and nothing else."
+                       @"use at most three searches in all, and none for models you already know. You must answer every model line you are given. Reply with one line per model in the form provider|model|note, copying the first two fields exactly (no titles, no brackets), and nothing else."
                 prompt:TBString([messages lastObject], @"content")];
             [TBRun finish:session->run];
             return textReply(200, text);
