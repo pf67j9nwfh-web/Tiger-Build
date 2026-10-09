@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBChatExport.h"
 #import "TBMarkup.h"
 
 /* One conversation to a file and back. Three kinds of file:
@@ -441,6 +442,9 @@ static void appendMessageText(NSMutableAttributedString *out, NSString *text, NS
     [format addItemWithTitle:@"Markdown (to read)"];
     [format addItemWithTitle:@"Plain text (to read)"];
     [format addItemWithTitle:@"PDF (to read or print)"];
+    [format addItemWithTitle:@"ChatGPT conversations.json (ChatGPT-style tools, LibreChat)"];
+    [format addItemWithTitle:@"Claude conversations.json (Claude-style tools, LibreChat)"];
+    [format addItemWithTitle:@"LibreChat JSON"];
     [accessory addSubview:label];
     [accessory addSubview:format];
     [panel setAccessoryView:accessory];
@@ -449,11 +453,11 @@ static void appendMessageText(NSMutableAttributedString *out, NSString *text, NS
             file:safeFileStem([current objectForKey:@"title"])] != NSOKButton)
         return;
     kind = [format indexOfSelectedItem];
-    ext = kind == 0 ? @"plist" : (kind == 1 ? @"md" : (kind == 2 ? @"txt" : @"pdf"));
+    ext = kind == 0 ? @"plist" : (kind == 1 ? @"md" : (kind == 2 ? @"txt" : (kind == 3 ? @"pdf" : @"json")));
     path = [panel filename];
     if (![[[path pathExtension] lowercaseString] isEqualToString:ext]) {
         NSString *known = [[path pathExtension] lowercaseString];
-        if ([known isEqualToString:@"plist"] || [known isEqualToString:@"md"] || [known isEqualToString:@"txt"] || [known isEqualToString:@"pdf"])
+        if ([known isEqualToString:@"plist"] || [known isEqualToString:@"md"] || [known isEqualToString:@"txt"] || [known isEqualToString:@"pdf"] || [known isEqualToString:@"json"])
             path = [path stringByDeletingPathExtension];
         path = [path stringByAppendingPathExtension:ext];
     }
@@ -462,7 +466,9 @@ static void appendMessageText(NSMutableAttributedString *out, NSString *text, NS
             NSRunAlertPanel(@"Export chat", @"The PDF could not be made at %@.", @"OK", nil, nil, path);
         return;
     }
-    if (kind == 0) {
+    if (kind >= 4) {
+        data = kind == 4 ? [TBChatExport chatGPTExportOfChat:current] : (kind == 5 ? [TBChatExport claudeExportOfChat:current] : [TBChatExport libreChatExportOfChat:current]);
+    } else if (kind == 0) {
         NSDictionary *portable = [self portableChat:current];
         data = portable ? [NSPropertyListSerialization dataFromPropertyList:portable format:NSPropertyListBinaryFormat_v1_0
             errorDescription:NULL] : nil;

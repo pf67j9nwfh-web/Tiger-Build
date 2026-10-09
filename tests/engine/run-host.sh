@@ -33,6 +33,7 @@ build prov ../tests/engine/provtest.m TBProviders.m $COMMON
 build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBSessionSub.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBSkills.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build formats ../tests/engine/formatstest.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build localtools ../tests/engine/localtoolstest.m TBLocalTools.m TBSkills.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build chatexport ../tests/engine/chatexporttest.m TBChatExport.m $COMMON
 build mcptransport ../tests/engine/mcptransporttest.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
@@ -51,6 +52,7 @@ for t in speech outputs; do "$OUT/$t" $( [ $t = speech ] && echo $PORT || echo "
 "$OUT/mcptransport" $PORT || status=1
 "$OUT/formats" ../tests/engine/fixtures || status=1
 "$OUT/localtools" || status=1
+"$OUT/chatexport" || status=1
 "$OUT/prov" $PORT || status=1
 "$OUT/commander" "$OUT/ppc-commander" || status=1
 "$OUT/commanderfull" "$OUT/ppc-commander" || status=1
