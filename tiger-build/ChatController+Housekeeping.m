@@ -86,8 +86,8 @@ static double numberOf(id v)
         [today setFont:[NSFont systemFontOfSize:11]];
         [prefsFields setObject:today forKey:@"spend.today"];
     }
-    [self preferencesNote:@"A blank box means no limit. Costs are estimates (the number above each chat), so a limit is approximate: a reply is stopped when the total "
-        @"passes it, and the chat or day stays blocked until you raise or clear the limit. Local models cost nothing."
+    [self preferencesNote:@"A blank box means no limit. Costs are estimates, so a limit is approximate: a reply stops when the total passes it, and the chat or day stays "
+        @"blocked until you raise or clear the limit."
         frame:NSMakeRect(16, y - 56, 520, 52) inView:tab];
 }
 
