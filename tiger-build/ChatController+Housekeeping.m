@@ -2,6 +2,7 @@
 #import "TBSSHServer.h"
 #import "TBHTTP.h"
 #import "TBEngine.h"
+#import "mbedtls/sha256.h"
 #import "TBJSON.h"
 #import <Security/Security.h>
 
@@ -272,6 +273,18 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
                 [result setObject:[json objectForKey:@"html_url"] forKey:@"url"];
             if ([[json objectForKey:@"name"] isKindOfClass:[NSString class]])
                 [result setObject:[json objectForKey:@"name"] forKey:@"name"];
+            {
+                NSArray *assets = [[json objectForKey:@"assets"] isKindOfClass:[NSArray class]] ? [json objectForKey:@"assets"] : nil;
+                unsigned a;
+                for (a = 0; a < [assets count]; a++) {
+                    NSDictionary *asset = [assets objectAtIndex:a];
+                    NSString *aname = TBString(asset, @"name"), *link = TBString(asset, @"browser_download_url");
+                    if ([[aname lowercaseString] hasSuffix:@".pkg.zip"] && [link hasPrefix:@"https://github.com/"] && TBInteger(asset, @"size") < 150 * 1024 * 1024) {
+                        [result setObject:[NSDictionary dictionaryWithObjectsAndKeys:aname, @"name", link, @"url", TBString(asset, @"digest"), @"digest", nil] forKey:@"asset"];
+                        break;
+                    }
+                }
+            }
         } else
             [result setObject:@"GitHub's answer was not understood." forKey:@"error"];
     }
@@ -300,13 +313,110 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
         return;
     [NSApp activateIgnoringOtherApps:YES];
     {
+        BOOL direct = [result objectForKey:@"asset"] != nil;
         int choice = NSRunAlertPanel([NSString stringWithFormat:@"Tiger Build %@ is available", [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag],
-            @"You have version %@. The download page has the new installer and what changed.", @"Open Download Page", @"Not Now", @"Skip This Version", [self thisVersion]);
-        if (choice == NSAlertDefaultReturn && [result objectForKey:@"url"])
+            direct ? @"You have version %@. Download the new installer now? It goes to your Downloads folder and opens; installing it asks for your administrator password."
+                   : @"You have version %@. The download page has the new installer and what changed.",
+            direct ? @"Download Installer" : @"Open Download Page", @"Not Now", @"Skip This Version", [self thisVersion]);
+        if (choice == NSAlertDefaultReturn && direct)
+            [NSThread detachNewThreadSelector:@selector(updateDownloadWorker:) toTarget:self withObject:[result objectForKey:@"asset"]];
+        else if (choice == NSAlertDefaultReturn && [result objectForKey:@"url"])
             [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[result objectForKey:@"url"]]];
         else if (choice == NSAlertOtherReturn)
             [[NSUserDefaults standardUserDefaults] setObject:tag forKey:@"TBUpdateSkip"];
     }
+}
+
+/* on a worker thread: the installer's zip from GitHub into ~/Downloads, checked against the digest GitHub gives, unpacked, opened */
+- (void)updateDownloadWorker:(NSDictionary *)asset
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSString *nextURL = [asset objectForKey:@"url"], *problem = nil, *opened = nil;
+    int hop;
+    NSData *bytes = nil;
+    [TBHTTP loadRoots];
+    for (hop = 0; hop < 6 && !bytes && !problem; hop++) {
+        TBHTTP *http = [TBHTTP request:@"GET" url:nextURL];
+        [http setHeader:@"User-Agent" value:[@"TigerBuild/" stringByAppendingString:[self thisVersion]]];
+        [http setPublicOnly:YES];
+        [http setIdleTimeout:60];
+        if ([http perform] != TBNET_OK) {
+            problem = [http error] ? [http error] : @"The download failed.";
+            break;
+        }
+        if ([http status] >= 301 && [http status] <= 308 && [[http responseHeader:@"Location"] length]) {
+            NSString *next = [[[NSURL URLWithString:[http responseHeader:@"Location"] relativeToURL:[NSURL URLWithString:nextURL]] absoluteURL] absoluteString];
+            if (![[next lowercaseString] hasPrefix:@"https://"]) {
+                problem = @"The download was redirected to an address that is not secure.";
+                break;
+            }
+            nextURL = next;
+            continue;
+        }
+        if ([http status] != 200) {
+            problem = [NSString stringWithFormat:@"GitHub answered with status %d.", [http status]];
+            break;
+        }
+        bytes = [http data];
+    }
+    if (!bytes && !problem)
+        problem = @"Too many redirects.";
+    if (bytes) {
+        NSString *digest = [asset objectForKey:@"digest"];
+        if ([digest hasPrefix:@"sha256:"]) {
+            unsigned char sum[32];
+            NSMutableString *hex = [NSMutableString string];
+            int i;
+            mbedtls_sha256([bytes bytes], [bytes length], sum, 0);
+            for (i = 0; i < 32; i++)
+                [hex appendFormat:@"%02x", sum[i]];
+            if (![[digest substringFromIndex:7] isEqualToString:hex])
+                problem = @"The downloaded file does not match the checksum GitHub lists for it, so it was thrown away.";
+        }
+    }
+    if (bytes && !problem) {
+        NSString *downloads = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+        NSString *zip = [downloads stringByAppendingPathComponent:[[asset objectForKey:@"name"] lastPathComponent]];
+        NSTask *task;
+        [[NSFileManager defaultManager] createDirectoryAtPath:downloads attributes:nil];
+        if (![bytes writeToFile:zip atomically:YES])
+            problem = @"The installer could not be saved in your Downloads folder.";
+        else {
+            task = [[[NSTask alloc] init] autorelease];
+            [task setLaunchPath:@"/usr/bin/ditto"];
+            [task setArguments:[NSArray arrayWithObjects:@"-x", @"-k", zip, downloads, nil]];
+            @try {
+                [task launch];
+                [task waitUntilExit];
+            } @catch (NSException *e) {
+                problem = @"The installer could not be unpacked.";
+            }
+            if (!problem && [task terminationStatus] != 0)
+                problem = @"The installer could not be unpacked.";
+            if (!problem) {
+                opened = [zip substringToIndex:[zip length] - 4];
+                /* the package's scripts are run by the installer, which Tiger and the Leopards need to be told are executable */
+                {
+                    NSTask *fix = [[[NSTask alloc] init] autorelease];
+                    [fix setLaunchPath:@"/bin/chmod"];
+                    [fix setArguments:[NSArray arrayWithObjects:@"755", [opened stringByAppendingPathComponent:@"Contents/Resources/postflight"], nil]];
+                    @try { [fix launch]; [fix waitUntilExit]; } @catch (NSException *e) {}
+                }
+                [[NSFileManager defaultManager] removeFileAtPath:zip handler:nil];
+            }
+        }
+    }
+    [self performSelectorOnMainThread:@selector(updateDownloaded:) withObject:[NSDictionary dictionaryWithObjectsAndKeys:problem ? problem : @"", @"problem", opened ? opened : @"", @"opened", nil] waitUntilDone:NO];
+    [pool release];
+}
+
+- (void)updateDownloaded:(NSDictionary *)result
+{
+    if ([[result objectForKey:@"problem"] length]) {
+        NSRunAlertPanel(@"The installer was not downloaded", @"%@", @"OK", nil, nil, [result objectForKey:@"problem"]);
+        return;
+    }
+    [[NSWorkspace sharedWorkspace] openFile:[result objectForKey:@"opened"]];
 }
 
 - (void)checkForUpdates:(id)sender

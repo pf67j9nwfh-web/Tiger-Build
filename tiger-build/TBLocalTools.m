@@ -86,9 +86,13 @@ static NSString *decodeEntities(NSString *text)
     html = dropElement(html, @"noscript");
     html = dropElement(html, @"svg");
     /* comments */
-    while ((commentStart = [html rangeOfString:@"<!--"]).location != NSNotFound) {
-        NSRange end = [html rangeOfString:@"-->" options:0 range:NSMakeRange(commentStart.location, [html length] - commentStart.location)];
-        html = [html stringByReplacingCharactersInRange:NSMakeRange(commentStart.location, end.location == NSNotFound ? [html length] - commentStart.location : NSMaxRange(end) - commentStart.location) withString:@""];
+    {
+        NSMutableString *m = [NSMutableString stringWithString:html];
+        while ((commentStart = [m rangeOfString:@"<!--"]).location != NSNotFound) {
+            NSRange end = [m rangeOfString:@"-->" options:0 range:NSMakeRange(commentStart.location, [m length] - commentStart.location)];
+            [m deleteCharactersInRange:NSMakeRange(commentStart.location, end.location == NSNotFound ? [m length] - commentStart.location : NSMaxRange(end) - commentStart.location)];
+        }
+        html = m;
     }
     n = [html length];
     for (i = 0; i < n; i++) {
