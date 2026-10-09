@@ -105,6 +105,18 @@
     BOOL swapped;
     BOOL updateChecking;
     BOOL memoryBusy;
+    NSMenu *promptsMenu;
+    NSMutableArray *promptsEditing;
+    int promptsAt;
+    NSPopUpButton *promptsList, *promptsDays, *compareProvider, *compareModel;
+    NSTextField *promptsName, *promptsHour, *promptsMinute;
+    NSTextView *promptsText;
+    NSButton *promptsRun;
+    NSTimer *schedulerTimer, *lockTimer;
+    BOOL quickAskOpen, locked;
+    NSMutableArray *lockCovers;
+    void *hotKeyRef;
+    double lastActivity;
     NSMutableDictionary *uiOriginals;   /* each control's own font, so Appearance can put it back */
 }
 

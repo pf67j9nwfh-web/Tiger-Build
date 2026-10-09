@@ -5,6 +5,26 @@
 /* Methods the ChatController source files call on each other. They are
    implemented in ChatController.m and ChatController+Preferences.m. */
 @interface ChatController (Internal)
+- (void)copyDiagnostics:(id)sender;
+- (void)rebuildPromptsMenu;
+- (void)managePrompts:(id)sender;
+- (void)savePromptFromInput:(id)sender;
+- (void)usePrompt:(id)sender;
+- (void)tryWithAnotherModel:(id)sender;
+- (void)showCostReport:(id)sender;
+- (void)importOtherExport:(id)sender;
+- (void)quickAsk:(id)sender;
+- (void)lockNow:(id)sender;
+- (void)setLockPassword:(id)sender;
+- (void)applyQuickAskHotKey;
+- (void)startScheduler;
+- (void)startLockWatcher;
+- (void)lockIfWantedAtStart;
+- (void)askTigerBuild:(NSPasteboard *)pboard userData:(NSString *)userData error:(NSString **)error;
+- (BOOL)isLocked;
+- (void)noteActivity;
+- (void)askInNewChat:(NSString *)text send:(BOOL)send;
+- (void)downloadAndOpenUpdate:(NSDictionary *)release;
 - (NSString *)memoryRequestFragment;
 - (void)updateMemoryAfterReply:(NSMutableDictionary *)chat;
 - (void)editMemory:(id)sender;

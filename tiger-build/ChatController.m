@@ -1136,6 +1136,11 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [appMenu addItem:about];
     [about release];
     {
+        NSMenuItem *diag = [[[NSMenuItem alloc] initWithTitle:@"Copy Diagnostics" action:@selector(copyDiagnostics:) keyEquivalent:@""] autorelease];
+        [diag setTarget:self];
+        [appMenu addItem:diag];
+    }
+    {
         NSMenuItem *update = [[[NSMenuItem alloc] initWithTitle:@"Check for Updates..." action:@selector(checkForUpdates:) keyEquivalent:@""] autorelease];
         [update setTarget:self];
         [appMenu addItem:update];
@@ -1275,6 +1280,24 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         item = [[[NSMenuItem alloc] initWithTitle:@"Import Chat..." action:@selector(importChat:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Compact Chat Now" action:@selector(compactNow:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        {
+            NSMenuItem *promptsSlot = [[[NSMenuItem alloc] initWithTitle:@"Prompts" action:NULL keyEquivalent:@""] autorelease];
+            promptsMenu = [[[NSMenu alloc] initWithTitle:@"Prompts"] autorelease];
+            [promptsMenu retain];
+            [promptsSlot setSubmenu:promptsMenu];
+            [chat addItem:promptsSlot];
+            [self rebuildPromptsMenu];
+        }
+        item = [[[NSMenuItem alloc] initWithTitle:@"Try Last Message with Another Model..." action:@selector(tryWithAnotherModel:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Quick Ask..." action:@selector(quickAsk:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Cost Report..." action:@selector(showCostReport:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Import ChatGPT or Claude Export..." action:@selector(importOtherExport:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Lock Tiger Build" action:@selector(lockNow:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         [chat addItem:[NSMenuItem separatorItem]];
         {
@@ -1887,6 +1910,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self refreshToolCatalog];
     [self refreshLocalModels];
     [self performSelector:@selector(checkForUpdatesAtLaunch) withObject:nil afterDelay:6];
+    [NSApp setServicesProvider:self];
+    NSUpdateDynamicServices();
+    [self startScheduler];
+    [self startLockWatcher];
+    [self applyQuickAskHotKey];
+    [self lockIfWantedAtStart];
     relayTimer = [[NSTimer scheduledTimerWithTimeInterval:30 target:self
         selector:@selector(relayTick:) userInfo:nil repeats:YES] retain];
     if (![TBSettings hasKeyForProvider:@"grok"] && ![TBSettings hasKeyForProvider:@"chatgpt"] && ![TBSettings hasKeyForProvider:@"claude"] && ![TBSettings hasKeyForProvider:@"mistral"]
@@ -1922,6 +1951,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [self newChat:nil];
     [input setStringValue:launchQuestion];
     [self performSelector:@selector(send:) withObject:nil afterDelay:0.4];
+}
+
+- (void)applicationDidResignActive:(NSNotification *)note
+{
+    (void)note;
+    [self noteActivity];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app
@@ -2268,6 +2303,8 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 
 - (BOOL)validateMenuItem:(NSMenuItem *)item
 {
+    if ([self isLocked])
+        return NO;
     if ([item action] == @selector(toggleSidebar:))
         [item setTitle:sidebarHidden ? @"Show Chat List" : @"Hide Chat List"];
     if ([item action] == @selector(toggleOnTop:)) {

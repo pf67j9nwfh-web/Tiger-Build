@@ -95,6 +95,8 @@ static double numberOf(id v)
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     double chat = numberOf([defaults objectForKey:@"TBSpendChatLimit"]), day = numberOf([defaults objectForKey:@"TBSpendDayLimit"]);
+    [[prefsFields objectForKey:@"lock.auto"] setState:[defaults boolForKey:@"TBLockAtStart"] ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"quickask.key"] setState:[defaults boolForKey:@"TBQuickAskKey"] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.sound"] setState:flagDefault(@"TBSoundOnFinish", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.bounce"] setState:flagDefault(@"TBBounceOnFinish", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.updates"] setState:flagDefault(@"TBCheckUpdates", YES) ? NSOnState : NSOffState];
@@ -108,6 +110,10 @@ static double numberOf(id v)
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     double chat = [TBTrim([[prefsFields objectForKey:@"spend.chat"] stringValue]) doubleValue];
     double day = [TBTrim([[prefsFields objectForKey:@"spend.day"] stringValue]) doubleValue];
+    [defaults setBool:[[prefsFields objectForKey:@"lock.auto"] state] == NSOnState forKey:@"TBLockAtStart"];
+    [defaults setInteger:[[prefsFields objectForKey:@"lock.auto"] state] == NSOnState ? 10 : 0 forKey:@"TBLockIdleMinutes"];
+    [defaults setBool:[[prefsFields objectForKey:@"quickask.key"] state] == NSOnState forKey:@"TBQuickAskKey"];
+    [self applyQuickAskHotKey];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.sound"] state] == NSOnState forKey:@"TBSoundOnFinish"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.bounce"] state] == NSOnState forKey:@"TBBounceOnFinish"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.updates"] state] == NSOnState forKey:@"TBCheckUpdates"];
@@ -182,8 +188,17 @@ static NSString *dayKey(void)
     double cost = numberOf([event objectForKey:@"cost"]);
     NSString *problem;
     if (cost > 0) {
+        NSMutableDictionary *daily = [NSMutableDictionary dictionaryWithDictionary:[defaults dictionaryForKey:@"TBSpendDaily"]];
         [defaults setObject:[NSDictionary dictionaryWithObjectsAndKeys:dayKey(), @"day", [NSNumber numberWithDouble:[self spendToday] + cost], @"total", nil]
                      forKey:@"TBSpendToday"];
+        [daily setObject:[NSNumber numberWithDouble:[[daily objectForKey:dayKey()] doubleValue] + cost] forKey:dayKey()];
+        if ([daily count] > 400) {
+            NSArray *old = [[daily allKeys] sortedArrayUsingSelector:@selector(compare:)];
+            unsigned k;
+            for (k = 0; k < [old count] - 366; k++)
+                [daily removeObjectForKey:[old objectAtIndex:k]];
+        }
+        [defaults setObject:daily forKey:@"TBSpendDaily"];
     }
     problem = [self spendLimitProblemForChat:chat];
     if (problem && [chat objectForKey:@"id"])

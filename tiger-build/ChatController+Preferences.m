@@ -387,7 +387,7 @@
     NSArray *keys;
     unsigned i;
     float y;
-    prefsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 600, 470)
+    prefsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 690, 470)
                                                styleMask:NSTitledWindowMask | NSClosableWindowMask
                                                  backing:NSBackingStoreBuffered
                                                    defer:NO];
@@ -395,7 +395,7 @@
     [prefsWindow setReleasedWhenClosed:NO];
     [prefsWindow center];
     view = [prefsWindow contentView];
-    tabs = [[[NSTabView alloc] initWithFrame:NSMakeRect(12, 56, 576, 404)] autorelease];
+    tabs = [[[NSTabView alloc] initWithFrame:NSMakeRect(12, 56, 666, 404)] autorelease];
     [tabs setFont:[NSFont systemFontOfSize:12]];
     [view addSubview:tabs];
 
@@ -469,6 +469,40 @@
     y -= 22;
     [self preferencesNote:@"Backups include your API keys in plain text. Keep them private. Chat history is not included."
         frame:NSMakeRect(16, y - 10, 520, 28) inView:tab];
+
+    /* ---- Privacy ---- */
+    tab = [self preferencesTab:@"Privacy" in:tabs];
+    y = 292;
+    [self preferencesHeading:@"Lock" y:y inView:tab];
+    y -= 36;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 170, 28)] autorelease];
+    [button setTitle:@"Set Lock Password..."];
+    [button setBezelStyle:NSRoundedBezelStyle];
+    [button setTarget:self];
+    [button setAction:@selector(setLockPassword:)];
+    [tab addSubview:button];
+    y -= 30;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Lock when Tiger Build starts, and after 10 idle minutes away"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"lock.auto"];
+    y -= 20;
+    [self preferencesNote:@"The lock hides Tiger Build behind a password (Chat, Lock Tiger Build). It keeps casual users out; it does not encrypt the chat files."
+        frame:NSMakeRect(34, y - 28, 502, 36) inView:tab];
+    y -= 66;
+    [self preferencesHeading:@"Shortcuts" y:y inView:tab];
+    y -= 28;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Quick Ask from anywhere: Control-Option-Space"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"quickask.key"];
+    y -= 20;
+    [self preferencesNote:@"Opens a small box for a one-off question that is sent in a new chat. Also in the Services menu of other applications: select text, then Services, Ask Tiger Build."
+        frame:NSMakeRect(34, y - 28, 502, 36) inView:tab];
 
     /* ---- Commander ---- */
     tab = [self preferencesTab:@"Commander" in:tabs];
@@ -577,10 +611,10 @@
 
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
-    button = [self preferencesButton:@"Save" frame:NSMakeRect(396, 16, 94, 30)
+    button = [self preferencesButton:@"Save" frame:NSMakeRect(486, 16, 94, 30)
                               action:@selector(savePreferences:) inView:view];
     [button setKeyEquivalent:@"\r"];
-    button = [self preferencesButton:@"Cancel" frame:NSMakeRect(494, 16, 94, 30)
+    button = [self preferencesButton:@"Cancel" frame:NSMakeRect(584, 16, 94, 30)
                               action:@selector(cancelPreferences:) inView:view];
     [button setKeyEquivalent:@"\033"];
 }
