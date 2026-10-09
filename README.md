@@ -223,6 +223,7 @@ the latest and greatest models available for you to use, excluding API updates t
 ```bash
 cd tiger-build && make test                   # unit tests on the Mac you build on
 sh tests/engine/run-host.sh                   # engine tests against mock services (run on a current Mac)
+SMOKE_SSH="ssh user@host" scripts/smoke-test.sh   # on an old Mac that has the checkout's tiger-build/ in ~/TigerBuild-dev: unit tests, the converter on the files in tests/engine/fixtures, the app starting, the uninstaller's dry run
 ```
 
 | Script | Makes |

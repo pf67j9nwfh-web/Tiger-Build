@@ -31,6 +31,9 @@ build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBOffice.m T
 build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBLocalTools.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build prov ../tests/engine/provtest.m TBProviders.m $COMMON
 build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build formats ../tests/engine/formatstest.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build localtools ../tests/engine/localtoolstest.m TBLocalTools.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build mcptransport ../tests/engine/mcptransporttest.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"
@@ -45,6 +48,9 @@ mkdir -p "$OUT/files"
 status=0
 for t in speech outputs; do "$OUT/$t" $( [ $t = speech ] && echo $PORT || echo "$OUT/files" ) || status=1; done
 "$OUT/extras" $PORT || status=1
+"$OUT/mcptransport" $PORT || status=1
+"$OUT/formats" ../tests/engine/fixtures || status=1
+"$OUT/localtools" || status=1
 "$OUT/prov" $PORT || status=1
 "$OUT/commander" "$OUT/ppc-commander" || status=1
 "$OUT/commanderfull" "$OUT/ppc-commander" || status=1

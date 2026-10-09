@@ -518,11 +518,18 @@ int tbnet_perform(const TBNetRequest *req, char *errorText, size_t errorSize)
         connClose(&c);
         return rc;
     }
-    headSize = 1024 + strlen(url.path) + strlen(url.host);
+    /* the Host header names the port when it is not the scheme's own (a server on port 8080 builds its links from it) */
+    char hostHeader[300], bare[270];
+    snprintf(bare, sizeof bare, strchr(url.host, ':') ? "[%s]" : "%s", url.host);   /* an IPv6 address is bracketed */
+    if ((url.https && strcmp(url.port, "443") != 0) || (!url.https && strcmp(url.port, "80") != 0))
+        snprintf(hostHeader, sizeof hostHeader, "%s:%s", bare, url.port);
+    else
+        snprintf(hostHeader, sizeof hostHeader, "%s", bare);
+    headSize = 1024 + strlen(url.path) + strlen(hostHeader);
     for (h = req->headers; h && *h; h++)
         headSize += strlen(*h) + 2;
     head = malloc(headSize);
-    headLength = snprintf(head, headSize, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nAccept-Encoding: identity\r\n", req->method ? req->method : "GET", url.path, url.host);
+    headLength = snprintf(head, headSize, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nAccept-Encoding: identity\r\n", req->method ? req->method : "GET", url.path, hostHeader);
     for (h = req->headers; h && *h; h++)
         headLength += snprintf(head + headLength, headSize - headLength, "%s\r\n", *h);
     if (req->body || (req->method && strcmp(req->method, "POST") == 0))

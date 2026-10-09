@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <CommonCrypto/CommonDigest.h>
 
 static NSMutableArray *seen;
 static NSMutableDictionary *attempts;
@@ -121,6 +122,190 @@ static NSArray *anthropicEvents(BOOL tools, BOOL thinking)
 }
 
 
+
+/* ---- the older HTTP+SSE transport: GET /legacy/sse holds a stream open; messages POSTed to /legacy/messages?sid=N are answered on it ---- */
+static NSMutableDictionary *legacyQueues;   /* sid -> NSMutableArray of JSON strings */
+static int legacyNext = 1;
+
+static NSDictionary *mcpResult(NSDictionary *request, NSDictionary *headers)
+{
+    NSString *m = [request objectForKey:@"method"];
+    id result;
+    if ([m isEqualToString:@"initialize"])
+        result = D(@"2025-06-18", @"protocolVersion", [NSDictionary dictionaryWithObject:[NSDictionary dictionary] forKey:@"tools"], @"capabilities", D(@"mock", @"name", @"1", @"version"), @"serverInfo");
+    else if ([m isEqualToString:@"tools/list"])
+        result = D(A(D(@"echo", @"name", @"Echo text", @"description", D(@"object", @"type", D(D(@"string", @"type"), @"text"), @"properties", A(@"text"), @"required"), @"inputSchema")), @"tools");
+    else if ([m isEqualToString:@"tools/call"]) {
+        NSString *text = [[[request objectForKey:@"params"] objectForKey:@"arguments"] objectForKey:@"text"];
+        result = D(A(D(@"text", @"type", [NSString stringWithFormat:@"echo: %@ auth=%@", text ? text : @"", [headers objectForKey:@"authorization"] ? [headers objectForKey:@"authorization"] : @"none"], @"text")), @"content");
+    } else
+        result = [NSDictionary dictionary];
+    return D(@"2.0", @"jsonrpc", [request objectForKey:@"id"], @"id", result, @"result");
+}
+
+static void legacyStream(int fd, NSDictionary *headers)
+{
+    int sid;
+    pthread_mutex_lock(&lock);
+    sid = legacyNext++;
+    if (!legacyQueues)
+        legacyQueues = [[NSMutableDictionary alloc] init];
+    [legacyQueues setObject:[NSMutableArray array] forKey:N(sid)];
+    pthread_mutex_unlock(&lock);
+    if ([[headers objectForKey:@"x-need-token"] length]) {}
+    sendText(fd, @"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
+    sendText(fd, [NSString stringWithFormat:@"event: endpoint\ndata: /legacy/messages?sid=%d\n\n", sid]);
+    for (int tick = 0; tick < 600; tick++) {
+        NSString *next = nil;
+        pthread_mutex_lock(&lock);
+        NSMutableArray *q = [legacyQueues objectForKey:N(sid)];
+        if ([q count]) {
+            next = [[[q objectAtIndex:0] retain] autorelease];
+            [q removeObjectAtIndex:0];
+        }
+        pthread_mutex_unlock(&lock);
+        if (next)
+            sendText(fd, [NSString stringWithFormat:@"event: message\ndata: %@\n\n", next]);
+        else
+            usleep(30000);
+    }
+}
+
+/* ---- OAuth: discovery, registration, authorization (a redirect), tokens that last two seconds, and a protected MCP endpoint ---- */
+static NSMutableDictionary *oauthCodes, *oauthTokens, *oauthRefresh, *oauthClients;
+
+static NSString *queryValue(NSString *path, NSString *key)
+{
+    NSRange q = [path rangeOfString:@"?"];
+    NSArray *pairs;
+    unsigned i;
+    if (q.location == NSNotFound)
+        return nil;
+    pairs = [[path substringFromIndex:q.location + 1] componentsSeparatedByString:@"&"];
+    for (i = 0; i < [pairs count]; i++) {
+        NSArray *kv = [[pairs objectAtIndex:i] componentsSeparatedByString:@"="];
+        if ([kv count] == 2 && [[kv objectAtIndex:0] isEqualToString:key])
+            return [[[kv objectAtIndex:1] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding] stringByReplacingOccurrencesOfString:@"+" withString:@" "];
+    }
+    return nil;
+}
+
+static NSString *base64url(NSData *d)
+{
+    NSMutableString *out = [NSMutableString string];
+    const unsigned char *b = [d bytes];
+    static const char *t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    unsigned i, n = [d length];
+    for (i = 0; i < n; i += 3) {
+        unsigned v = b[i] << 16 | (i + 1 < n ? b[i + 1] << 8 : 0) | (i + 2 < n ? b[i + 2] : 0);
+        [out appendFormat:@"%c%c", t[(v >> 18) & 63], t[(v >> 12) & 63]];
+        if (i + 1 < n) [out appendFormat:@"%c", t[(v >> 6) & 63]];
+        if (i + 2 < n) [out appendFormat:@"%c", t[v & 63]];
+    }
+    return out;
+}
+
+/* NO when the request was not an OAuth one */
+static BOOL oauthHandle(int fd, NSString *method, NSString *path, NSDictionary *headers, NSData *raw)
+{
+    NSString *host = [headers objectForKey:@"host"], *me = [@"http://" stringByAppendingString:host ? host : @"127.0.0.1"];
+    NSString *bare = [[path componentsSeparatedByString:@"?"] objectAtIndex:0];
+    pthread_mutex_lock(&lock);
+    if (!oauthCodes) {
+        oauthCodes = [[NSMutableDictionary alloc] init];
+        oauthTokens = [[NSMutableDictionary alloc] init];
+        oauthRefresh = [[NSMutableDictionary alloc] init];
+        oauthClients = [[NSMutableDictionary alloc] init];
+    }
+    pthread_mutex_unlock(&lock);
+    if ([bare isEqualToString:@"/.well-known/oauth-protected-resource"]) {
+        sendJSON(fd, 200, D([me stringByAppendingString:@"/oauth/mcp"], @"resource", A(me), @"authorization_servers"));
+        return YES;
+    }
+    if ([bare isEqualToString:@"/.well-known/oauth-authorization-server"]) {
+        sendJSON(fd, 200, D(me, @"issuer", [me stringByAppendingString:@"/oauth/authorize"], @"authorization_endpoint", [me stringByAppendingString:@"/oauth/token"], @"token_endpoint",
+            [me stringByAppendingString:@"/oauth/register"], @"registration_endpoint", A(@"S256"), @"code_challenge_methods_supported"));
+        return YES;
+    }
+    if ([bare isEqualToString:@"/oauth/register"]) {
+        id d = TBJSONParse(raw, NULL);
+        NSString *cid;
+        pthread_mutex_lock(&lock);
+        cid = [NSString stringWithFormat:@"client%u", (unsigned)[oauthClients count]];
+        [oauthClients setObject:[d objectForKey:@"redirect_uris"] forKey:cid];
+        pthread_mutex_unlock(&lock);
+        sendJSON(fd, 201, D(cid, @"client_id"));
+        return YES;
+    }
+    if ([bare isEqualToString:@"/oauth/authorize"]) {
+        NSString *cid = queryValue(path, @"client_id"), *redirect = queryValue(path, @"redirect_uri"), *code;
+        BOOL ok;
+        pthread_mutex_lock(&lock);
+        ok = cid && redirect && [[oauthClients objectForKey:cid] containsObject:redirect] && [queryValue(path, @"code_challenge_method") isEqualToString:@"S256"];
+        code = [NSString stringWithFormat:@"code%u", (unsigned)[oauthCodes count]];
+        if (ok)
+            [oauthCodes setObject:D(queryValue(path, @"code_challenge"), @"challenge", redirect, @"redirect", queryValue(path, @"resource"), @"resource") forKey:code];
+        pthread_mutex_unlock(&lock);
+        if (!ok) {
+            sendJSON(fd, 400, D(@"unknown client or redirect", @"error"));
+            return YES;
+        }
+        sendText(fd, [NSString stringWithFormat:@"HTTP/1.1 302 Found\r\nLocation: %@?code=%@&state=%@\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", redirect, code, queryValue(path, @"state")]);
+        return YES;
+    }
+    if ([bare isEqualToString:@"/oauth/token"]) {
+        NSString *body = [[[NSString alloc] initWithData:raw encoding:NSUTF8StringEncoding] autorelease], *grant = queryValue([@"?" stringByAppendingString:body], @"grant_type");
+        BOOL ok = NO;
+        NSString *at, *rt;
+        pthread_mutex_lock(&lock);
+        if ([grant isEqualToString:@"authorization_code"]) {
+            NSDictionary *entry = [oauthCodes objectForKey:queryValue([@"?" stringByAppendingString:body], @"code")];
+            NSData *verifier = [queryValue([@"?" stringByAppendingString:body], @"code_verifier") dataUsingEncoding:NSUTF8StringEncoding];
+            unsigned char sum[32];
+            if (entry && verifier) {
+                CC_SHA256([verifier bytes], (CC_LONG)[verifier length], sum);
+                ok = [base64url([NSData dataWithBytes:sum length:32]) isEqualToString:[entry objectForKey:@"challenge"]]
+                    && [[entry objectForKey:@"redirect"] isEqualToString:queryValue([@"?" stringByAppendingString:body], @"redirect_uri")];
+            }
+        } else if ([grant isEqualToString:@"refresh_token"])
+            ok = [oauthRefresh objectForKey:queryValue([@"?" stringByAppendingString:body], @"refresh_token")] != nil;
+        at = [NSString stringWithFormat:@"at%u", (unsigned)[oauthTokens count]];
+        rt = [NSString stringWithFormat:@"rt%u", (unsigned)[oauthRefresh count]];
+        if (ok) {
+            [oauthTokens setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970] + 2] forKey:at];
+            [oauthRefresh setObject:Y forKey:rt];
+        }
+        pthread_mutex_unlock(&lock);
+        if (ok)
+            sendJSON(fd, 200, D(at, @"access_token", rt, @"refresh_token", N(2), @"expires_in", @"Bearer", @"token_type"));
+        else
+            sendJSON(fd, 400, D(@"invalid_grant", @"error", @"pkce or redirect mismatch", @"error_description"));
+        return YES;
+    }
+    if ([bare isEqualToString:@"/oauth/mcp"] && [method isEqualToString:@"POST"]) {
+        NSString *auth = [headers objectForKey:@"authorization"];
+        BOOL good = NO;
+        id request;
+        if ([auth hasPrefix:@"Bearer "]) {
+            pthread_mutex_lock(&lock);
+            good = [[oauthTokens objectForKey:[auth substringFromIndex:7]] doubleValue] > [[NSDate date] timeIntervalSince1970];
+            pthread_mutex_unlock(&lock);
+        }
+        if (!good) {
+            sendText(fd, [NSString stringWithFormat:@"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer resource_metadata=\"%@/.well-known/oauth-protected-resource\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", me]);
+            return YES;
+        }
+        request = TBJSONParse(raw, NULL);
+        if (![request objectForKey:@"id"]) {
+            sendText(fd, @"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            return YES;
+        }
+        sendJSON(fd, 200, mcpResult(request, headers));
+        return YES;
+    }
+    return NO;
+}
+
 static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *headers, NSData *raw)
 {
     NSString *path = [[fullPath componentsSeparatedByString:@"?"] objectAtIndex:0];
@@ -133,6 +318,9 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             NSData *body = TBJSONData(seen);
             pthread_mutex_unlock(&lock);
             sendBody(fd, 200, @"application/json", body, nil);
+        } else if ([path isEqualToString:@"/legacy/sse"]) {
+            legacyStream(fd, headers);
+        } else if (oauthHandle(fd, method, fullPath, headers, raw)) {
         } else if ([path isEqualToString:@"/reset"]) {
             pthread_mutex_lock(&lock);
             [seen removeAllObjects];
@@ -141,6 +329,22 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendJSON(fd, 200, [NSDictionary dictionary]);
         } else
             sendJSON(fd, 404, D(@"not found", @"error"));
+        return;
+    }
+    if (oauthHandle(fd, method, fullPath, headers, raw))
+        return;
+    if ([path isEqualToString:@"/legacy/messages"]) {
+        id message = TBJSONParse(raw, NULL);
+        NSString *sidText = queryValue(fullPath, @"sid");
+        pthread_mutex_lock(&lock);
+        if ([message isKindOfClass:[NSDictionary class]] && [message objectForKey:@"id"])
+            [[legacyQueues objectForKey:N([sidText intValue])] addObject:TBJSONString(mcpResult(message, headers))];
+        pthread_mutex_unlock(&lock);
+        sendText(fd, @"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return;
+    }
+    if ([path isEqualToString:@"/legacy-only/mcp"]) {   /* a server that has only the older transport: POST to the stream's address answers 405 */
+        sendText(fd, @"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         return;
     }
     request = [raw length] ? TBJSONParse(raw, NULL) : [NSDictionary dictionary];

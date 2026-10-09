@@ -362,8 +362,14 @@ static NSString *headerParam(NSString *header, NSString *key)
         authEndpoint, [authEndpoint rangeOfString:@"?"].location == NSNotFound ? @"?" : @"&", encode(clientId), encode(redirect), challengeCode, state, encode(serverURL)];
     if ([scope length])
         authURL = [authURL stringByAppendingFormat:@"&scope=%@", encode(scope)];
-    if (testMode())
-        printf("OAUTH-URL: %s\n", [authURL UTF8String]), fflush(stdout);
+    if (testMode()) {
+        /* the test visits this address itself, standing in for the browser */
+        const char *file = getenv("TB_OAUTH_URLFILE");
+        if (file)
+            [authURL writeToFile:[NSString stringWithUTF8String:file] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        else
+            printf("OAUTH-URL: %s\n", [authURL UTF8String]), fflush(stdout);
+    }
     else
         [self performSelectorOnMainThread:@selector(openOnMain:) withObject:authURL waitUntilDone:NO];
     redirectInfo = [self waitForRedirectOnSocket:fd seconds:300];
