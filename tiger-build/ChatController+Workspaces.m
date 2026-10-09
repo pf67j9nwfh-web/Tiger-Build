@@ -129,7 +129,7 @@
         if([[last objectForKey:@"servers"] isKindOfClass:[NSDictionary class]]) {
             NSMutableDictionary *same=[NSMutableDictionary dictionaryWithDictionary:[last objectForKey:@"servers"]];
             /* administrator, download and screen control are chosen again for each chat */
-            [same removeObjectForKey:@"sudo"];[same removeObjectForKey:@"download"];[same removeObjectForKey:@"screen"];
+            [same removeObjectForKey:@"sudo"];[same removeObjectForKey:@"macapps"];[same removeObjectForKey:@"download"];[same removeObjectForKey:@"screen"];
             [chat setObject:same forKey:@"servers"];
             if([[last objectForKey:@"servers"] objectForKey:@"commander"])
                 [chat setObject:[[last objectForKey:@"servers"] objectForKey:@"commander"] forKey:@"tools"];
@@ -165,6 +165,15 @@
         [[prefsFields objectForKey:@"ws.limit"] setState:NSOnState];
     }
 }
+- (void)workspaceKnowledgeChoose:(id)sender
+{
+    (void)sender;
+    NSOpenPanel *open=[NSOpenPanel openPanel];
+    [open setCanChooseDirectories:YES];[open setCanChooseFiles:NO];[open setAllowsMultipleSelection:NO];
+    [open setPrompt:@"Choose"];
+    if([open runModalForDirectory:NSHomeDirectory() file:nil types:nil]==NSOKButton)
+        [[prefsFields objectForKey:@"ws.knowledge"] setStringValue:[[open filenames] objectAtIndex:0]];
+}
 - (void)workspaceSettingsSave:(id)sender
 {
     (void)sender;
@@ -176,6 +185,15 @@
     }
     while([root length]>1&&[root hasSuffix:@"/"])root=[root substringToIndex:[root length]-1];
     [workspaceSettings setObject:[NSNumber numberWithBool:limit] forKey:@"limitRoot"];
+    {
+        NSString *k=[[[prefsFields objectForKey:@"ws.knowledge"] stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        BOOL kdir=NO;
+        while([k length]>1&&[k hasSuffix:@"/"])k=[k substringToIndex:[k length]-1];
+        if([k length]&&(![k hasPrefix:@"/"]||![[NSFileManager defaultManager] fileExistsAtPath:k isDirectory:&kdir]||!kdir)) {
+            NSRunAlertPanel(@"Workspace",@"Choose a knowledge folder that exists on this Mac, or leave it empty.",@"OK",nil,nil);return;
+        }
+        if([k length])[workspaceSettings setObject:k forKey:@"knowledgeRoot"];else [workspaceSettings removeObjectForKey:@"knowledgeRoot"];
+    }
     [workspaceSettings setObject:root forKey:@"root"];
     [workspaceSettings setObject:[NSNumber numberWithBool:[[prefsFields objectForKey:@"ws.memory"] state]==NSOnState] forKey:@"memoryOn"];
     [self saveStore];
@@ -185,39 +203,51 @@
 - (void)showWorkspaceSettings:(id)sender
 {
     (void)sender;
-    NSPanel *panel=[[[NSPanel alloc] initWithContentRect:NSMakeRect(0,0,500,352) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
+    NSPanel *panel=[[[NSPanel alloc] initWithContentRect:NSMakeRect(0,0,500,462) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
     NSView *view=[panel contentView];
     [panel setTitle:[NSString stringWithFormat:@"Workspace Settings - %@",[self workspaceName]]];[panel center];
-    NSButton *limit=[[[NSButton alloc] initWithFrame:NSMakeRect(20,310,460,22)] autorelease];
+    NSButton *limit=[[[NSButton alloc] initWithFrame:NSMakeRect(20,420,460,22)] autorelease];
     [limit setButtonType:NSSwitchButton];[limit setTitle:@"Restrict Commander to one directory in this workspace"];
     [limit setState:[[workspaceSettings objectForKey:@"limitRoot"] boolValue]?NSOnState:NSOffState];[view addSubview:limit];
     [prefsFields setObject:limit forKey:@"ws.limit"];
-    NSTextField *field=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,276,360,24)] autorelease];
+    NSTextField *field=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,386,360,24)] autorelease];
     [field setStringValue:[workspaceSettings objectForKey:@"root"]?[workspaceSettings objectForKey:@"root"]:@""];
     [[field cell] setPlaceholderString:[NSString stringWithFormat:@"/Users/%@/Projects",NSUserName()]];[view addSubview:field];
     [prefsFields setObject:field forKey:@"ws.root"];
-    NSButton *choose=[[[NSButton alloc] initWithFrame:NSMakeRect(388,273,96,30)] autorelease];
+    NSButton *choose=[[[NSButton alloc] initWithFrame:NSMakeRect(388,383,96,30)] autorelease];
     [choose setTitle:@"Choose..."];[choose setBezelStyle:NSRoundedBezelStyle];[choose setTarget:self];[choose setAction:@selector(workspaceSettingsChoose:)];[view addSubview:choose];
-    NSTextField *note=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,190,460,76)] autorelease];
+    NSTextField *note=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,300,460,76)] autorelease];
     [note setStringValue:@"Commander's file tools stay inside this directory, and shell commands start there and may only name paths inside it "
         @"(system programs still run). A command line can only be checked so far: for a hard limit, use a separate account."];
     [note setEditable:NO];[note setBezeled:NO];[note setDrawsBackground:NO];[note setFont:[NSFont systemFontOfSize:11]];[[note cell] setWraps:YES];[view addSubview:note];
-    NSButton *memory=[[[NSButton alloc] initWithFrame:NSMakeRect(20,156,460,22)] autorelease];
+    NSButton *memory=[[[NSButton alloc] initWithFrame:NSMakeRect(20,266,460,22)] autorelease];
     [memory setButtonType:NSSwitchButton];[memory setTitle:@"Remember things across chats here (automatic memory)"];
     [memory setState:[[workspaceSettings objectForKey:@"memoryOn"] boolValue]?NSOnState:NSOffState];[view addSubview:memory];
     [prefsFields setObject:memory forKey:@"ws.memory"];
-    NSButton *memEdit=[[[NSButton alloc] initWithFrame:NSMakeRect(34,120,200,30)] autorelease];
+    NSButton *memEdit=[[[NSButton alloc] initWithFrame:NSMakeRect(34,230,200,30)] autorelease];
     [memEdit setTitle:@"View or Edit Memory..."];[memEdit setBezelStyle:NSRoundedBezelStyle];[memEdit setTarget:self];[memEdit setAction:@selector(editMemory:)];[view addSubview:memEdit];
-    NSTextField *memNote=[[[NSTextField alloc] initWithFrame:NSMakeRect(34,56,446,58)] autorelease];
+    NSTextField *memNote=[[[NSTextField alloc] initWithFrame:NSMakeRect(34,166,446,58)] autorelease];
     [memNote setStringValue:@"Off by default. While on, after each reply one more small request goes to the chat's model (and its service) with the last exchange and the current "
         @"memory, to keep a few notes about you; they are told to the model in every chat of this workspace. You can read and change them at any time."];
     [memNote setEditable:NO];[memNote setBezeled:NO];[memNote setDrawsBackground:NO];[memNote setFont:[NSFont systemFontOfSize:11]];[[memNote cell] setWraps:YES];[view addSubview:memNote];
+    NSTextField *kLabel=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,138,460,18)] autorelease];
+    [kLabel setStringValue:@"Knowledge folder (the model can search it)"];
+    [kLabel setEditable:NO];[kLabel setBezeled:NO];[kLabel setDrawsBackground:NO];[kLabel setFont:[NSFont boldSystemFontOfSize:12]];[view addSubview:kLabel];
+    NSTextField *kField=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,108,360,24)] autorelease];
+    [kField setStringValue:[workspaceSettings objectForKey:@"knowledgeRoot"]?[workspaceSettings objectForKey:@"knowledgeRoot"]:@""];
+    [[kField cell] setPlaceholderString:@"none"];[view addSubview:kField];
+    [prefsFields setObject:kField forKey:@"ws.knowledge"];
+    NSButton *kChoose=[[[NSButton alloc] initWithFrame:NSMakeRect(388,105,96,30)] autorelease];
+    [kChoose setTitle:@"Choose..."];[kChoose setBezelStyle:NSRoundedBezelStyle];[kChoose setTarget:self];[kChoose setAction:@selector(workspaceKnowledgeChoose:)];[view addSubview:kChoose];
+    NSTextField *kNote=[[[NSTextField alloc] initWithFrame:NSMakeRect(20,56,460,40)] autorelease];
+    [kNote setStringValue:@"Text, code, PDF, Word, Excel and similar files here are indexed in memory when the model first searches. Only the passages it asks for are sent to it."];
+    [kNote setEditable:NO];[kNote setBezeled:NO];[kNote setDrawsBackground:NO];[kNote setFont:[NSFont systemFontOfSize:11]];[[kNote cell] setWraps:YES];[view addSubview:kNote];
     NSButton *save=[[[NSButton alloc] initWithFrame:NSMakeRect(290,16,92,30)] autorelease];
     [save setTitle:@"Save"];[save setBezelStyle:NSRoundedBezelStyle];[save setKeyEquivalent:@"\r"];[save setTarget:self];[save setAction:@selector(workspaceSettingsSave:)];[view addSubview:save];
     NSButton *cancel=[[[NSButton alloc] initWithFrame:NSMakeRect(388,16,92,30)] autorelease];
     [cancel setTitle:@"Cancel"];[cancel setBezelStyle:NSRoundedBezelStyle];[cancel setKeyEquivalent:@"\033"];[cancel setTarget:self];[cancel setAction:@selector(workspaceSettingsCancel:)];[view addSubview:cancel];
     [panel setLevel:NSFloatingWindowLevel];[panel makeKeyAndOrderFront:nil];[NSApp runModalForWindow:panel];[panel orderOut:nil];
-    [prefsFields removeObjectForKey:@"ws.limit"];[prefsFields removeObjectForKey:@"ws.root"];[prefsFields removeObjectForKey:@"ws.memory"];
+    [prefsFields removeObjectForKey:@"ws.limit"];[prefsFields removeObjectForKey:@"ws.root"];[prefsFields removeObjectForKey:@"ws.memory"];[prefsFields removeObjectForKey:@"ws.knowledge"];
 }
 - (void)workspaceCreateConfirm:(id)sender {(void)sender;[[NSApp modalWindow] makeFirstResponder:nil];[NSApp stopModalWithCode:1];}
 - (void)workspaceCreateCancel:(id)sender {(void)sender;[NSApp stopModalWithCode:0];}

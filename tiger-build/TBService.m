@@ -198,6 +198,7 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
         addRow(rows, @"search", @"Web search", NO, YES);
     if ([TBSettings flag:@"consult_enabled"])
         addRow(rows, @"consult", @"Ask other models", NO, NO);
+    addRow(rows, @"macapps", @"Mac apps: Calendar, Contacts, Mail (read only)", YES, NO);
     [rows addObjectsFromArray:[TBIntegrations catalogue]];
     return [NSPropertyListSerialization dataFromPropertyList:[NSDictionary dictionaryWithObjectsAndKeys:rows, @"tools", problem, @"commander_problem", @"", @"commander_code", nil]
                                                       format:NSPropertyListXMLFormat_v1_0 errorDescription:&error];

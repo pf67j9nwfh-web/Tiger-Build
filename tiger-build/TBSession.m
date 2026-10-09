@@ -211,6 +211,7 @@ static id cleanObject(id data)
     NSString *root = @"";
     NSString *instructions = @"";
     NSString *memory = @"";
+    NSString *knowledge = @"";
     NSString *names[2] = {@"servers", @"approve"};
     NSMutableDictionary *tables[2];
     int t;
@@ -220,6 +221,15 @@ static id cleanObject(id data)
         id text = TBValue(incoming, @"instructions");
         id rootValue = TBValue(incoming, @"root");
         id memoryValue = TBValue(incoming, @"memory");
+        id knowledgeValue = TBValue(incoming, @"knowledge");
+        if ([knowledgeValue isKindOfClass:[NSString class]]) {
+            NSString *k = TBTrim(knowledgeValue);
+            if ([k hasPrefix:@"/"] && [k length] <= 300 && [k rangeOfString:@"\n"].location == NSNotFound) {
+                while ([k length] > 1 && [k hasSuffix:@"/"])
+                    k = [k substringToIndex:[k length] - 1];
+                knowledge = k;
+            }
+        }
         if ([memoryValue isKindOfClass:[NSString class]]) {
             memory = [self cleanText:TBTrim(memoryValue)];
             if ([memory length] > 3000)
@@ -249,7 +259,7 @@ static id cleanObject(id data)
             }
         }
     }
-    return [NSDictionary dictionaryWithObjectsAndKeys:servers, @"servers", approve, @"approve", root, @"root", instructions, @"instructions", memory, @"memory", nil];
+    return [NSDictionary dictionaryWithObjectsAndKeys:servers, @"servers", approve, @"approve", root, @"root", instructions, @"instructions", memory, @"memory", knowledge, @"knowledge", nil];
 }
 
 /* Whether a model can look at a picture. A wrong guess only costs a tool. */
@@ -470,6 +480,8 @@ static NSArray *withoutPictures(NSArray *messages)
         [skip addObject:@"download"];
     if ((CFBooleanRef)[servers objectForKey:@"screen"] != kCFBooleanTrue)
         [skip addObject:@"screen"];
+    if ((CFBooleanRef)[servers objectForKey:@"macapps"] != kCFBooleanTrue)
+        [skip addObject:@"macapps"];
     return skip;
 }
 

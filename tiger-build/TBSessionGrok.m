@@ -426,6 +426,7 @@ static NSString *eventErrorMessage(NSDictionary *event)
     }
     if (!extras)
         extras = [[TBExtras alloc] initWithRun:run];
+        [extras setKnowledgeRoot:TBString(options, @"knowledge")];
     [tools addObjectsFromArray:[extras definitionsForProvider:provider skip:skip]];
     return tools;
 }

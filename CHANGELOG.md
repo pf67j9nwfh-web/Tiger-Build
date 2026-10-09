@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2.2
+- **Three more tools for the model**: reading a web page by its address, a per-workspace **knowledge folder** it can search and open, and read-only **Calendar, Contacts and Mail** questions (`mac_calendar_events`, `mac_contacts_search`, `mac_mail_unread`).
 - **MCP servers over the older HTTP+SSE transport** (found automatically), and **OAuth sign-in** for servers that ask for it (discovery, self-registration, PKCE, browser sign-in on a loopback port, token refresh; Configuration, *Forget Saved MCP Sign-Ins...*).
 - **OpenRouter** through the Local LLM Server settings: the model list shows the tool-capable models by name with their context lengths, priced from OpenRouter's own list.
 - **Automatic memory per workspace** (optional): a few notes about you, kept up to date after each reply and told to the model in every chat of the workspace; viewable, editable and clearable.

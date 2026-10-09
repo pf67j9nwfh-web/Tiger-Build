@@ -1,4 +1,5 @@
 #import "TBExtras.h"
+#import "TBLocalTools.h"
 #import "TBEngine.h"
 #import "TBIntegrations.h"
 #import "TBSSH.h"
@@ -329,10 +330,17 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     [offered release];
     [errors release];
     [lastProvider release];
+    [knowledgeRoot release];
     [super dealloc];
 }
 
 - (NSArray *)errors { return errors; }
+
+- (void)setKnowledgeRoot:(NSString *)root
+{
+    [knowledgeRoot release];
+    knowledgeRoot = [root copy];
+}
 
 - (NSArray *)auxiliaryForProvider:(NSString *)provider skip:(NSSet *)skip
 {
@@ -358,6 +366,23 @@ static NSString *imageSearch(NSString *query, TBRun *run)
             [NSArray arrayWithObject:@"query"], [NSArray arrayWithObject:@""], [NSArray arrayWithObject:@"query"])];
         [tools addObject:function(@"agent_show_image", @"Download a picture from a web address (an image_url from agent_image_search, or any direct link to a JPEG, PNG or GIF) and show it to the person in the chat. Each call shows one picture.",
             [NSArray arrayWithObject:@"url"], [NSArray arrayWithObject:@""], [NSArray arrayWithObject:@"url"])];
+    }
+    if ([TBSettings flag:@"search_enabled"] && ![skip containsObject:@"search"])
+        [tools addObject:function(@"agent_read_page", @"Read a web page: give its address (starting with http:// or https://) and get the page's text (the first 40,000 characters). Use it for a link the person pasted or one from a search result. Only public web pages can be read.",
+            [NSArray arrayWithObject:@"url"], [NSArray arrayWithObject:@"The web address of the page."], [NSArray arrayWithObject:@"url"])];
+    if ([knowledgeRoot length] && ![skip containsObject:@"knowledge"]) {
+        [tools addObject:function(@"knowledge_search", @"Search the person's knowledge folder for this workspace (their own notes and documents). Returns the best matching passages with the file they came from. Use it when a question may be answered by their documents.",
+            [NSArray arrayWithObject:@"query"], [NSArray arrayWithObject:@"The words to look for."], [NSArray arrayWithObject:@"query"])];
+        [tools addObject:function(@"knowledge_open", @"Read a whole file from the knowledge folder (the first 30,000 characters), by the path that knowledge_search showed.",
+            [NSArray arrayWithObject:@"path"], [NSArray arrayWithObject:@"The path inside the knowledge folder."], [NSArray arrayWithObject:@"path"])];
+    }
+    if ([skip containsObject:@"macapps"] == NO) {
+        [tools addObject:function(@"mac_calendar_events", @"List the events in this Mac's Calendar (iCal) from a few days ago to some days ahead. Read only. Opens the Calendar application if it is not running.",
+            [NSArray arrayWithObjects:@"days", @"days_back", nil], [NSArray arrayWithObjects:@"How many days ahead to list (default 7, at most 60).", @"How many days back to include (default 0, at most 30).", nil], [NSArray array])];
+        [tools addObject:function(@"mac_contacts_search", @"Find people in this Mac's Contacts (Address Book) whose name contains some words, with their emails and phone numbers. Read only.",
+            [NSArray arrayWithObject:@"query"], [NSArray arrayWithObject:@"Part of the person's name."], [NSArray arrayWithObject:@"query"])];
+        [tools addObject:function(@"mac_mail_unread", @"List the newest unread messages in this Mac's Mail inbox: date, sender and subject only, not the bodies. Read only. Opens Mail if it is not running.",
+            [NSArray array], [NSArray array], [NSArray array])];
     }
     if ([TBSettings flag:@"download_enabled"] && [skip containsObject:@"download"] == NO)
         [tools addObject:function(@"agent_download_file", @"Download a file from an https address on the internet (up to 50 MB) and give it to the person with a Save As button. The connection uses TLS and the server's certificate is checked. "
@@ -387,7 +412,8 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     unsigned i, t;
     for (i = 0; i < [tools count]; i++) {
         NSString *n = TBString([tools objectAtIndex:i], @"name");
-        [owners setObject:([n isEqualToString:@"agent_web_search"] || [n isEqualToString:@"agent_image_search"] || [n isEqualToString:@"agent_show_image"]) ? @"search" : ([n isEqualToString:@"agent_download_file"] ? @"download" : @"toolbox") forKey:n];
+        [owners setObject:([n isEqualToString:@"agent_web_search"] || [n isEqualToString:@"agent_image_search"] || [n isEqualToString:@"agent_show_image"] || [n isEqualToString:@"agent_read_page"]) ? @"search"
+            : ([n isEqualToString:@"agent_download_file"] ? @"download" : ([n hasPrefix:@"knowledge_"] ? @"knowledge" : ([n hasPrefix:@"mac_"] ? @"macapps" : @"toolbox"))) forKey:n];
     }
     for (i = 0; i < [servers count]; i++) {
         NSDictionary *server = [servers objectAtIndex:i];
@@ -516,6 +542,14 @@ static NSString *imageSearch(NSString *query, TBRun *run)
                 [got objectForKey:@"name"], [[got objectForKey:@"size"] unsignedLongValue], [[got objectForKey:@"type"] length] ? [got objectForKey:@"type"] : @"unknown type", [got objectForKey:@"url"], [got objectForKey:@"sha256"]],
                 NO, [@"file " stringByAppendingString:[got objectForKey:@"stored"]]);
         }
+        if ([name isEqualToString:@"agent_read_page"])
+            return result([TBLocalTools readPage:TBString(args, @"url") run:run], NO, nil);
+        if ([name isEqualToString:@"knowledge_search"])
+            return result([TBLocalTools knowledgeSearch:TBString(args, @"query") root:knowledgeRoot], NO, nil);
+        if ([name isEqualToString:@"knowledge_open"])
+            return result([TBLocalTools knowledgeOpen:TBString(args, @"path") root:knowledgeRoot], NO, nil);
+        if ([TBLocalTools isMacAppsTool:name])
+            return result([TBLocalTools macAppsTool:name arguments:args], NO, nil);
         if ([name isEqualToString:@"agent_show_image"]) {
             NSString *file = [TBMedia fetchImage:TBString(args, @"url")];
             return result(@"The picture is now shown in the chat.", NO, [@"image " stringByAppendingString:file]);

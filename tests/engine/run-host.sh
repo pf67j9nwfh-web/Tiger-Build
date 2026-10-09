@@ -28,9 +28,9 @@ LIBS="-framework Foundation -framework Security -framework AppKit -framework App
 build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
 build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
-build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBLocalTools.m TBExtras.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build prov ../tests/engine/provtest.m TBProviders.m $COMMON
-build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"

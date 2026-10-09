@@ -10,9 +10,11 @@
     NSMutableDictionary *owners;    /* tool name -> the chat's key for it ("toolbox", "search", "mcp_<id>") */
     NSMutableSet *offered;
     NSMutableArray *errors;
+    NSString *knowledgeRoot;        /* the workspace's knowledge folder, "" for none */
     NSString *lastProvider;         /* the provider of the latest request, for tools that work differently for one */
 }
 - (id)initWithRun:(TBRun *)run;
+- (void)setKnowledgeRoot:(NSString *)root;
 /* The tools to offer. skip holds the keys the chat turned off. */
 - (NSArray *)definitionsForProvider:(NSString *)provider skip:(NSSet *)skip;
 - (BOOL)handles:(NSString *)name;

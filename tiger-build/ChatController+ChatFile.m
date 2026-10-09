@@ -20,6 +20,7 @@ void TBSanitizeImportedChat(NSMutableDictionary *chat)
         NSMutableDictionary *safe = [NSMutableDictionary dictionaryWithDictionary:servers];
         [safe removeObjectForKey:@"sudo"];
         [safe removeObjectForKey:@"download"];
+        [safe removeObjectForKey:@"macapps"];
         [safe removeObjectForKey:@"screen"];
         [chat setObject:safe forKey:@"servers"];
     } else
