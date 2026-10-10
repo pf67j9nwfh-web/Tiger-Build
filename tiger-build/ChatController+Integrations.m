@@ -9,6 +9,28 @@
 @interface ChatController (IntegrationPrivate)
 - (NSMutableDictionary *)integrationFields;
 - (void)loadIntegrationForm:(NSDictionary *)data;
+/* "The model picks", "The chat's model", or one fixed model of a service you can use */
+- (void)fillSubagentPolicyPopup:(NSString *)saved
+{
+    NSPopUpButton *popup=[[self integrationFields] objectForKey:@"subagents_policy"];
+    NSArray *providers=[[ModelCatalog shared] providers];
+    unsigned i,j;
+    if(!popup)return;
+    [popup removeAllItems];
+    [popup addItemWithTitle:@"The model picks for each task"];[[popup lastItem] setRepresentedObject:@"choose"];
+    [popup addItemWithTitle:@"Always the chat's own model"];[[popup lastItem] setRepresentedObject:@"same"];
+    for(i=0;i<[providers count];i++) {
+        NSString *pid=[[providers objectAtIndex:i] objectForKey:@"id"];
+        NSArray *models=[pid isEqualToString:@"local"]?localModels:[[ModelCatalog shared] modelsForProvider:pid];
+        if(![self providerUsable:pid])continue;
+        for(j=0;j<[models count];j++) {
+            [popup addItemWithTitle:[NSString stringWithFormat:@"Always %@: %@",[[ModelCatalog shared] titleForProvider:pid],[[models objectAtIndex:j] objectForKey:@"title"]]];
+            [[popup lastItem] setRepresentedObject:[NSString stringWithFormat:@"%@|%@",pid,[[models objectAtIndex:j] objectForKey:@"id"]]];
+        }
+    }
+    for(i=0;i<(unsigned)[popup numberOfItems];i++)
+        if([[[popup itemAtIndex:i] representedObject] isEqualToString:[saved length]?saved:@"choose"]){[popup selectItemAtIndex:i];break;}
+}
 - (NSDictionary *)integrationFormData;
 - (void)applyClientBackup:(NSDictionary *)backup;
 - (void)integrationStatus:(NSString *)text;
@@ -148,6 +170,24 @@
         [tab addSubview:steps];[fields setObject:steps forKey:@"max_tool_steps"];y-=30;
         [self integrationLabel:@"Each chat can switch these on or off from the Tools button, and choose which ones must ask first. "
             @"The switches here apply to all your chats." frame:NSMakeRect(16,y-20,524,44) view:tab];
+        tab=[self integrationTab:@"Subagents" in:tabs];
+        y=284;
+        [self integrationLabel:@"With subagents on (Built-in Tools, and the chat's Tools menu), a model can start helpers that work on parts of a task at the same time, "
+            @"each with its own conversation and the chat's tools. Their cost is counted in the chat." frame:NSMakeRect(16,y-34,524,50) view:tab];y-=60;
+        [self integrationLabel:@"Most helpers in one request" frame:NSMakeRect(16,y+2,230,18) view:tab];
+        NSTextField *subTasks=[[[NSTextField alloc] initWithFrame:NSMakeRect(250,y,60,22)] autorelease];
+        [subTasks setToolTip:@"1 to 16. A request with more tasks than this is refused and the model is told the limit."];
+        [tab addSubview:subTasks];[fields setObject:subTasks forKey:@"subagents_tasks"];y-=32;
+        [self integrationLabel:@"Most helpers running at once" frame:NSMakeRect(16,y+2,230,18) view:tab];
+        NSTextField *subMax=[[[NSTextField alloc] initWithFrame:NSMakeRect(250,y,60,22)] autorelease];
+        [subMax setToolTip:@"1 to 8. The Mac's cores, up to 4, unless you change it. The rest of a request waits for a free helper."];
+        [tab addSubview:subMax];[fields setObject:subMax forKey:@"subagents_max"];y-=36;
+        [self integrationLabel:@"Helpers use" frame:NSMakeRect(16,y+2,230,18) view:tab];
+        NSPopUpButton *subPolicy=[[[NSPopUpButton alloc] initWithFrame:NSMakeRect(250,y-2,290,26) pullsDown:NO] autorelease];
+        [subPolicy setFont:[NSFont systemFontOfSize:12]];
+        [tab addSubview:subPolicy];[fields setObject:subPolicy forKey:@"subagents_policy"];y-=40;
+        [self integrationLabel:@"\"The model picks\" lets a model choose a model for each task and shows it the list with notes on each, so a larger model can hand simple work to a smaller, cheaper one "
+            @"(a Sonnet-class model handing searches to a Haiku-class one, for example). It uses the chat's own model when it does not choose." frame:NSMakeRect(16,y-50,524,64) view:tab];
         tab=[self integrationTab:@"Web Search" in:tabs];
         y=284;
         [self integrationLabel:@"Search service" frame:NSMakeRect(16,y+2,170,18) view:tab];
@@ -224,6 +264,9 @@
     unsigned i;
     for(i=0;i<[keys count];i++)[[fields objectForKey:[keys objectAtIndex:i]] setState:[[data objectForKey:[keys objectAtIndex:i]] boolValue]?NSOnState:NSOffState];
     [(TBServerSource *)[fields objectForKey:@"source"] setServers:[data objectForKey:@"servers"]];
+    [[fields objectForKey:@"subagents_tasks"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"subagents_tasks"] intValue]?[[data objectForKey:@"subagents_tasks"] intValue]:8]];
+    [[fields objectForKey:@"subagents_max"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"subagents_max"] intValue]?[[data objectForKey:@"subagents_max"] intValue]:4]];
+    [self fillSubagentPolicyPopup:[data objectForKey:@"subagents_policy"]];
     [[fields objectForKey:@"max_tool_steps"] setStringValue:[NSString stringWithFormat:@"%d",[data objectForKey:@"max_tool_steps"]?[[data objectForKey:@"max_tool_steps"] intValue]:40]];
     [[fields objectForKey:@"table"] reloadData];
     [[fields objectForKey:@"search_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_search_key"] setState:NSOffState];
@@ -454,6 +497,11 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
     [data setObject:[[fields objectForKey:@"search_provider"] indexOfSelectedItem]==1?@"tavily":@"brave" forKey:@"search_provider"];
     {NSString *text=[[fields objectForKey:@"max_tool_steps"] stringValue];int steps=[text length]?[text intValue]:40;if(steps<0)steps=40;if(steps>1000)steps=1000;
         [data setObject:[NSNumber numberWithInt:steps] forKey:@"max_tool_steps"];}
+    {int tasks=[[[fields objectForKey:@"subagents_tasks"] stringValue] intValue];int cap=[[[fields objectForKey:@"subagents_max"] stringValue] intValue];
+        if(tasks<1)tasks=8;if(tasks>16)tasks=16;if(cap<1)cap=4;if(cap>8)cap=8;
+        [data setObject:[NSNumber numberWithInt:tasks] forKey:@"subagents_tasks"];[data setObject:[NSNumber numberWithInt:cap] forKey:@"subagents_max"];
+        NSString *rule=[[[[fields objectForKey:@"subagents_policy"] selectedItem] representedObject] description];
+        [data setObject:[rule length]?rule:@"choose" forKey:@"subagents_policy"];}
     [data setObject:[(TBServerSource *)[fields objectForKey:@"source"] servers] forKey:@"servers"];return data;
 }
 - (void)saveIntegrations:(id)sender

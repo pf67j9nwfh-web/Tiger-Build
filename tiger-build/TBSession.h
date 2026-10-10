@@ -26,6 +26,7 @@
     NSArray *commanderTools;
     NSString *grokKey;
     id extras;
+    NSString *subCallId;             /* the card id of the run_subagents call in progress, for its progress card */
     NSString *subPrefix;             /* set on a subagent: its tool call ids start with this so they cannot clash with the parent's */
     NSString *turnProvider;
     NSString *turnModel;
@@ -56,6 +57,7 @@ NSString *TBCommanderProgram(void);
 @interface TBSession (Subagents)
 - (NSDictionary *)subagentDefinition;
 - (NSString *)runSubagents:(NSDictionary *)args;
+- (NSNumber *)millionTokenPriceForProvider:(NSString *)provider model:(NSString *)model;
 @end
 
 @interface TBSession (Research)

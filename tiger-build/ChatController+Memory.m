@@ -59,13 +59,14 @@
     [body appendString:TBJSONEscape(prompt)];
     [body appendFormat:@"\"}],\"tools\":false,\"provider\":\"%@\",\"model\":\"%@\"}", TBJSONEscape([self providerForChat:chat]), TBJSONEscape([self modelForChat:chat])];
     memoryBusy = YES;
-    [EngineRequest send:@"POST" path:@"/v1/memory" body:body timeout:60 target:self action:@selector(memoryArrived:) context:nil];
+    [EngineRequest send:@"POST" path:@"/v1/memory" body:body timeout:60 target:self action:@selector(memoryArrived:) context:[chat objectForKey:@"id"]];
 }
 
 - (void)memoryArrived:(EngineRequest *)request
 {
     NSString *text = TBTrim([request text]);
     memoryBusy = NO;
+    [self noteSideUsage:request chat:[self chatWithId:[request context]]];
     if (![request ok] || [text length] == 0 || ![self memoryOn])
         return;
     if ([text isEqualToString:@"UNCHANGED"] || [text hasPrefix:@"UNCHANGED"])

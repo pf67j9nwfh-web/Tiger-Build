@@ -223,20 +223,63 @@ int main(int argc, char **argv)
     expectThat([seen count] == 4, @"subagents: one request for the parent, one for each helper, one to finish");
     expectThat([[f joined:@"t"] rangeOfString:@"Hi there"].location != NSNotFound, @"subagents: the parent answers last");
     {
-        unsigned n, results = 0;
-        BOOL clash = NO;
-        NSMutableSet *ids = [NSMutableSet set];
-        for (n = 0; n < 8; n++) {
+        unsigned n;
+        BOOL answers = NO, progress = NO;
+        for (n = 0; n < 40; n++) {
             NSDictionary *card = [f plist:@"a" index:n];
             if (!card) break;
-            if ([[card objectForKey:@"phase"] isEqualToString:@"result"]) results++;
+            if (![[card objectForKey:@"name"] isEqualToString:@"run_subagents"]) continue;
+            if ([[card objectForKey:@"phase"] isEqualToString:@"result"] && [[card objectForKey:@"output"] rangeOfString:@"### Subagent 2"].location != NSNotFound) answers = YES;
+            if ([[card objectForKey:@"phase"] isEqualToString:@"start"] && [[card objectForKey:@"output"] rangeOfString:@"of 2 done"].location != NSNotFound) progress = YES;
         }
-        (void)ids; (void)clash;
-        expectThat(results >= 1 && [[[f plist:@"a" index:1] objectForKey:@"output"] rangeOfString:@"### Subagent 2"].location != NSNotFound
-            || [[[f plist:@"a" index:2] objectForKey:@"output"] rangeOfString:@"### Subagent 2"].location != NSNotFound, @"subagents: both answers come back as the tool result");
+        expectThat(answers, @"subagents: both answers come back as the tool result");
+        expectThat(progress, @"subagents: a progress card says how many of the helpers are done");
     }
     seen = fetch(@"/seen");
     expectThat([[TBJSONString([seen lastObject]) description] rangeOfString:@"### Subagent 1"].location != NSNotFound, @"subagents: the parent's last request carries the helpers' answers");
+    {
+        NSDictionary *on = [NSDictionary dictionaryWithObject:[NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"subagents"] forKey:@"servers"];
+        fetch(@"/reset");
+        turn(@"claude", @"claude-sonnet-5", on, nil, NULL);
+        seen = fetch(@"/seen");
+        expectThat([TBJSONString([seen objectAtIndex:0]) rangeOfString:@"Models (provider|model|notes)"].location != NSNotFound, @"subagents: the model is shown the usable models to choose from");
+        [d setObject:@"same" forKey:@"TBTool.subagents_policy"];
+        fetch(@"/reset");
+        turn(@"claude", @"claude-sonnet-5", on, nil, NULL);
+        seen = fetch(@"/seen");
+        expectThat([TBJSONString([seen objectAtIndex:0]) rangeOfString:@"same model as this chat"].location != NSNotFound && [TBJSONString([seen objectAtIndex:0]) rangeOfString:@"Models (provider|model|notes)"].location == NSNotFound, @"subagents: with the chat's model fixed there is no list to choose from");
+        [d removeObjectForKey:@"TBTool.subagents_policy"];
+        [d setObject:[NSNumber numberWithInt:1] forKey:@"TBTool.subagents_tasks"];
+        fetch(@"/reset");
+        turn(@"claude", @"claude-sonnet-5", on, nil, NULL);
+        seen = fetch(@"/seen");
+        expectThat([seen count] == 2 && [TBJSONString([seen lastObject]) rangeOfString:@"At most 1 tasks"].location != NSNotFound, @"subagents: more tasks than the limit is refused and no helper starts");
+        [d removeObjectForKey:@"TBTool.subagents_tasks"];
+        [d setObject:[base stringByAppendingString:@"/sub-claude-model"] forKey:@"TBBaseURL.claude"];
+        fetch(@"/reset");
+        turn(@"claude", @"claude-sonnet-5", on, nil, NULL);
+        seen = fetch(@"/seen");
+        {
+            unsigned n;
+            int haiku = 0;
+            for (n = 0; n < [seen count]; n++)
+                if ([[[[seen objectAtIndex:n] objectForKey:@"body"] objectForKey:@"model"] isEqualToString:@"claude-haiku-5-5"]) haiku++;
+            expectThat(haiku == 1, @"subagents: a task that names a model runs on it, the other on the chat's own");
+        }
+        [d setObject:@"claude|claude-haiku-5-5" forKey:@"TBTool.subagents_policy"];
+        fetch(@"/reset");
+        turn(@"claude", @"claude-sonnet-5", on, nil, NULL);
+        seen = fetch(@"/seen");
+        {
+            unsigned n;
+            int haiku = 0;
+            for (n = 0; n < [seen count]; n++)
+                if ([[[[seen objectAtIndex:n] objectForKey:@"body"] objectForKey:@"model"] isEqualToString:@"claude-haiku-5-5"]) haiku++;
+            expectThat(haiku == 2, @"subagents: a model fixed in Preferences is used for every helper");
+        }
+        [d removeObjectForKey:@"TBTool.subagents_policy"];
+        [d setObject:[base stringByAppendingString:@"/sub-claude"] forKey:@"TBBaseURL.claude"];
+    }
     fetch(@"/reset");
     f = turn(@"claude", @"claude-sonnet-5", nil, nil, NULL);
     seen = fetch(@"/seen");

@@ -58,6 +58,27 @@
     }
 }
 
+/* The cost of a side call (title, summary, memory, auto choice, model notes) goes to the chat it was for, or just to today's total when there is no chat. */
+- (void)noteSideUsage:(EngineRequest *)request chat:(NSMutableDictionary *)chat
+{
+    NSArray *events = [request takeUsage];
+    unsigned i;
+    for (i = 0; i < [events count]; i++) {
+        NSString *problem = nil;
+        NSDictionary *event = [NSPropertyListSerialization propertyListFromData:[[events objectAtIndex:i] dataUsingEncoding:NSUTF8StringEncoding]
+            mutabilityOption:NSPropertyListImmutable format:NULL errorDescription:&problem];
+        if (![event isKindOfClass:[NSDictionary class]])
+            continue;
+        if (chat) {
+            /* not the context size: that belongs to the chat's own model calls */
+            NSMutableDictionary *plain = [NSMutableDictionary dictionaryWithDictionary:event];
+            [plain removeObjectForKey:@"context"];
+            [self noteUsage:plain chat:chat];
+        } else
+            [self spendCheckAfterUsage:event chat:nil];
+    }
+}
+
 /* ---- picking the model ---- */
 
 /* Auto appears in the provider list when Preferences say so, and always while it is the default for new chats. */
@@ -175,6 +196,7 @@
 - (void)modelNotesArrived:(EngineRequest *)request
 {
     modelNotesBusy = NO;
+    [self noteSideUsage:request chat:nil];
     [TBModelProfiles setLastRefresh:[[NSDate date] timeIntervalSince1970]];
     if ([request ok])
         [TBModelProfiles storeReply:[request text] asked:modelNotesAsked];
@@ -243,6 +265,7 @@
         [self setBusy:NO];
         return;
     }
+    [self noteSideUsage:request chat:chat];
     if ([request ok]) {
         for (i = 0; i < [autoCandidates count]; i++) {
             NSDictionary *row = [autoCandidates objectAtIndex:i];

@@ -49,9 +49,11 @@ model	claude	claude-opus-4-6	Opus 4.6	0
 model	claude	claude-opus-4-5-20251101	Opus 4.5	0
 model	claude	claude-fable-5-1	Fable 5.1	0
 model	claude	claude-fable-5	Fable 5	0
+model	claude	claude-sonnet-5-5	Sonnet 5.5	0
 model	claude	claude-sonnet-5	Sonnet 5	1
 model	claude	claude-sonnet-4-6	Sonnet 4.6	0
 model	claude	claude-sonnet-4-5-20250929	Sonnet 4.5	0
+model	claude	claude-haiku-5-5	Haiku 5.5	0
 model	claude	claude-haiku-4-5-20251001	Haiku 4.5	0
 provider	mistral	Mistral
 model	mistral	ministral-14b-latest	Ministral 14B	1

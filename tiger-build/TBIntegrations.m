@@ -110,6 +110,20 @@ static NSArray *validated(id list, BOOL forceOff)
     return [p isEqualToString:@"tavily"] ? @"tavily" : @"brave";
 }
 
++ (int)subagentNumber:(NSString *)name fallback:(int)fallback low:(int)low high:(int)high
+{
+    NSNumber *set = [[NSUserDefaults standardUserDefaults] objectForKey:[@"TBTool." stringByAppendingString:name]];
+    int n = set ? [set intValue] : fallback;
+    return n < low ? low : (n > high ? high : n);
+}
+
+/* choose (the model picks), same (the chat's own model), or provider|model */
++ (NSString *)subagentPolicy
+{
+    NSString *p = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBTool.subagents_policy"];
+    return [p length] ? p : @"choose";
+}
+
 + (NSDictionary *)publicConfig
 {
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
@@ -117,6 +131,9 @@ static NSArray *validated(id list, BOOL forceOff)
     for (i = 0; i < [flagNames() count]; i++)
         [out setObject:[NSNumber numberWithBool:[TBSettings flag:[flagNames() objectAtIndex:i]]] forKey:[flagNames() objectAtIndex:i]];
     [out setObject:[NSNumber numberWithInt:[self steps]] forKey:@"max_tool_steps"];
+    [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_tasks" fallback:8 low:1 high:16]] forKey:@"subagents_tasks"];
+    [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_max" fallback:MIN(4, (int)[[NSProcessInfo processInfo] processorCount]) low:1 high:8]] forKey:@"subagents_max"];
+    [out setObject:[self subagentPolicy] forKey:@"subagents_policy"];
     [out setObject:[self provider] forKey:@"search_provider"];
     [out setObject:@"" forKey:@"search_api_key"];
     [out setObject:@"" forKey:@"tavily_api_key"];
@@ -152,6 +169,18 @@ static NSArray *validated(id list, BOOL forceOff)
     }
     if (steps)
         [[NSUserDefaults standardUserDefaults] setInteger:[steps intValue] forKey:@"TBTool.max_tool_steps"];
+    {
+        id tasks = TBValue(incoming, @"subagents_tasks"), cap = TBValue(incoming, @"subagents_max"), rule = TBValue(incoming, @"subagents_policy");
+        if (tasks && (![tasks isKindOfClass:[NSNumber class]] || [tasks intValue] < 1 || [tasks intValue] > 16))
+            TBFail(@"Subagent tasks per request must be a whole number from 1 to 16.");
+        if (cap && (![cap isKindOfClass:[NSNumber class]] || [cap intValue] < 1 || [cap intValue] > 8))
+            TBFail(@"Subagents at once must be a whole number from 1 to 8.");
+        if (rule && ![rule isKindOfClass:[NSString class]])
+            TBFail(@"Subagent model rule must be text.");
+        if (tasks) [[NSUserDefaults standardUserDefaults] setInteger:[tasks intValue] forKey:@"TBTool.subagents_tasks"];
+        if (cap) [[NSUserDefaults standardUserDefaults] setInteger:[cap intValue] forKey:@"TBTool.subagents_max"];
+        if (rule) [[NSUserDefaults standardUserDefaults] setObject:[rule length] ? rule : @"choose" forKey:@"TBTool.subagents_policy"];
+    }
     if ([provider length])
         [TBSettings setValue:provider forName:@"search_provider"];
     if (TBTruth(incoming, @"clear_search_key"))

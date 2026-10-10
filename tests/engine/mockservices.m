@@ -417,6 +417,13 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendChunked(fd, 200, sse(anthropicEvents(!answered, NO)));
         else
             sendChunked(fd, 200, sse(openaiChunks(!answered)));
+    } else if ([path isEqualToString:@"/sub-claude-model"]) {
+        /* like /sub-claude, but the first task names a model of its own */
+        NSString *text = TBJSONString(request);
+        if ([text rangeOfString:@"tool_result"].location != NSNotFound || [text rangeOfString:@"SUBTASK"].location != NSNotFound)
+            sendChunked(fd, 200, sse(anthropicEvents(NO, NO)));
+        else
+            sendChunked(fd, 200, sse(anthropicEventsTool(YES, NO, @"run_subagents", @"{\"tasks\":[{\"task\":\"SUBTASK one\",\"model\":\"claude/claude-haiku-5-5\"},", @"{\"task\":\"SUBTASK two\"}]}")));
     } else if ([path isEqualToString:@"/sub-claude"]) {
         /* the parent calls run_subagents with two tasks; each subagent answers at once; the parent then answers */
         NSString *text = TBJSONString(request);

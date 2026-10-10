@@ -3054,6 +3054,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 {
     NSDictionary *info = [request context];
     NSString *forChat = [[[info objectForKey:@"chat"] objectForKey:@"id"] copy];
+    [self noteSideUsage:request chat:[info objectForKey:@"chat"]];
     if (!busy || ![streamingId isEqualToString:forChat]) {
         /* the summary is for a chat that is not on screen */
         if (forChat && [self enterRunOfTurn:nil orChat:forChat]) {
@@ -3199,6 +3200,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     NSMutableDictionary *chat = [request context];
     NSString *text = [[request text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     id flag;
+    [self noteSideUsage:request chat:chat];
     naming = NO;
     suppressSelection = YES;
     [table reloadData];
@@ -3554,7 +3556,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             BOOL finished=[[event objectForKey:@"phase"] isEqualToString:@"result"];
             NSString *state=finished?([[event objectForKey:@"failed"] boolValue]?@"Failed":@"Completed"):@"Running";
             [activity setObject:[NSString stringWithFormat:@"%@ - %@%@",[event objectForKey:@"name"],state,
-                finished?[NSString stringWithFormat:@" (%.1fs)",[[event objectForKey:@"elapsed"] doubleValue]]:@""] forKey:@"text"];
+                finished?[NSString stringWithFormat:@" (%.1fs)",[[event objectForKey:@"elapsed"] doubleValue]]:([[event objectForKey:@"label"] length]?[NSString stringWithFormat:@": %@",[event objectForKey:@"label"]]:@"")] forKey:@"text"];
             if(finished&&[event objectForKey:@"files"]) {
                 /* A diff or commit: what changed, as +added -removed in n files. */
                 int files=[[event objectForKey:@"files"] intValue];

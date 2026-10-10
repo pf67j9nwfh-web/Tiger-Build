@@ -10,6 +10,7 @@
     SEL action;
     id context;
     NSString *path;
+    NSArray *usageEvents;     /* the usage lines (cost) of the model calls behind a side reply, as property list text */
 }
 
 /* ~/Library/Application Support/Tiger Build, made when needed. */
@@ -38,6 +39,8 @@
 - (BOOL)timedOut;
 - (NSData *)data;
 - (NSString *)text;
+- (NSArray *)usage;
+- (NSArray *)takeUsage;     /* the usage lines, once: a second call gets none */
 - (id)context;
 - (NSString *)path;
 @end

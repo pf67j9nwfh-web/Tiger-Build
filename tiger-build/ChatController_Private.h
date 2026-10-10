@@ -35,6 +35,9 @@
 - (void)modelDidChangeForChat:(NSMutableDictionary *)chat;
 - (void)reconcileModelOfChat:(NSMutableDictionary *)chat;
 - (BOOL)autoModelWanted;
+- (void)noteSideUsage:(EngineRequest *)request chat:(NSMutableDictionary *)chat;
+- (void)noteUsage:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
+- (void)spendCheckAfterUsage:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
 - (BOOL)autoListed;
 - (int)insertChatAtTop:(NSMutableDictionary *)chat;
 - (IBAction)togglePin:(id)sender;

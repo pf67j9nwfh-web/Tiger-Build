@@ -395,6 +395,7 @@ static NSArray *withoutPictures(NSArray *messages)
 {
     [self closeTools];
     [subPrefix release];
+    [subCallId release];
     [turnProvider release];
     [turnModel release];
     [run release];
@@ -1074,6 +1075,8 @@ NSString *TBCommanderProgram(void)
     if ([name isEqualToString:@"generate_image"] || [name isEqualToString:@"generate_video"])
         return [self runMediaCall:name arguments:args provider:provider];
     if ([name isEqualToString:kSubTool]) {
+        [subCallId release];
+        subCallId = [[self scoped:[TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : name)] copy];
         @try {
             return [NSDictionary dictionaryWithObjectsAndKeys:[self runSubagents:args], @"output", [NSNumber numberWithBool:NO], @"failed", nil];
         } @catch (NSException *exception) {
@@ -1346,6 +1349,8 @@ static unsigned long contentSize(NSArray *log)
     inner = [[[TBSession alloc] initWithRun:run options:[TBSession cleanOptions:[NSDictionary dictionaryWithObjectsAndKeys:servers, @"servers", system, @"instructions", nil]] frames:collector] autorelease];
     [inner turn:[NSArray arrayWithObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role", prompt, @"content", nil]] useTools:YES provider:provider model:model systemOverride:nil];
     text = TBTrim([collector->text componentsJoinedByString:@""]);
+    for (i = 0; i < [collector->usage count]; i++)
+        [side addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"u", @"kind", [collector->usage objectAtIndex:i], @"text", nil]];
     [inner closeTools];
     return text;
 }

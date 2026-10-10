@@ -15,6 +15,20 @@ static NSDictionary *reply(int status, NSData *body, NSString *type)
     return [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:status], @"status", body ? body : [NSData data], @"body", type ? type : @"text/plain", @"type", nil];
 }
 
+/* A text reply that also carries the usage lines (cost) of the model calls that made it: the session's side frames of kind u. */
+static NSDictionary *textReplyWithUsage(NSString *text, TBSession *session)
+{
+    NSMutableDictionary *out = [NSMutableDictionary dictionaryWithDictionary:reply(200, [text dataUsingEncoding:NSUTF8StringEncoding], @"text/plain; charset=utf-8")];
+    NSMutableArray *usage = [NSMutableArray array];
+    unsigned i;
+    for (i = 0; i < [session->side count]; i++)
+        if ([[[session->side objectAtIndex:i] objectForKey:@"kind"] isEqualToString:@"u"])
+            [usage addObject:[[session->side objectAtIndex:i] objectForKey:@"text"]];
+    if ([usage count])
+        [out setObject:usage forKey:@"usage"];
+    return out;
+}
+
 static NSDictionary *textReply(int status, NSString *text)
 {
     return reply(status, [text dataUsingEncoding:NSUTF8StringEncoding], @"text/plain; charset=utf-8");
@@ -352,7 +366,7 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
                        @"use at most three searches in all, and none for models you already know. You must answer every model line you are given. Reply with one line per model in the form provider|model|note, copying the first two fields exactly (no titles, no brackets), and nothing else."
                 prompt:TBString([messages lastObject], @"content")];
             [TBRun finish:session->run];
-            return textReply(200, text);
+            return textReplyWithUsage(text, session);
         }
         if ([path isEqualToString:@"/v1/title"] || [path isEqualToString:@"/v1/summarize"] || [path isEqualToString:@"/v1/memory"] || [path isEqualToString:@"/v1/route"]) {
             id incoming = TBJSONParse(body, NULL);
@@ -380,7 +394,7 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             session = [[[TBSession alloc] initWithRun:[TBRun runWithId:[NSString stringWithFormat:@"side-%p", body]] options:nil frames:nil] autorelease];
             text = [session completeProvider:provider model:[TBString(incoming, @"model") length] ? TBString(incoming, @"model") : nil system:system messages:messages];
             [TBRun finish:session->run];
-            return textReply(200, [path isEqualToString:@"/v1/title"] ? cleanTitle(text) : text);
+            return textReplyWithUsage([path isEqualToString:@"/v1/title"] ? cleanTitle(text) : text, session);
         }
     } @catch (NSException *exception) {
         return textReply(400, [[exception reason] stringByAppendingString:@"\n"]);

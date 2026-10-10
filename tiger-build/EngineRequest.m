@@ -65,6 +65,7 @@
 - (void)dealloc
 {
     [payload release];
+    [usageEvents release];
     [context release];
     [path release];
     [super dealloc];
@@ -94,6 +95,7 @@
 {
     statusCode = [[result objectForKey:@"status"] intValue];
     [payload setData:[result objectForKey:@"body"]];
+    usageEvents = [[result objectForKey:@"usage"] retain];
     [self complete];
     [self release];
 }
@@ -119,6 +121,14 @@
     [self complete];
 }
 
+- (NSArray *)usage { return usageEvents; }
+- (NSArray *)takeUsage
+{
+    NSArray *taken = [[usageEvents retain] autorelease];
+    [usageEvents release];
+    usageEvents = nil;
+    return taken;
+}
 - (int)status { return statusCode; }
 - (BOOL)ok { return statusCode == 200; }
 - (BOOL)timedOut { return NO; }
