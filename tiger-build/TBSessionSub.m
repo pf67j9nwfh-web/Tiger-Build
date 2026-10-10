@@ -168,7 +168,7 @@ static void noteCard(TBSubJob *job, NSString *text)
 
 static int cpuCount(void)
 {
-    int n = (int)[[NSProcessInfo processInfo] processorCount];
+    int n = TBCPUCount();
     return n < 1 ? 1 : n;
 }
 
@@ -231,7 +231,7 @@ static NSString *policy(void)
         [description appendFormat:@" You may give each task its own model. Match the model to the task: a small, fast, inexpensive model for simple, mechanical or narrow work (searching, "
             "extracting, summarizing, checking), and keep your own model or a stronger one for hard reasoning. The cost of every helper counts toward the chat. Models (provider|model|notes):\n%@", listing];
     } else if (![policy() isEqualToString:@"same"])
-        [description appendFormat:@" Every helper runs on %@.", [policy() stringByReplacingOccurrencesOfString:@"|" withString:@"/"]];
+        [description appendFormat:@" Every helper runs on %@.", [[policy() componentsSeparatedByString:@"|"] componentsJoinedByString:@"/"]];
     else
         [description appendString:@" Every helper runs on the same model as this chat."];
     return [NSDictionary dictionaryWithObjectsAndKeys:@"function", @"type", kSubTool, @"name", description, @"description",
@@ -310,7 +310,7 @@ static NSString *policy(void)
         job->provider = [turnProvider copy];
         job->model = [turnModel copy];
         if ([rule rangeOfString:@"|"].location != NSNotFound)
-            spec = [rule stringByReplacingOccurrencesOfString:@"|" withString:@"/"];   /* fixed by Preferences */
+            spec = [[rule componentsSeparatedByString:@"|"] componentsJoinedByString:@"/"];   /* fixed by Preferences */
         else if (![rule isEqualToString:@"choose"])
             spec = @"";
         if ([spec length]) {

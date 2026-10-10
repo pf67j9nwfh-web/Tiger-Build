@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3
+- **Auto model and cost**: the call that picks a model, the background model notes, and chat titles, summaries and memory updates now count toward the chat's cost and your spending limits (notes, which belong to no chat, toward the day's total).
+- **Subagents**: a live progress card (each helper's model, steps and current tool), settings for how many tasks a request may hold and how many run at once, and a choice of which model helpers use: the model picks per task (shown the usable models with notes, so a larger model can send simple work to a smaller one such as Haiku 5.5), always the chat's own, or one fixed model (Tool Settings, Subagents). Sonnet 5.5 and Haiku 5.5 are in the Claude model list.
+- **Skills**: edit a skill in the app, and *From This Chat...* drafts one from the conversation with the chat's model.
+- **Bookmarks**: notes, *Manage Bookmarks...* (searchable), a *Bookmarked only* filter in Find in Chats, and bookmark marks in Markdown, text and PDF exports.
+- **Pinned chats** can be put in order by dragging, or with Chat, *Move Pinned Chat Up / Down*.
+
 ## 2.2
 - **Pin Chat**, a clickable **bookmark star** (shown beside the message under the pointer, and kept on bookmarked ones) (and Chat, *Bookmark Last Message*), **Auto** in the service list (Preferences, *Show Auto in model list*), an option to **play the finished-reply sound for the chat on screen** too, a **shortcut for every menu item**; the chat name box now closes when you click elsewhere; Preferences wording and layout fixes, and the *Let models start subagents* switch moved to Built-in Tools (its setting was not being saved).
 - **Auto model** (optional, Preferences, General): the first message of a new chat is read by the model you choose, which picks the most suitable of your usable models; the chat then uses it as if you had picked it. A chat's context readout and longest answer now follow its model when it changes.

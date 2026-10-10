@@ -9,28 +9,7 @@
 @interface ChatController (IntegrationPrivate)
 - (NSMutableDictionary *)integrationFields;
 - (void)loadIntegrationForm:(NSDictionary *)data;
-/* "The model picks", "The chat's model", or one fixed model of a service you can use */
-- (void)fillSubagentPolicyPopup:(NSString *)saved
-{
-    NSPopUpButton *popup=[[self integrationFields] objectForKey:@"subagents_policy"];
-    NSArray *providers=[[ModelCatalog shared] providers];
-    unsigned i,j;
-    if(!popup)return;
-    [popup removeAllItems];
-    [popup addItemWithTitle:@"The model picks for each task"];[[popup lastItem] setRepresentedObject:@"choose"];
-    [popup addItemWithTitle:@"Always the chat's own model"];[[popup lastItem] setRepresentedObject:@"same"];
-    for(i=0;i<[providers count];i++) {
-        NSString *pid=[[providers objectAtIndex:i] objectForKey:@"id"];
-        NSArray *models=[pid isEqualToString:@"local"]?localModels:[[ModelCatalog shared] modelsForProvider:pid];
-        if(![self providerUsable:pid])continue;
-        for(j=0;j<[models count];j++) {
-            [popup addItemWithTitle:[NSString stringWithFormat:@"Always %@: %@",[[ModelCatalog shared] titleForProvider:pid],[[models objectAtIndex:j] objectForKey:@"title"]]];
-            [[popup lastItem] setRepresentedObject:[NSString stringWithFormat:@"%@|%@",pid,[[models objectAtIndex:j] objectForKey:@"id"]]];
-        }
-    }
-    for(i=0;i<(unsigned)[popup numberOfItems];i++)
-        if([[[popup itemAtIndex:i] representedObject] isEqualToString:[saved length]?saved:@"choose"]){[popup selectItemAtIndex:i];break;}
-}
+- (void)fillSubagentPolicyPopup:(NSString *)saved;
 - (NSDictionary *)integrationFormData;
 - (void)applyClientBackup:(NSDictionary *)backup;
 - (void)integrationStatus:(NSString *)text;
@@ -486,6 +465,28 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
     [[source servers] removeObjectAtIndex:row];
     [list reloadData];
     [self integrationStatus:@"Removed. Save to apply."];
+}
+/* "The model picks", "The chat's model", or one fixed model of a service you can use */
+- (void)fillSubagentPolicyPopup:(NSString *)saved
+{
+    NSPopUpButton *popup=[[self integrationFields] objectForKey:@"subagents_policy"];
+    NSArray *providers=[[ModelCatalog shared] providers];
+    unsigned i,j;
+    if(!popup)return;
+    [popup removeAllItems];
+    [popup addItemWithTitle:@"The model picks for each task"];[[popup lastItem] setRepresentedObject:@"choose"];
+    [popup addItemWithTitle:@"Always the chat's own model"];[[popup lastItem] setRepresentedObject:@"same"];
+    for(i=0;i<[providers count];i++) {
+        NSString *pid=[[providers objectAtIndex:i] objectForKey:@"id"];
+        NSArray *models=[pid isEqualToString:@"local"]?localModels:[[ModelCatalog shared] modelsForProvider:pid];
+        if(![self providerUsable:pid])continue;
+        for(j=0;j<[models count];j++) {
+            [popup addItemWithTitle:[NSString stringWithFormat:@"Always %@: %@",[[ModelCatalog shared] titleForProvider:pid],[[models objectAtIndex:j] objectForKey:@"title"]]];
+            [[popup lastItem] setRepresentedObject:[NSString stringWithFormat:@"%@|%@",pid,[[models objectAtIndex:j] objectForKey:@"id"]]];
+        }
+    }
+    for(i=0;i<(unsigned)[popup numberOfItems];i++)
+        if([[[popup itemAtIndex:i] representedObject] isEqualToString:[saved length]?saved:@"choose"]){[popup selectItemAtIndex:i];break;}
 }
 - (NSDictionary *)integrationFormData
 {

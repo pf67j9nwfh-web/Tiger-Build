@@ -11,5 +11,6 @@
 + (NSString *)load:(NSString *)name;                /* SKILL.md and the names of its other files; raises through TBFail */
 + (NSString *)readFile:(NSString *)path ofSkill:(NSString *)name;
 + (NSDictionary *)parse:(NSString *)text;           /* name, description, body from one SKILL.md text */
++ (BOOL)writeFolder:(NSString *)folder name:(NSString *)name description:(NSString *)description body:(NSString *)body;   /* an existing skill's SKILL.md */
 + (BOOL)createNamed:(NSString *)name description:(NSString *)description body:(NSString *)body;
 @end

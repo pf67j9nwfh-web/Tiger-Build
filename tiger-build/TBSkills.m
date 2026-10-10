@@ -162,6 +162,14 @@ static NSString *fileText(NSString *path, unsigned limit)
     return text;
 }
 
++ (BOOL)writeFolder:(NSString *)folder name:(NSString *)name description:(NSString *)description body:(NSString *)body
+{
+    NSString *text = [NSString stringWithFormat:@"---\nname: %@\ndescription: %@\n---\n%@\n", name, [[description componentsSeparatedByString:@"\n"] componentsJoinedByString:@" "], body];
+    if (![folder hasPrefix:[[self root] stringByAppendingString:@"/"]])
+        return NO;
+    return [[text dataUsingEncoding:NSUTF8StringEncoding] writeToFile:[folder stringByAppendingPathComponent:@"SKILL.md"] atomically:YES];
+}
+
 + (BOOL)createNamed:(NSString *)name description:(NSString *)description body:(NSString *)body
 {
     NSMutableString *safe = [NSMutableString string];

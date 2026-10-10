@@ -243,6 +243,9 @@ static NSString *safeFileStem(NSString *title)
             continue;
         }
         [out appendString:markdown ? (user ? @"## You\n\n" : @"## Assistant\n\n") : (user ? @"You:\n" : @"Assistant:\n")];
+        if ([[message objectForKey:@"bookmark"] boolValue])
+            [out appendFormat:markdown ? @"%C *Bookmarked%@*\n\n" : @"%C Bookmarked%@\n", (unichar)0x2605,
+                [[message objectForKey:@"bookmarkNote"] length] ? [@": " stringByAppendingString:[message objectForKey:@"bookmarkNote"]] : @""];
         if ([text length] > 0)
             [out appendFormat:@"%@\n\n", text];
         if (file) {
@@ -356,6 +359,9 @@ static void appendMessageText(NSMutableAttributedString *out, NSString *text, NS
             continue;
         }
         [out appendAttributedString:[[[NSAttributedString alloc] initWithString:user ? @"You\n" : @"Assistant\n" attributes:user ? userAttrs : botAttrs] autorelease]];
+        if ([[message objectForKey:@"bookmark"] boolValue])
+            [out appendAttributedString:[[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%C Bookmarked%@\n", (unichar)0x2605,
+                [[message objectForKey:@"bookmarkNote"] length] ? [@": " stringByAppendingString:[message objectForKey:@"bookmarkNote"]] : @""] attributes:note] autorelease]];
         if ([text length])
             appendMessageText(out, text, plain, code);
         if (file) {

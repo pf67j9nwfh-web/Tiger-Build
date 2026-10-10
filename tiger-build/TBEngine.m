@@ -74,6 +74,17 @@ BOOL TBTruthy(id v)
     return YES;
 }
 
+#include <sys/sysctl.h>
+
+int TBCPUCount(void)
+{
+    int count = 0;
+    size_t size = sizeof(count);
+    if (sysctlbyname("hw.ncpu", &count, &size, NULL, 0) != 0 || count < 1)
+        return 1;
+    return count;
+}
+
 NSString *TBTrim(NSString *text)
 {
     return [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];

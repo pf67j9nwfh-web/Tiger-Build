@@ -213,7 +213,7 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
         addRow(rows, @"search", @"Web search", NO, YES);
     if ([TBSettings flag:@"consult_enabled"])
         addRow(rows, @"consult", @"Ask other models", NO, NO);
-    if ([TBSettings flag:@"subagents_enabled"] && [[NSProcessInfo processInfo] processorCount] > 1)
+    if ([TBSettings flag:@"subagents_enabled"] && TBCPUCount() > 1)
         addRow(rows, @"subagents", @"Subagents (helpers working at the same time)", NO, NO);
     if ([[TBSkills enabled] count])
         addRow(rows, @"skills", @"Skills", NO, YES);
@@ -368,7 +368,7 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             [TBRun finish:session->run];
             return textReplyWithUsage(text, session);
         }
-        if ([path isEqualToString:@"/v1/title"] || [path isEqualToString:@"/v1/summarize"] || [path isEqualToString:@"/v1/memory"] || [path isEqualToString:@"/v1/route"]) {
+        if ([path isEqualToString:@"/v1/title"] || [path isEqualToString:@"/v1/summarize"] || [path isEqualToString:@"/v1/memory"] || [path isEqualToString:@"/v1/route"] || [path isEqualToString:@"/v1/skill"]) {
             id incoming = TBJSONParse(body, NULL);
             NSArray *messages;
             NSString *provider, *system, *text;
@@ -379,7 +379,12 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             provider = [TBProviders normalize:TBString(incoming, @"provider")];
             system = [path isEqualToString:@"/v1/title"]
                 ? @"You name chats. Reply with a short title of at most six words. No quotes."
-                : ([path isEqualToString:@"/v1/route"]
+                : ([path isEqualToString:@"/v1/skill"]
+                ? @"You turn a conversation into a reusable skill: instructions another assistant can follow the next time the same kind of task comes up. "
+                  @"Work out what the task was, the steps that worked, the choices the person made, and what to avoid. Write for the future assistant, in the imperative, concisely, "
+                  @"without the specifics of this one conversation (names, files, dates) unless they are lasting. "
+                  @"Reply in exactly this form and nothing else:\nname: a-short-name-with-dashes\ndescription: one sentence saying when to use this skill\n---\nthe instructions"
+                : [path isEqualToString:@"/v1/route"]
                 ? @"You choose which AI model should answer a person's first message in a chat. You get a list of models, one per line as provider|model|description, and the message. "
                   @"Pick the single most suitable one: the strongest for hard reasoning, maths or programming; a fast, inexpensive one for simple questions and casual chat; "
                   @"one that sees pictures when files are attached; one with a long context for big documents. When unsure, prefer a capable general model. "

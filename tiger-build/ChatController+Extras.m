@@ -15,6 +15,7 @@
     NSTableView *table;
     NSMutableArray *results;
     NSTextField *count;
+    NSButton *onlyMarked;
     id owner;
 }
 - (id)initWithOwner:(id)controller;
@@ -43,7 +44,7 @@
     [field setAutoresizingMask:NSViewWidthSizable | NSViewMinYMargin];
     [field setDelegate:self];
     [[panel contentView] addSubview:field];
-    count = [[[NSTextField alloc] initWithFrame:NSMakeRect(14, 8, 492, 16)] autorelease];
+    count = [[[NSTextField alloc] initWithFrame:NSMakeRect(14, 8, 310, 16)] autorelease];
     [count setBezeled:NO];
     [count setDrawsBackground:NO];
     [count setEditable:NO];
@@ -52,6 +53,14 @@
     [count setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1]];
     [count setAutoresizingMask:NSViewWidthSizable | NSViewMaxYMargin];
     [[panel contentView] addSubview:count];
+    onlyMarked = [[[NSButton alloc] initWithFrame:NSMakeRect(330, 4, 180, 20)] autorelease];
+    [onlyMarked setButtonType:NSSwitchButton];
+    [onlyMarked setTitle:@"Bookmarked only"];
+    [onlyMarked setFont:[NSFont systemFontOfSize:11]];
+    [onlyMarked setTarget:self];
+    [onlyMarked setAction:@selector(controlTextDidChange:)];
+    [onlyMarked setAutoresizingMask:NSViewMinXMargin | NSViewMaxYMargin];
+    [[panel contentView] addSubview:onlyMarked];
     scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(14, 32, 492, 304)] autorelease];
     [scroll setHasVerticalScroller:YES];
     [scroll setBorderType:NSBezelBorder];
@@ -93,7 +102,7 @@
 {
     (void)note;
     [results removeAllObjects];
-    [results addObjectsFromArray:[owner findResultsFor:[field stringValue]]];
+    [results addObjectsFromArray:[owner findResultsFor:[field stringValue] bookmarkedOnly:[onlyMarked state] == NSOnState]];
     [table reloadData];
     if ([[field stringValue] length] == 0)
         [count setStringValue:@""];
@@ -155,9 +164,17 @@
 /* Every message of every chat in this workspace that has the words in it, newest chats first. */
 - (NSArray *)findResultsFor:(NSString *)query
 {
+    return [self findResultsFor:query bookmarkedOnly:NO];
+}
+
+/* With bookmarkedOnly, just the bookmarked messages (an empty search lists them all), found by their words or their note. */
+- (NSArray *)findResultsFor:(NSString *)query bookmarkedOnly:(BOOL)marked
+{
     NSMutableArray *found = [NSMutableArray array];
     NSString *needle = [query stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     unsigned c;
+    if (marked)
+        return [self bookmarkHitsLimit:200 matching:needle];
     if ([needle length] == 0)
         return found;
     for (c = 0; c < [chats count] && [found count] < 200; c++) {

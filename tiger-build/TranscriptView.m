@@ -1845,6 +1845,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             item=[[[NSMenuItem alloc] initWithTitle:[[message objectForKey:@"bookmark"] boolValue]?@"Remove Bookmark":@"Bookmark This Message" action:@selector(bookmarkHere:) keyEquivalent:@""] autorelease];
             [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
         }
+        if([[message objectForKey:@"bookmark"] boolValue]&&[dropTarget respondsToSelector:@selector(setBookmarkNoteOfMessage:)]) {
+            item=[[[NSMenuItem alloc] initWithTitle:@"Bookmark Note..." action:@selector(bookmarkNoteHere:) keyEquivalent:@""] autorelease];
+            [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
+        }
         if([dropTarget respondsToSelector:@selector(branchFromMessage:)]) {
             item=[[[NSMenuItem alloc] initWithTitle:@"Branch Chat From Here" action:@selector(branchFromHere:) keyEquivalent:@""] autorelease];
             [item setTarget:self];[item setRepresentedObject:message];[menu addItem:item];
@@ -1938,6 +1942,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 - (void)editFromHere:(id)sender
 {
     [dropTarget performSelector:@selector(editFromMessage:) withObject:[sender representedObject]];
+}
+
+- (void)bookmarkNoteHere:(id)sender
+{
+    [dropTarget performSelector:@selector(setBookmarkNoteOfMessage:) withObject:[sender representedObject]];
 }
 
 - (void)bookmarkHere:(id)sender

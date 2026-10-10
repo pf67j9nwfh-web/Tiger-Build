@@ -30,8 +30,13 @@
 - (void)editMemory:(id)sender;
 - (IBAction)editParameters:(id)sender;
 - (IBAction)bookmarkLastMessage:(id)sender;
+- (IBAction)showBookmarkManager:(id)sender;
+- (NSArray *)bookmarkHitsLimit:(unsigned)limit matching:(NSString *)words;
+- (void)setBookmarkNoteOfMessage:(NSMutableDictionary *)message;
+- (NSMutableDictionary *)currentChatForBookmarks;
 - (void)bookmarkMessage:(NSMutableDictionary *)message;
 - (IBAction)showSkills:(id)sender;
+- (void)draftSkillFromChatFor:(id)win;
 - (void)modelDidChangeForChat:(NSMutableDictionary *)chat;
 - (void)reconcileModelOfChat:(NSMutableDictionary *)chat;
 - (BOOL)autoModelWanted;
@@ -41,6 +46,10 @@
 - (BOOL)autoListed;
 - (int)insertChatAtTop:(NSMutableDictionary *)chat;
 - (IBAction)togglePin:(id)sender;
+- (IBAction)movePinnedUp:(id)sender;
+- (int)pinnedCount;
+- (IBAction)movePinnedDown:(id)sender;
+- (void)registerPinDrag;
 - (void)autoListingChanged;
 - (void)scheduleModelNotes;
 - (IBAction)updateModelNotes:(id)sender;
@@ -169,6 +178,7 @@
 
 @interface ChatController (Extras)
 - (NSArray *)findResultsFor:(NSString *)query;
+- (NSArray *)findResultsFor:(NSString *)query bookmarkedOnly:(BOOL)marked;
 - (void)openFindResult:(NSDictionary *)hit;
 - (IBAction)showFind:(id)sender;
 - (IBAction)editInstructions:(id)sender;

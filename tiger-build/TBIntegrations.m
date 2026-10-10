@@ -132,7 +132,7 @@ static NSArray *validated(id list, BOOL forceOff)
         [out setObject:[NSNumber numberWithBool:[TBSettings flag:[flagNames() objectAtIndex:i]]] forKey:[flagNames() objectAtIndex:i]];
     [out setObject:[NSNumber numberWithInt:[self steps]] forKey:@"max_tool_steps"];
     [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_tasks" fallback:8 low:1 high:16]] forKey:@"subagents_tasks"];
-    [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_max" fallback:MIN(4, (int)[[NSProcessInfo processInfo] processorCount]) low:1 high:8]] forKey:@"subagents_max"];
+    [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_max" fallback:MIN(4, TBCPUCount()) low:1 high:8]] forKey:@"subagents_max"];
     [out setObject:[self subagentPolicy] forKey:@"subagents_policy"];
     [out setObject:[self provider] forKey:@"search_provider"];
     [out setObject:@"" forKey:@"search_api_key"];

@@ -16,6 +16,7 @@ NSArray *TBArray(id container, NSString *key);
 long long TBInteger(id container, NSString *key);
 BOOL TBTruth(id container, NSString *key);
 NSString *TBTrim(NSString *text);
+int TBCPUCount(void);                  /* processors in this Mac (NSProcessInfo has no processorCount before 10.5) */
 BOOL TBTruthy(id value);   /* non-empty text or collection, true number, any other object */
 
 /* Keys and settings. The service keys are in the Keychain; the rest in the preferences. Names are the relay's:

@@ -664,7 +664,8 @@ static NSMutableArray *allControllers = nil;
     [table setDelegate:self];
     [table setRowHeight:20];
     [table setFont:[NSFont systemFontOfSize:13]];
-    [table setToolTip:@"Double-click a chat to rename it."];
+    [table setToolTip:@"Double-click a chat to rename it. Drag a pinned chat to put the pinned ones in order."];
+    [self registerPinDrag];
     [chatScroll setDocumentView:table];
     [sidePane addSubview:chatScroll];
 
@@ -1100,7 +1101,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
     /* the ones added in 2.2 that take Option as well */
     NSSet *optionOnly = [NSSet setWithObjects:@"copyDiagnostics:", @"checkForUpdates:", @"forgetMCPSignIns:", @"uninstallTigerBuild:", @"showSkills:", @"editParameters:",
-        @"quickAsk:", @"showCostReport:", @"importOtherExport:", @"lockNow:", @"commanderRemote:", nil];
+        @"quickAsk:", @"showCostReport:", @"movePinnedUp:", @"movePinnedDown:", @"importOtherExport:", @"lockNow:", @"commanderRemote:", nil];
     unsigned i;
     for (i = 0; i < [menu numberOfItems]; i++) {
         NSMenuItem *item = [menu itemAtIndex:i];
@@ -1284,6 +1285,10 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
         }
         item = [[[NSMenuItem alloc] initWithTitle:@"Find in Chats..." action:@selector(showFind:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Move Pinned Chat Up" action:@selector(movePinnedUp:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Move Pinned Chat Down" action:@selector(movePinnedDown:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Bookmark Last Message" action:@selector(bookmarkLastMessage:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Pin Chat" action:@selector(togglePin:) keyEquivalent:@""] autorelease];
@@ -1440,9 +1445,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",
             @"D",@"copyDiagnostics:",@"U",@"checkForUpdates:",@"F",@"forgetMCPSignIns:",@"X",@"uninstallTigerBuild:",
-            @"b",@"bookmarkLastMessage:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
+            @"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
             @"S",@"savePromptFromInput:",@"L",@"managePrompts:",@"O",@"tryWithAnotherModel:",@"j",@"quickAsk:",
-            @"c",@"showCostReport:",@"I",@"importOtherExport:",@"x",@"lockNow:",@"u",@"commanderRemote:",nil];
+            @"c",@"showCostReport:",[NSString stringWithFormat:@"%C",(unichar)NSUpArrowFunctionKey],@"movePinnedUp:",[NSString stringWithFormat:@"%C",(unichar)NSDownArrowFunctionKey],@"movePinnedDown:",@"I",@"importOtherExport:",@"x",@"lockNow:",@"u",@"commanderRemote:",nil];
         unsigned g;
         for(g=0;g<[bar numberOfItems];g++)
             applyMenuShortcuts([[bar itemAtIndex:g] submenu], shortcuts);
@@ -2422,6 +2427,14 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return ![self anyRunActive];
     if ([item action] == @selector(deleteChat:))
         return !busy && [table selectedRow] >= 0;
+    if ([item action] == @selector(movePinnedUp:)) {
+        int row = (int)[chats indexOfObjectIdenticalTo:current];
+        return !busy && row > 0 && row < [self pinnedCount];
+    }
+    if ([item action] == @selector(movePinnedDown:)) {
+        int row = (int)[chats indexOfObjectIdenticalTo:current];
+        return !busy && row >= 0 && row < [self pinnedCount] - 1;
+    }
     if ([item action] == @selector(bookmarkLastMessage:))
         return current != nil;
     if ([item action] == @selector(togglePin:)) {
@@ -2658,7 +2671,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.2";
+        version = @"2.3";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];
