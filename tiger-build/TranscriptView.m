@@ -373,6 +373,28 @@ NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font)
 #endif
 
 /* The bookmark star at a bubble's top corner: an outline to click, filled yellow once the message is bookmarked. */
+/* "in 1.2k  out 340  5.2s" for a finished reply that has its numbers, or nil */
+static NSString *tokenCount(int n)
+{
+    return n >= 1000 ? [NSString stringWithFormat:@"%.1fk", n / 1000.0] : [NSString stringWithFormat:@"%d", n];
+}
+
+static NSString *statsLine(NSDictionary *message)
+{
+    double seconds = [[message objectForKey:@"statsSeconds"] doubleValue];
+    int in = [[message objectForKey:@"statsIn"] intValue], out = [[message objectForKey:@"statsOut"] intValue];
+    NSMutableArray *parts = [NSMutableArray array];
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"] || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"])
+        return nil;
+    if (in + out > 0) {
+        [parts addObject:[NSString stringWithFormat:@"in %@", tokenCount(in)]];
+        [parts addObject:[NSString stringWithFormat:@"out %@", tokenCount(out)]];
+    }
+    if (seconds > 0)
+        [parts addObject:seconds < 60 ? [NSString stringWithFormat:@"%.1fs", seconds] : [NSString stringWithFormat:@"%dm %02ds", (int)seconds / 60, (int)seconds % 60]];
+    return [parts count] ? [parts componentsJoinedByString:@"  -  "] : nil;
+}
+
 static NSRect bookmarkStarRect(NSRect bubble, BOOL fromUser, float fullWidth)
 {
     /* beside the bubble, away from the page edge; inside its top corner when there is no room */
@@ -773,6 +795,13 @@ static float transcriptScale = 0;
     }
 }
 
+- (void)statsSettingChanged:(NSNotification *)note
+{
+    (void)note;
+    [self layoutForWidth:layoutWidth visibleHeight:visibleHeight];
+    [self setNeedsDisplay:YES];
+}
+
 - (void)textScaleChanged:(NSNotification *)note
 {
     (void)note;
@@ -801,6 +830,7 @@ static float transcriptScale = 0;
     [self rebuildFonts];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(textScaleChanged:) name:@"TBTextScaleChanged" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(themeChanged:) name:TBThemeChangedNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(statsSettingChanged:) name:@"TBStatsChanged" object:nil];
     return self;
 }
 
@@ -1497,6 +1527,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             if (videoW + 34 > bubble.size.width)
                 bubble.size.width = videoW + 34;
             bubble.size.height = used.size.height + 18;
+            if (!typing && statsLine(message)) {
+                bubble.size.height += 13;
+                [box setObject:statsLine(message) forKey:@"stats"];
+            }
             if (imageH > 0)
                 bubble.size.height += imageH + 8;
             if (videoH > 0)
@@ -1783,6 +1817,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 continue;
             }
             paintBubble(rect, fromUser);
+            if ([box objectForKey:@"stats"]) {
+                NSDictionary *attrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:9], NSFontAttributeName,
+                    [NSColor colorWithCalibratedWhite:0.38 alpha:1], NSForegroundColorAttributeName, nil];
+                [[box objectForKey:@"stats"] drawAtPoint:NSMakePoint(rect.origin.x + 18, rect.origin.y + 5) withAttributes:attrs];
+            }
             if ([box objectForKey:@"message"] && ![[box objectForKey:@"activity"] boolValue])
                 drawBookmarkStar(rect, fromUser, layoutWidth, [[[box objectForKey:@"message"] objectForKey:@"bookmark"] boolValue], [box objectForKey:@"message"] == hoverMessage);
             if ([box objectForKey:@"drawnPanels"])

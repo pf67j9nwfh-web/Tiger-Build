@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2.3
+- **Tokens and time for each reply** (Chat, View, *Show Tokens and Time*, ⌥⇧⌘T): tokens in and out and the time taken, shown under the reply.
 - **Auto model and cost**: the call that picks a model, the background model notes, and chat titles, summaries and memory updates now count toward the chat's cost and your spending limits (notes, which belong to no chat, toward the day's total).
 - **Subagents**: a live progress card (each helper's model, steps and current tool), settings for how many tasks a request may hold and how many run at once, and a choice of which model helpers use: the model picks per task (shown the usable models with notes, so a larger model can send simple work to a smaller one such as Haiku 5.5), always the chat's own, or one fixed model (Tool Settings, Subagents). Sonnet 5.5 and Haiku 5.5 are in the Claude model list.
 - **Skills**: edit a skill in the app, and *From This Chat...* drafts one from the conversation with the chat's model.

@@ -40,6 +40,10 @@
 - (void)modelDidChangeForChat:(NSMutableDictionary *)chat;
 - (void)reconcileModelOfChat:(NSMutableDictionary *)chat;
 - (BOOL)autoModelWanted;
+- (void)noteTurnStats:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
+- (void)markTurnStart:(NSMutableDictionary *)chat;
+- (IBAction)toggleStats:(id)sender;
+- (NSMutableDictionary *)openMessageIn:(NSMutableDictionary *)chat;
 - (void)noteSideUsage:(EngineRequest *)request chat:(NSMutableDictionary *)chat;
 - (void)noteUsage:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
 - (void)spendCheckAfterUsage:(NSDictionary *)event chat:(NSMutableDictionary *)chat;

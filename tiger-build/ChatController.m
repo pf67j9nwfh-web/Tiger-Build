@@ -1101,7 +1101,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
     /* the ones added in 2.2 that take Option as well */
     NSSet *optionOnly = [NSSet setWithObjects:@"copyDiagnostics:", @"checkForUpdates:", @"forgetMCPSignIns:", @"uninstallTigerBuild:", @"showSkills:", @"editParameters:",
-        @"quickAsk:", @"showCostReport:", @"movePinnedUp:", @"movePinnedDown:", @"importOtherExport:", @"lockNow:", @"commanderRemote:", nil];
+        @"quickAsk:", @"showCostReport:", @"movePinnedUp:", @"movePinnedDown:", @"toggleStats:", @"importOtherExport:", @"lockNow:", @"commanderRemote:", nil];
     unsigned i;
     for (i = 0; i < [menu numberOfItems]; i++) {
         NSMenuItem *item = [menu itemAtIndex:i];
@@ -1364,6 +1364,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
                 [item setTarget:self]; [menu addItem:item];
             }
             [menu addItem:[NSMenuItem separatorItem]];
+            item = [[[NSMenuItem alloc] initWithTitle:@"Show Tokens and Time" action:@selector(toggleStats:) keyEquivalent:@""] autorelease];
+            [item setTarget:self]; [menu addItem:item];
+            [menu addItem:[NSMenuItem separatorItem]];
             titles = [NSArray arrayWithObjects:@"Bigger Text", @"Smaller Text", @"Normal Text Size", nil];
             actions[0] = @selector(biggerText:); actions[1] = @selector(smallerText:); actions[2] = @selector(normalTextSize:);
             for (i = 0; i < 3; i++) {
@@ -1447,7 +1450,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",
             @"D",@"copyDiagnostics:",@"U",@"checkForUpdates:",@"F",@"forgetMCPSignIns:",@"X",@"uninstallTigerBuild:",
-            @"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
+            @"T",@"toggleStats:",@"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
             @"S",@"savePromptFromInput:",@"L",@"managePrompts:",@"O",@"tryWithAnotherModel:",@"j",@"quickAsk:",
             @"c",@"showCostReport:",[NSString stringWithFormat:@"%C",(unichar)NSUpArrowFunctionKey],@"movePinnedUp:",[NSString stringWithFormat:@"%C",(unichar)NSDownArrowFunctionKey],@"movePinnedDown:",@"I",@"importOtherExport:",@"x",@"lockNow:",@"u",@"commanderRemote:",nil];
         unsigned g;
@@ -2429,6 +2432,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return ![self anyRunActive];
     if ([item action] == @selector(deleteChat:))
         return !busy && [table selectedRow] >= 0;
+    if ([item action] == @selector(toggleStats:)) {
+        [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"] ? NSOnState : NSOffState];
+        return YES;
+    }
     if ([item action] == @selector(movePinnedUp:)) {
         int row = (int)[chats indexOfObjectIdenticalTo:current];
         return !busy && row > 0 && row < [self pinnedCount];
@@ -3389,6 +3396,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
 {
     [streamingId release];
     streamingId = [[current objectForKey:@"id"] copy];
+    [self markTurnStart:current];
     [self rememberLastUsed];
     [self setBusy:YES];
     /* Auto mode: the chat's model is chosen from its first message; routeArrived: carries on from there. */
@@ -3543,8 +3551,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             format:NULL errorDescription:&uerror];
         if (uerror)
             [uerror release];
-        if ([usage isKindOfClass:[NSDictionary class]])
+        if ([usage isKindOfClass:[NSDictionary class]]) {
             [self noteUsage:usage chat:chat];
+            [self noteTurnStats:usage chat:chat];
+        }
         [text release];
         return;
     }
