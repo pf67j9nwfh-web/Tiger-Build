@@ -35,6 +35,8 @@ static const double kCompactAt = 0.80;
 @interface TBSession (Private)
 - (void)emit:(NSString *)kind text:(NSString *)text;
 - (NSArray *)commanderDefinitions;
+- (TBMCPClient *)startCommanderWithRoot:(NSString *)root screen:(BOOL)screen;
+- (TBMCPClient *)startCommanderWithRoot:(NSString *)root screen:(BOOL)screen forChat:(BOOL)forChat;
 - (NSString *)composeSystemForTools:(NSMutableArray *)tools useTools:(BOOL)useTools provider:(NSString *)provider skip:(NSSet *)skip;
 - (NSDictionary *)runOneCall:(NSDictionary *)call provider:(NSString *)provider;
 - (NSArray *)extraDefinitionsForProvider:(NSString *)provider skip:(NSSet *)skip;

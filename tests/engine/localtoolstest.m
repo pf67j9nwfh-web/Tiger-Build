@@ -85,6 +85,9 @@ int main(int argc, char **argv)
         @try { [TBSkills load:@"Tax-Prep"]; } @catch (NSException *e) { reason = [e reason]; }
         expectThat(reason != nil && [TBSkills systemNote] == nil, @"skills: a switched-off skill cannot be loaded or listed");
         [TBSkills setName:@"Tax-Prep" enabled:YES];
+        expectThat([TBSkills writeFolder:folder name:@"Tax-Prep" description:@"Taxes, edited" body:@"New steps."] && [[[[TBSkills all] objectAtIndex:0] objectForKey:@"description"] isEqualToString:@"Taxes, edited"]
+            && [[TBSkills load:@"Tax-Prep"] hasPrefix:@"New steps."], @"skills: an existing skill can be rewritten");
+        expectThat(![TBSkills writeFolder:@"/etc" name:@"x" description:@"y" body:@"z"], @"skills: only folders inside the skills folder can be written");
         expectThat([[[TBSkills parse:@"---\nname: x\ndescription: \"quoted: yes\"\n---\nBody"] objectForKey:@"description"] isEqualToString:@"quoted: yes"], @"skills: header values may be quoted");
     }
     {

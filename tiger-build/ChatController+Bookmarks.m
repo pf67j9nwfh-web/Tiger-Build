@@ -72,11 +72,6 @@
         NSMenuItem *none = [[[NSMenuItem alloc] initWithTitle:@"No Bookmarks (click the star beside a message)" action:NULL keyEquivalent:@""] autorelease];
         [none setEnabled:NO];
         [menu addItem:none];
-        {
-            NSMenuItem *manage = [[[NSMenuItem alloc] initWithTitle:@"Manage Bookmarks..." action:@selector(showBookmarkManager:) keyEquivalent:@""] autorelease];
-            [manage setTarget:self];
-            [menu addItem:manage];
-        }
         return;
     }
     for (i = 0; i < [hits count]; i++) {
@@ -87,13 +82,10 @@
     }
     [menu addItem:[NSMenuItem separatorItem]];
     {
-        NSMenuItem *manage = [[[NSMenuItem alloc] initWithTitle:@"Manage Bookmarks..." action:@selector(showBookmarkManager:) keyEquivalent:@""] autorelease];
-        [manage setTarget:self];
-        [menu addItem:manage];
-    }
-    {
         NSMenuItem *clear = [[[NSMenuItem alloc] initWithTitle:@"Remove All Bookmarks..." action:@selector(removeAllBookmarks:) keyEquivalent:@""] autorelease];
         [clear setTarget:self];
+        [clear setKeyEquivalent:@"b"];
+        [clear setKeyEquivalentModifierMask:NSCommandKeyMask | NSShiftKeyMask | NSAlternateKeyMask];
         [menu addItem:clear];
     }
 }

@@ -52,7 +52,9 @@ static void noteCard(TBSubJob *job, NSString *text);
 
 - (NSString *)answer
 {
-    @synchronized(self) { return [[answer copy] autorelease]; }
+    NSString *copy;
+    @synchronized(self) { copy = [[answer copy] autorelease]; }
+    return copy;
 }
 
 - (void)session:(id)session frame:(NSString *)kind text:(NSString *)text
@@ -159,7 +161,9 @@ static void noteCard(TBSubJob *job, NSString *text)
 
 - (BOOL)finished
 {
-    @synchronized(self) { return done; }
+    BOOL value;
+    @synchronized(self) { value = done; }
+    return value;
 }
 
 @end
