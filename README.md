@@ -174,7 +174,7 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Tool steps.** A reply may use up to 40 tool steps (1 to 1000 in Tools settings; 0 turns the limit off, at your own risk); then Tiger Build stops it and you can say "continue".
 
 - **Model parameters.** Chat → *Model Parameters...* sets a temperature, top P and a longest answer for the chat (or for every new chat in the workspace). Only ticked values are sent. Some models refuse some of them (reasoning models often refuse temperature); the request is then repeated without that value and the chat says so.
-- **Bookmarks.** Every message has a small star beside it: click it to bookmark the message (or use Chat → *Bookmark Last Message*, ⌘B, or right-click → *Bookmark This Message*). Chat → *Bookmarks* lists them across the workspace and jumps to one.
+- **Bookmarks.** A faint star appears beside a message when the pointer is over it: click it to bookmark the message (bookmarked messages keep a yellow star) (or use Chat → *Bookmark Last Message*, ⌘B, or right-click → *Bookmark This Message*). Chat → *Bookmarks* lists them across the workspace and jumps to one.
 - **Pin Chat** (Chat, ⌘D) keeps a chat at the top of the list with a ★; new chats go in below the pinned ones.
 
 **Voice** (optional, off until switched on, under Chat → Voice)

@@ -382,7 +382,7 @@ static NSRect bookmarkStarRect(NSRect bubble, BOOL fromUser, float fullWidth)
     return NSMakeRect(x, NSMaxY(bubble) - 24, 18, 18);
 }
 
-static void drawBookmarkStar(NSRect bubble, BOOL fromUser, float fullWidth, BOOL filled)
+static void drawBookmarkStar(NSRect bubble, BOOL fromUser, float fullWidth, BOOL filled, BOOL hovered)
 {
     NSBezierPath *star = [NSBezierPath bezierPath];
     NSRect hit = bookmarkStarRect(bubble, fromUser, fullWidth);
@@ -397,8 +397,8 @@ static void drawBookmarkStar(NSRect bubble, BOOL fromUser, float fullWidth, BOOL
     if (filled) {
         [[NSColor colorWithCalibratedRed:0.95 green:0.75 blue:0.1 alpha:1.0] set];
         [star fill];
-    } else {
-        [[NSColor colorWithCalibratedWhite:0.5 alpha:0.45] set];
+    } else if (hovered) {
+        [[NSColor colorWithCalibratedWhite:0.5 alpha:0.6] set];
         [star setLineWidth:1.0];
         [star stroke];
     }
@@ -736,6 +736,41 @@ static float transcriptScale = 0;
 - (void)viewDidMoveToWindow
 {
     [self updateTypingTimer];
+    if ([self window] && !hoverTimer)
+        hoverTimer = [[NSTimer scheduledTimerWithTimeInterval:0.15 target:self selector:@selector(hoverTick:) userInfo:nil repeats:YES] retain];
+    else if (![self window] && hoverTimer) {
+        [hoverTimer invalidate];
+        [hoverTimer release];
+        hoverTimer = nil;
+        hoverMessage = nil;
+    }
+}
+
+/* The empty bookmark star is drawn only beside the message the pointer is over. */
+- (void)hoverTick:(NSTimer *)timer
+{
+    NSPoint point;
+    id found = nil;
+    unsigned i;
+    (void)timer;
+    if (![[self window] isVisible] || ![[self window] isKeyWindow])
+        found = nil;
+    else {
+        point = [self convertPoint:[[self window] mouseLocationOutsideOfEventStream] fromView:nil];
+        for (i = 0; i < [boxes count] && !found; i++) {
+            NSDictionary *box = [boxes objectAtIndex:i];
+            NSRect rect;
+            if (![box objectForKey:@"message"] || [[box objectForKey:@"status"] boolValue] || [[box objectForKey:@"activity"] boolValue] || [[box objectForKey:@"typing"] boolValue])
+                continue;
+            rect = [[box objectForKey:@"rect"] rectValue];
+            if (NSPointInRect(point, NSUnionRect(rect, bookmarkStarRect(rect, [[box objectForKey:@"user"] boolValue], layoutWidth))))
+                found = [box objectForKey:@"message"];
+        }
+    }
+    if (found != hoverMessage) {
+        hoverMessage = found;
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void)textScaleChanged:(NSNotification *)note
@@ -774,6 +809,8 @@ static float transcriptScale = 0;
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [typingTimer invalidate];
     [typingTimer release];
+    [hoverTimer invalidate];
+    [hoverTimer release];
     [messages release];
     [boxes release];
     [movieViews release];
@@ -1747,7 +1784,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             }
             paintBubble(rect, fromUser);
             if ([box objectForKey:@"message"] && ![[box objectForKey:@"activity"] boolValue])
-                drawBookmarkStar(rect, fromUser, layoutWidth, [[[box objectForKey:@"message"] objectForKey:@"bookmark"] boolValue]);
+                drawBookmarkStar(rect, fromUser, layoutWidth, [[[box objectForKey:@"message"] objectForKey:@"bookmark"] boolValue], [box objectForKey:@"message"] == hoverMessage);
             if ([box objectForKey:@"drawnPanels"])
                 [self drawCodePanels:[box objectForKey:@"drawnPanels"]];
             if ([box objectForKey:@"fileRect"]) {
@@ -1924,7 +1961,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     for(i=0;i<[boxes count];i++) {
         NSDictionary *starBox=[boxes objectAtIndex:i];
         if([starBox objectForKey:@"message"]&&![[starBox objectForKey:@"status"] boolValue]&&![[starBox objectForKey:@"activity"] boolValue]&&![[starBox objectForKey:@"typing"] boolValue]
-            &&[dropTarget respondsToSelector:@selector(bookmarkMessage:)]&&NSPointInRect(point,bookmarkStarRect([[starBox objectForKey:@"rect"] rectValue],[[starBox objectForKey:@"user"] boolValue],layoutWidth))) {
+            &&[dropTarget respondsToSelector:@selector(bookmarkMessage:)]&&([[[starBox objectForKey:@"message"] objectForKey:@"bookmark"] boolValue]||[starBox objectForKey:@"message"]==hoverMessage)
+            &&NSPointInRect(point,bookmarkStarRect([[starBox objectForKey:@"rect"] rectValue],[[starBox objectForKey:@"user"] boolValue],layoutWidth))) {
             [dropTarget performSelector:@selector(bookmarkMessage:) withObject:[starBox objectForKey:@"message"]];return;
         }
     }

@@ -21,6 +21,8 @@
     id dropTarget;
     int typingPhase;
     NSTimer *typingTimer;
+    NSTimer *hoverTimer;
+    id hoverMessage;                 /* the message under the pointer (not retained), for its bookmark star */
 }
 
 /* How large the text in chats is drawn: 1.0 is the normal size. Kept in the preferences and shared by every window. */
