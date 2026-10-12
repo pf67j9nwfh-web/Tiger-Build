@@ -1622,8 +1622,6 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                     NSRect saveLocal = NSMakeRect(NSMaxX(hr) - 58 - 46, NSMinY(hr), 46, NSHeight(hr));
                     NSRect viewLocal = NSMakeRect(NSMaxX(hr) - 58 - 46 - 46, NSMinY(hr), 46, NSHeight(hr));
                     BOOL isSVG = [[panel objectForKey:@"code"] rangeOfString:@"<svg"].location != NSNotFound;
-                    viewLocal.origin.x += NSMinX(textRect);
-                    viewLocal.origin.y = NSMaxY(textRect) - viewLocal.origin.y - viewLocal.size.height;
                     pr.origin.x += NSMinX(textRect);
                     pr.origin.y = NSMaxY(textRect) - pr.origin.y - pr.size.height;
                     hr.origin.x += NSMinX(textRect);
