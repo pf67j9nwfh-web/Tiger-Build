@@ -3,6 +3,7 @@
 #import <Foundation/Foundation.h>
 #import "TBSession.h"
 #import "TBJSON.h"
+#import "TBModelUpdate.h"
 #import "TBHTTP.h"
 #import "expect.h"
 
@@ -280,6 +281,46 @@ int main(int argc, char **argv)
     expectThat([[TBJSONString([seen objectAtIndex:0]) description] rangeOfString:@"run_subagents"].location == NSNotFound, @"subagents: not offered unless the chat turns them on");
     [d setObject:[base stringByAppendingString:@"/loop-claude"] forKey:@"TBBaseURL.claude"];
     [d removeObjectForKey:@"TBTool.subagents_enabled"];
+
+    /* the model list: models found at the service are tried and the ones that answer are added */
+    {
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tb-live-models-test.plist"];
+        TBRun *run = [TBRun runWithId:@"models-test"];
+        TBSession *session = [[[TBSession alloc] initWithRun:run options:nil frames:nil] autorelease];
+        NSString *summary;
+        NSArray *list;
+        unlink([file fileSystemRepresentation]);
+        [d setObject:file forKey:@"TBLiveModelsPath"];
+        [d setObject:[base stringByAppendingString:@"/list-openai"] forKey:@"TBModelsURL.chatgpt"];
+        [d setObject:[base stringByAppendingString:@"/loop-openai"] forKey:@"TBBaseURL.chatgpt"];
+        fetch(@"/reset");
+        summary = [TBModelUpdate refreshWithSession:session];
+        list = [TBProviders modelsForProvider:@"chatgpt"];
+        expectThat([[[list objectAtIndex:0] objectForKey:@"id"] isEqualToString:@"gpt-9-test"], @"model list: a new model that answers is added at the top");
+        expectThat([summary rangeOfString:@"1 new (gpt-9-test)"].location != NSNotFound, @"model list: the summary names it");
+        {
+            unsigned n, count = 0;
+            for (n = 0; n < [list count]; n++) {
+                NSString *mid = [[list objectAtIndex:n] objectForKey:@"id"];
+                if ([mid isEqualToString:@"gpt-4.1"]) count++;
+                if ([mid rangeOfString:@"embedding"].location != NSNotFound || [mid rangeOfString:@"2025-01-01"].location != NSNotFound || [mid rangeOfString:@"preview"].location != NSNotFound)
+                    count += 100;
+            }
+            expectThat(count == 1, @"model list: embedding, dated and preview models are left out, and a bundled one is not listed twice");
+        }
+        expectThat([[NSDictionary dictionaryWithContentsOfFile:file] objectForKey:@"added"] != nil, @"model list: what was found is kept in a file for the next start");
+        /* a model that does not answer is not added */
+        [TBProviders setAddedModels:[NSArray array] forProvider:@"chatgpt"];
+        unlink([file fileSystemRepresentation]);
+        [d setObject:[base stringByAppendingString:@"/openai-down"] forKey:@"TBBaseURL.chatgpt"];
+        summary = [TBModelUpdate refreshWithSession:session];
+        expectThat([summary rangeOfString:@"no new models"].location != NSNotFound && ![[[[TBProviders modelsForProvider:@"chatgpt"] objectAtIndex:0] objectForKey:@"id"] isEqualToString:@"gpt-9-test"], @"model list: a model that fails the test question is not added");
+        [TBRun finish:run];
+        [TBProviders setAddedModels:[NSArray array] forProvider:@"chatgpt"];
+        [d removeObjectForKey:@"TBLiveModelsPath"];
+        [d removeObjectForKey:@"TBModelsURL.chatgpt"];
+        [d setObject:[base stringByAppendingString:@"/loop-openai"] forKey:@"TBBaseURL.chatgpt"];
+    }
 
     /* Commander that cannot be started: no Commander tools, said so */
     fetch(@"/reset");

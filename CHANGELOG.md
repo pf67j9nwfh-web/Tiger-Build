@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4
+- **SVG support**: `.svg` and `.svgz` files can be attached and are read by `convert_file`: the model gets the source as text and a picture of the drawing (drawn with NanoSVG, plus text in a standard font; not filters, masks or CSS style blocks). An SVG code block in a reply has a *View* button that opens the drawing, and an `.svg` file the model hands over is shown in the chat as well as offered for saving.
+- **The model list updates itself**: Configuration, *Update Model List* (⌥⇧⌘M), and automatically at start and every six hours, asks each service with a key for its models, tests the new chat models with a one-word question and adds those that answer. The README's old "live model list" paragraph described the 1.x relay and is corrected.
+
 ## 2.3
 - **Tokens and time for each reply** (Chat, View, *Show Tokens and Time*, ⌥⇧⌘T): tokens in and out and the time taken, shown under the reply.
 - **Auto model and cost**: the call that picks a model, the background model notes, and chat titles, summaries and memory updates now count toward the chat's cost and your spending limits (notes, which belong to no chat, toward the day's total).

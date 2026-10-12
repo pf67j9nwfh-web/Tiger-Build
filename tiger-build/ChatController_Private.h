@@ -49,6 +49,9 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (void)modelDidChangeForChat:(NSMutableDictionary *)chat;
 - (void)reconcileModelOfChat:(NSMutableDictionary *)chat;
 - (BOOL)autoModelWanted;
+- (IBAction)updateModelList:(id)sender;
+- (void)updateModelListIfDue;
+- (void)refreshCatalog;
 - (void)noteTurnStats:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
 - (void)markTurnStart:(NSMutableDictionary *)chat;
 - (IBAction)toggleStats:(id)sender;

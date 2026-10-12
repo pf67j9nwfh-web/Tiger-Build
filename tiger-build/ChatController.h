@@ -93,6 +93,7 @@
     BOOL naming;
     NSMutableArray *localModels;
     BOOL modelNotesBusy;
+    BOOL modelListBusy;
     NSArray *modelNotesAsked;
     NSArray *autoCandidates;           /* the models offered to the auto-mode chooser while it thinks */
     NSMutableDictionary *prefsFields;

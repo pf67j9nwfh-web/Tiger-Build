@@ -1,4 +1,5 @@
 #import "CMCore.h"
+#import <unistd.h>
 #import <ApplicationServices/ApplicationServices.h>
 
 /* Mouse and keyboard for the main display, so a model can use what a screenshot shows. These are the Tiger-era calls (CGPostMouseEvent,

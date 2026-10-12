@@ -30,7 +30,11 @@
 
 @interface TBProviders : NSObject
 + (NSArray *)providers;                                   /* {id, title} in menu order */
-+ (NSArray *)modelsForProvider:(NSString *)provider;      /* {id, title} */
++ (NSArray *)modelsForProvider:(NSString *)provider;      /* {id, title}: found at the service first, then the bundled ones */
++ (NSArray *)bundledModelsForProvider:(NSString *)provider;
++ (void)setAddedModels:(NSArray *)list forProvider:(NSString *)provider;
++ (NSDictionary *)addedModels;
++ (NSString *)liveModelsPath;
 + (NSString *)defaultModelForProvider:(NSString *)provider;
 + (NSString *)normalize:(NSString *)name;                 /* "openai" -> "chatgpt"; fails on a name it does not know */
 + (NSString *)resolveModel:(NSString *)requested provider:(NSString *)provider;

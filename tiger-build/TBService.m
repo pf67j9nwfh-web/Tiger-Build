@@ -9,6 +9,7 @@
 #import "TBIntegrations.h"
 #import "TBOutputs.h"
 #import "TBSkills.h"
+#import "TBModelUpdate.h"
 
 static NSDictionary *reply(int status, NSData *body, NSString *type)
 {
@@ -350,6 +351,12 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
                 return textReply(400, @"Unknown action.\n");
             }
             return textReply(200, @"ok\n");
+        }
+        if ([method isEqualToString:@"POST"] && [path isEqualToString:@"/v1/models/refresh"]) {
+            TBSession *session = [[[TBSession alloc] initWithRun:[TBRun runWithId:[NSString stringWithFormat:@"models-%p", body]] options:nil frames:nil] autorelease];
+            NSString *summary = [TBModelUpdate refreshWithSession:session];
+            [TBRun finish:session->run];
+            return textReplyWithUsage(summary, session);
         }
         if ([path isEqualToString:@"/v1/profile"]) {
             id incoming = TBJSONParse(body, NULL);

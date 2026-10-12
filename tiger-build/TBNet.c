@@ -679,6 +679,9 @@ finished:
     return rc;
 }
 
+/* NanoSVG (third_party/nanosvg), for SVG pictures, is compiled in here as well. It comes before the decoder's settings below. */
+#include "TBSVG.c"
+
 /* The JPEG XL decoder (third_party/jxldec) is compiled into this object, so every program that has the converter has the decoder. */
 /* gcc 4.0 and 4.2 have no AVX2 and no immintrin.h: the decoder runs its plain-C paths. */
 #define JXL_NO_AVX2 1

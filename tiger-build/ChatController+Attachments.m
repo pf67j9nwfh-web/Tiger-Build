@@ -914,7 +914,7 @@ static void collectStoredPaths(id plist, NSMutableSet *used)
 - (BOOL)relayConverts:(NSString *)path
 {
     NSArray *kinds = [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"ppt", @"xls", @"pages", @"numbers", @"key", @"odt", @"ods", @"odp",
-        @"heic", @"heif", @"webp", @"avif", @"jxl", @"gif", @"jpg", @"jpeg", @"epub", @"zip", @"mp3", @"m4a", @"aac", @"wav", @"aif", @"aiff", @"caf", @"mov", @"mp4", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", nil];
+        @"heic", @"heif", @"webp", @"avif", @"jxl", @"svg", @"svgz", @"gif", @"jpg", @"jpeg", @"epub", @"zip", @"mp3", @"m4a", @"aac", @"wav", @"aif", @"aiff", @"caf", @"mov", @"mp4", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", nil];
     return [kinds containsObject:[[path pathExtension] lowercaseString]];
 }
 

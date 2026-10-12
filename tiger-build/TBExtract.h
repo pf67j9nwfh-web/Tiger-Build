@@ -32,4 +32,5 @@ int TBConvertCommand(const char *file, const char *outdir);
 
 NSData *TBSnappyDecompress(const unsigned char *bytes, unsigned length); /* nil when damaged */
 NSData *TBGunzip(NSData *data, unsigned limit);
+NSData *TBSVGPreviewJPEG(NSData *svg, int longest);   /* a picture of an SVG (or gzipped .svgz) drawing, or nil */
 NSData *TBJPEGFromWebP(NSData *data, int longest);   /* the first picture of a WebP as a JPEG, or nil */

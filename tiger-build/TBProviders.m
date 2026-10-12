@@ -305,10 +305,56 @@ static NSString *baseOverride(NSString *provider, NSString *standard)
     return providerList;
 }
 
-+ (NSArray *)modelsForProvider:(NSString *)provider
++ (NSString *)liveModelsPath
+{
+    NSString *over = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBLiveModelsPath"];   /* for tests */
+    return [over length] ? over : [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/model-live.plist"];
+}
+
+/* Models found at the services themselves (TBModelUpdate): kept in a file so they are there at the next start, offline too. */
+static NSMutableDictionary *addedModels = nil;
+
+static void loadAdded(void)
+{
+    NSDictionary *saved;
+    if (addedModels)
+        return;
+    saved = [NSDictionary dictionaryWithContentsOfFile:[TBProviders liveModelsPath]];
+    addedModels = [[NSMutableDictionary alloc] initWithDictionary:[[saved objectForKey:@"added"] isKindOfClass:[NSDictionary class]] ? [saved objectForKey:@"added"] : [NSDictionary dictionary]];
+}
+
++ (void)setAddedModels:(NSArray *)list forProvider:(NSString *)provider
+{
+    loadAdded();
+    if ([list count])
+        [addedModels setObject:list forKey:provider];
+    else
+        [addedModels removeObjectForKey:provider];
+}
+
++ (NSDictionary *)addedModels
+{
+    loadAdded();
+    return addedModels;
+}
+
++ (NSArray *)bundledModelsForProvider:(NSString *)provider
 {
     loadCatalog();
     return [modelLists objectForKey:provider];
+}
+
+/* The models that came with the app, with any found since at the top (the newest are usually the ones wanted). */
++ (NSArray *)modelsForProvider:(NSString *)provider
+{
+    NSArray *bundled, *added;
+    loadCatalog();
+    loadAdded();
+    bundled = [modelLists objectForKey:provider];
+    added = [addedModels objectForKey:provider];
+    if (![added count])
+        return bundled;
+    return [added arrayByAddingObjectsFromArray:bundled];
 }
 
 + (NSString *)defaultModelForProvider:(NSString *)provider

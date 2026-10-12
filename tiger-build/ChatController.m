@@ -6,6 +6,7 @@
 #import "TBIntegrations.h"
 #import "TBEngine.h"
 #import "TBTheme.h"
+#import "TBExtract.h"
 #import "TBProviders.h"
 #import <CoreServices/CoreServices.h>
 
@@ -1100,7 +1101,7 @@ static NSMutableArray *allControllers = nil;
 static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
     /* the items whose shortcut takes Option as well as Command */
-    NSSet *optionOnly = [NSSet setWithObjects:@"biggerText:", @"checkForUpdates:", @"chooseVoice:", @"commanderAutostart:", @"commanderIP:", @"commanderRemote:", @"copyDiagnostics:", @"editInstructions:", @"editParameters:", @"exportChat:", @"forgetMCPSignIns:", @"importChat:", @"importOtherExport:", @"lockNow:", @"movePinnedDown:", @"movePinnedUp:", @"normalTextSize:", @"quickAsk:", @"showAbout:", @"showAppearance:", @"showCostReport:", @"showIntegrations:", @"showSkills:", @"showWorkspaceSettings:", @"smallerText:", @"speakLast:", @"stopSpeaking:", @"toggleAutoSpeak:", @"toggleDictation:", @"toggleDictationSend:", @"toggleStats:", @"toggleVoiceCommands:", @"uninstallTigerBuild:", nil];
+    NSSet *optionOnly = [NSSet setWithObjects:@"updateModelList:", @"biggerText:", @"checkForUpdates:", @"chooseVoice:", @"commanderAutostart:", @"commanderIP:", @"commanderRemote:", @"copyDiagnostics:", @"editInstructions:", @"editParameters:", @"exportChat:", @"forgetMCPSignIns:", @"importChat:", @"importOtherExport:", @"lockNow:", @"movePinnedDown:", @"movePinnedUp:", @"normalTextSize:", @"quickAsk:", @"showAbout:", @"showAppearance:", @"showCostReport:", @"showIntegrations:", @"showSkills:", @"showWorkspaceSettings:", @"smallerText:", @"speakLast:", @"stopSpeaking:", @"toggleAutoSpeak:", @"toggleDictation:", @"toggleDictationSend:", @"toggleStats:", @"toggleVoiceCommands:", @"uninstallTigerBuild:", nil];
     unsigned i;
     for (i = 0; i < [menu numberOfItems]; i++) {
         NSMenuItem *item = [menu itemAtIndex:i];
@@ -1187,6 +1188,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             [item setTarget:self]; [menu addItem:item];
         }
         [menu addItem:[NSMenuItem separatorItem]];
+        item = [[[NSMenuItem alloc] initWithTitle:@"Update Model List" action:@selector(updateModelList:) keyEquivalent:@""] autorelease];
+        [item setTarget:self]; [menu addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Forget Saved MCP Sign-Ins..." action:@selector(forgetMCPSignIns:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [menu addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Uninstall Tiger Build..." action:@selector(uninstallTigerBuild:) keyEquivalent:@""] autorelease];
@@ -1439,7 +1442,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",
             @"D",@"copyDiagnostics:",@"U",@"checkForUpdates:",@"F",@"forgetMCPSignIns:",@"X",@"uninstallTigerBuild:",
-            @"T",@"toggleStats:",@"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
+            @"T",@"toggleStats:",@"M",@"updateModelList:",@"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
             @"S",@"savePromptFromInput:",@"L",@"managePrompts:",@"O",@"tryWithAnotherModel:",@"j",@"quickAsk:",
             @"c",@"showCostReport:",[NSString stringWithFormat:@"%C",(unichar)NSUpArrowFunctionKey],@"movePinnedUp:",[NSString stringWithFormat:@"%C",(unichar)NSDownArrowFunctionKey],@"movePinnedDown:",@"I",@"importOtherExport:",@"x",@"lockNow:",@"u",@"commanderRemote:",nil];
         unsigned g;
@@ -1651,6 +1654,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     [self setRelayProblem:nil];
     [self moveUntouchedChatsToUsableProvider];
     [self scheduleModelNotes];
+    [self updateModelListIfDue];
     /* Keep a copy so the menus match the relay next launch, even offline. */
     [[text dataUsingEncoding:NSUTF8StringEncoding]
         writeToFile:[[self supportDir] stringByAppendingPathComponent:@"models.txt"] atomically:YES];
@@ -2669,7 +2673,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.3";
+        version = @"2.4";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];
@@ -2712,6 +2716,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         @"Mbed TLS (Apache-2.0) and the Mozilla CA certificate list (MPL-2.0): secure connections.\n\n"
         @"libwebp (BSD-3-Clause), libaom (BSD-2-Clause with a patent grant) and libde265 (LGPL-3.0, a separate library in Contents/Frameworks): WebP, AVIF and HEIC pictures.\n\n"
         @"jxldec by Krzysztof Kowalczyk, with changes for the old Macs (see third_party/jxldec): JPEG XL pictures.\n\n"
+        @"NanoSVG by Mikko Mononen (zlib licence, third_party/nanosvg): drawing SVG pictures.\n\n"
         @"OpenSSH (BSD) with LibreSSL's libcrypto (ISC, and the OpenSSL and SSLeay licences): the ssh tools and Tiger Build's SSH server.\n\n"
         @"sshfs 2.2 (GPL-2.0) with glib (LGPL-2.1), installed in /usr/local/tbssh: mounting another computer's folder. Its source and patch are in third_party/sshfs.\n\n"
         @"Twemoji, copyright Twitter, Inc. and other contributors (CC-BY 4.0): emoji pictures."];
@@ -2819,6 +2824,13 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         if ([request ok] && [[request data] length] > 0 && [[request data] writeToFile:path atomically:YES]) {
             [message setObject:path forKey:@"file"];
             [message setObject:[NSString stringWithFormat:@"%@ (%@)", TBDisplayFileName(path), TBHumanSize([[request data] length])] forKey:@"text"];
+            if ([[[path pathExtension] lowercaseString] isEqualToString:@"svg"] || [[[path pathExtension] lowercaseString] isEqualToString:@"svgz"]) {
+                /* a drawing the model made is shown as well as offered for saving */
+                NSData *preview = TBSVGPreviewJPEG([request data], 900);
+                NSString *previewPath = [path stringByAppendingString:@".preview.jpg"];
+                if (preview && [preview writeToFile:previewPath atomically:YES])
+                    [message setObject:previewPath forKey:@"image"];
+            }
         } else {
             [message setObject:[NSString stringWithFormat:@"%@ could not be read.", TBDisplayFileName(path)] forKey:@"text"];
         }

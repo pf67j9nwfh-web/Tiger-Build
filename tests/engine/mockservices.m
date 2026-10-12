@@ -323,6 +323,9 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             NSData *body = TBJSONData(seen);
             pthread_mutex_unlock(&lock);
             sendBody(fd, 200, @"application/json", body, nil);
+        } else if ([path isEqualToString:@"/list-openai"]) {
+            /* a service's own list of models: a new chat model, an embedding model, a dated copy, a preview, and one already bundled */
+            sendJSON(fd, 200, D(A(D(@"gpt-9-test", @"id"), D(@"text-embedding-9", @"id"), D(@"gpt-9-test-2025-01-01", @"id"), D(@"gpt-9-bad-preview", @"id"), D(@"gpt-4.1", @"id")), @"data"));
         } else if ([path isEqualToString:@"/legacy/sse"]) {
             legacyStream(fd, headers);
         } else if (oauthHandle(fd, method, fullPath, headers, raw)) {

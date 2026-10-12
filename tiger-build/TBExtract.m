@@ -14,6 +14,7 @@
 #import <QTKit/QTKit.h>
 #endif
 #import "../third_party/jxldec/jxl.h"
+#import "TBSVG.h"
 #import "TBOffice.h"
 #import "TBSupport.h"
 
@@ -552,8 +553,10 @@ static BOOL isWebP(NSData *data)
     return [data length] > 16 && !memcmp(b, "RIFF", 4) && !memcmp(b + 8, "WEBP", 4);
 }
 
-/* The JPEG of a decoded RGBA picture, laid on white (a JPEG has no transparency). */
-static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int stride, int longest)
+static void drawSVGTexts(CGContextRef context, NSArray *texts, double k, int dh);
+
+/* The JPEG of a decoded RGBA picture, laid on white (a JPEG has no transparency). texts, when given, are SVG text runs drawn over it (see TBSVGText). */
+static NSData *jpegFromRGBAText(unsigned char *pixels, int width, int height, int stride, int longest, NSArray *texts)
 {
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
     CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixels, (size_t)stride * height, NULL);
@@ -573,6 +576,8 @@ static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int st
         CGContextFillRect(context, CGRectMake(0, 0, dw, dh));
         CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
         CGContextDrawImage(context, CGRectMake(0, 0, dw, dh), image);
+        if ([texts count])
+            drawSVGTexts(context, texts, (double)dw / width, dh);
         flat = CGBitmapContextCreateImage(context);
         if (flat) {
             CGImageDestinationRef destination = CGImageDestinationCreateWithData((CFMutableDataRef)out, CFSTR("public.jpeg"), 1, NULL);
@@ -593,6 +598,11 @@ static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int st
     CGDataProviderRelease(provider);
     CGColorSpaceRelease(space);
     return result;
+}
+
+static NSData *jpegFromRGBA(unsigned char *pixels, int width, int height, int stride, int longest)
+{
+    return jpegFromRGBAText(pixels, width, height, stride, longest, nil);
 }
 
 static BOOL isJXL(NSData *data)
@@ -662,6 +672,331 @@ static NSArray *jpegFramesFromAnimatedWebP(NSData *data, int longest, int *total
     }
     WebPAnimDecoderDelete(decoder);
     return [out count] ? out : nil;
+}
+
+/* ---- SVG ---- */
+
+/* An SVG file or a gzipped one (.svgz): the text of the drawing, or nil. The first bytes are looked at, not the name alone. */
+static NSData *svgBytes(NSData *data)
+{
+    const unsigned char *b = [data bytes];
+    if ([data length] > 18 && b[0] == 0x1f && b[1] == 0x8b)
+        return TBGunzip(data, 20 * 1024 * 1024);
+    return data;
+}
+
+static BOOL looksLikeSVG(NSData *data)
+{
+    NSUInteger n = [data length] < 4096 ? [data length] : 4096;
+    NSString *head;
+    if (n < 8)
+        return NO;
+    head = [[[NSString alloc] initWithBytes:[data bytes] length:n encoding:NSISOLatin1StringEncoding] autorelease];
+    return [head rangeOfString:@"<svg"].location != NSNotFound;
+}
+
+/* ---- SVG text: NanoSVG draws no <text>, so the words are found here (NSXMLParser) and drawn over the picture with Core Graphics ----
+   Handled: text and tspan with x, y, font-size, fill, font-weight, text-anchor, opacity, from attributes or a style attribute, inherited from groups, and the
+   transform of the groups around them, with the viewBox. Not handled: CSS in <style> blocks, textPath, lists of per-letter positions, fonts other than Helvetica. */
+
+typedef struct { double a, b, c, d, e, f; } SVGMatrix;
+
+static SVGMatrix svgMul(SVGMatrix m, SVGMatrix n)   /* apply n first, then m */
+{
+    SVGMatrix r;
+    r.a = m.a * n.a + m.c * n.b;  r.b = m.b * n.a + m.d * n.b;
+    r.c = m.a * n.c + m.c * n.d;  r.d = m.b * n.c + m.d * n.d;
+    r.e = m.a * n.e + m.c * n.f + m.e;  r.f = m.b * n.e + m.d * n.f + m.f;
+    return r;
+}
+
+static SVGMatrix svgIdentity(void) { SVGMatrix m = {1, 0, 0, 1, 0, 0}; return m; }
+
+/* the numbers inside "name(1 2, 3)" */
+static int svgNumbers(NSString *text, double *out, int max)
+{
+    NSScanner *scanner = [NSScanner scannerWithString:text];
+    NSCharacterSet *skip = [NSCharacterSet characterSetWithCharactersInString:@" ,\t\r\n"];
+    double v;
+    int n = 0;
+    [scanner setCharactersToBeSkipped:skip];
+    while (n < max && [scanner scanDouble:&v])
+        out[n++] = v;
+    return n;
+}
+
+static SVGMatrix svgParseTransform(NSString *text)
+{
+    SVGMatrix total = svgIdentity();
+    NSScanner *scanner = [NSScanner scannerWithString:text];
+    NSString *name, *args;
+    [scanner setCharactersToBeSkipped:[NSCharacterSet characterSetWithCharactersInString:@" ,\t\r\n"]];
+    while ([scanner scanUpToString:@"(" intoString:&name] && [scanner scanString:@"(" intoString:NULL] && [scanner scanUpToString:@")" intoString:&args]) {
+        double n[6] = {0, 0, 0, 0, 0, 0};
+        int count = svgNumbers(args, n, 6);
+        SVGMatrix m = svgIdentity();
+        [scanner scanString:@")" intoString:NULL];
+        name = TBTrim(name);
+        if ([name isEqualToString:@"translate"] && count >= 1) { m.e = n[0]; m.f = count > 1 ? n[1] : 0; }
+        else if ([name isEqualToString:@"scale"] && count >= 1) { m.a = n[0]; m.d = count > 1 ? n[1] : n[0]; }
+        else if ([name isEqualToString:@"rotate"] && count >= 1) {
+            double r = n[0] * 3.14159265358979 / 180, cs = cos(r), sn = sin(r);
+            m.a = cs; m.b = sn; m.c = -sn; m.d = cs;
+            if (count >= 3) { m.e = n[1] - cs * n[1] + sn * n[2]; m.f = n[2] - sn * n[1] - cs * n[2]; }
+        } else if ([name isEqualToString:@"matrix"] && count == 6) { m.a = n[0]; m.b = n[1]; m.c = n[2]; m.d = n[3]; m.e = n[4]; m.f = n[5]; }
+        else if ([name isEqualToString:@"skewX"] && count >= 1) m.c = tan(n[0] * 3.14159265358979 / 180);
+        else if ([name isEqualToString:@"skewY"] && count >= 1) m.b = tan(n[0] * 3.14159265358979 / 180);
+        total = svgMul(total, m);
+    }
+    return total;
+}
+
+/* "#rgb", "#rrggbb", "rgb(r,g,b)" or a common colour name as r, g, b in 0 to 1; NO for none or anything else */
+static BOOL svgColor(NSString *text, float *rgb)
+{
+    NSString *t = [[TBTrim(text) lowercaseString] copy];
+    NSDictionary *names = [NSDictionary dictionaryWithObjectsAndKeys:@"#000000", @"black", @"#ffffff", @"white", @"#ff0000", @"red", @"#008000", @"green", @"#0000ff", @"blue",
+        @"#ffff00", @"yellow", @"#ffa500", @"orange", @"#808080", @"gray", @"#808080", @"grey", @"#800080", @"purple", @"#ffc0cb", @"pink", @"#a52a2a", @"brown",
+        @"#00ffff", @"cyan", @"#ff00ff", @"magenta", @"#000080", @"navy", @"#c0c0c0", @"silver", @"#000000", @"currentcolor", nil];
+    unsigned v = 0;
+    if ([names objectForKey:t])
+        t = [names objectForKey:t];
+    if ([t hasPrefix:@"rgb("]) {
+        double n[3];
+        if (svgNumbers([t substringFromIndex:4], n, 3) != 3) { [t release]; return NO; }
+        rgb[0] = n[0] / ([t rangeOfString:@"%"].location != NSNotFound ? 100.0 : 255.0);
+        rgb[1] = n[1] / ([t rangeOfString:@"%"].location != NSNotFound ? 100.0 : 255.0);
+        rgb[2] = n[2] / ([t rangeOfString:@"%"].location != NSNotFound ? 100.0 : 255.0);
+        [t release];
+        return YES;
+    }
+    if ([t hasPrefix:@"#"] && ([t length] == 7 || [t length] == 4)) {
+        NSString *hex = [t substringFromIndex:1];
+        if ([hex length] == 3)
+            hex = [NSString stringWithFormat:@"%C%C%C%C%C%C", [hex characterAtIndex:0], [hex characterAtIndex:0], [hex characterAtIndex:1], [hex characterAtIndex:1], [hex characterAtIndex:2], [hex characterAtIndex:2]];
+        if ([[NSScanner scannerWithString:hex] scanHexInt:&v]) {
+            rgb[0] = ((v >> 16) & 255) / 255.0f; rgb[1] = ((v >> 8) & 255) / 255.0f; rgb[2] = (v & 255) / 255.0f;
+            [t release];
+            return YES;
+        }
+    }
+    [t release];
+    return NO;
+}
+
+@interface TBSVGText : NSObject {
+@public
+    NSMutableArray *runs;
+    NSMutableArray *matrices;       /* NSData of SVGMatrix, one per open element */
+    NSMutableArray *styles;         /* inherited text settings per open element */
+    double vbX, vbY, vbW, vbH, imageW, imageH;
+    BOOL sawRoot;
+    NSMutableString *current;       /* the text being collected, or nil */
+    NSMutableDictionary *currentRun;
+    int textDepth;
+}
+@end
+
+static NSData *matrixData(SVGMatrix m) { return [NSData dataWithBytes:&m length:sizeof(m)]; }
+static SVGMatrix matrixOf(NSData *d) { SVGMatrix m; [d getBytes:&m length:sizeof(m)]; return m; }
+
+@implementation TBSVGText
+
+- (id)init
+{
+    self = [super init];
+    runs = [[NSMutableArray alloc] init];
+    matrices = [[NSMutableArray alloc] init];
+    styles = [[NSMutableArray alloc] init];
+    return self;
+}
+
+- (void)dealloc
+{
+    [runs release]; [matrices release]; [styles release]; [current release]; [currentRun release];
+    [super dealloc];
+}
+
+/* style="a:b;c:d" and the plain attributes together, the style winning */
+static NSDictionary *svgProperties(NSDictionary *attrs)
+{
+    NSMutableDictionary *out = [NSMutableDictionary dictionaryWithDictionary:attrs];
+    NSArray *pairs = [[attrs objectForKey:@"style"] componentsSeparatedByString:@";"];
+    unsigned i;
+    for (i = 0; i < [pairs count]; i++) {
+        NSRange colon = [[pairs objectAtIndex:i] rangeOfString:@":"];
+        if (colon.location != NSNotFound)
+            [out setObject:TBTrim([[pairs objectAtIndex:i] substringFromIndex:colon.location + 1]) forKey:TBTrim([[pairs objectAtIndex:i] substringToIndex:colon.location])];
+    }
+    return out;
+}
+
+- (void)parser:(NSXMLParser *)parser didStartElement:(NSString *)name namespaceURI:(NSString *)uri qualifiedName:(NSString *)qName attributes:(NSDictionary *)attrs
+{
+    NSDictionary *props = svgProperties(attrs);
+    SVGMatrix parent = [matrices count] ? matrixOf([matrices lastObject]) : svgIdentity(), mine = parent;
+    NSMutableDictionary *style = [NSMutableDictionary dictionaryWithDictionary:[styles count] ? [styles lastObject] : [NSDictionary dictionary]];
+    NSArray *inherited = [NSArray arrayWithObjects:@"fill", @"font-size", @"font-weight", @"text-anchor", @"opacity", @"fill-opacity", nil];
+    unsigned i;
+    (void)parser; (void)uri; (void)qName;
+    for (i = 0; i < [inherited count]; i++)
+        if ([props objectForKey:[inherited objectAtIndex:i]])
+            [style setObject:[props objectForKey:[inherited objectAtIndex:i]] forKey:[inherited objectAtIndex:i]];
+    if ([name isEqualToString:@"svg"] && !sawRoot) {
+        double n[4];
+        sawRoot = YES;
+        if (svgNumbers([attrs objectForKey:@"viewBox"], n, 4) == 4 && n[2] > 0 && n[3] > 0) {
+            vbX = n[0]; vbY = n[1]; vbW = n[2]; vbH = n[3];
+        }
+    } else if ([attrs objectForKey:@"transform"])
+        mine = svgMul(parent, svgParseTransform([attrs objectForKey:@"transform"]));
+    [matrices addObject:matrixData(mine)];
+    [styles addObject:style];
+    if ([name isEqualToString:@"text"] || ([name isEqualToString:@"tspan"] && textDepth > 0)) {
+        double x[1] = {0}, y[1] = {0};
+        NSDictionary *prev = currentRun;
+        if ([name isEqualToString:@"text"])
+            textDepth = 1;
+        [self finishRun];
+        currentRun = [[NSMutableDictionary alloc] init];
+        current = [[NSMutableString alloc] init];
+        if (svgNumbers([attrs objectForKey:@"x"], x, 1) == 0 && prev && [name isEqualToString:@"tspan"]) {
+            [currentRun setObject:[prev objectForKey:@"x"] forKey:@"x"];
+            [currentRun setObject:[prev objectForKey:@"endx"] forKey:@"startx"];
+        } else
+            [currentRun setObject:[NSNumber numberWithDouble:x[0]] forKey:@"x"];
+        if (svgNumbers([attrs objectForKey:@"y"], y, 1) == 0 && prev && [name isEqualToString:@"tspan"])
+            [currentRun setObject:[prev objectForKey:@"y"] forKey:@"y"];
+        else
+            [currentRun setObject:[NSNumber numberWithDouble:y[0]] forKey:@"y"];
+        [currentRun setObject:matrixData(mine) forKey:@"matrix"];
+        [currentRun setObject:style forKey:@"style"];
+    }
+}
+
+- (void)finishRun
+{
+    NSString *text = [[current componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] componentsJoinedByString:@" "];
+    if (currentRun && [TBTrim(text) length]) {
+        [currentRun setObject:TBTrim(text) forKey:@"text"];
+        [runs addObject:currentRun];
+    }
+    [currentRun release]; currentRun = nil;
+    [current release]; current = nil;
+}
+
+- (void)parser:(NSXMLParser *)parser foundCharacters:(NSString *)string
+{
+    (void)parser;
+    if (current)
+        [current appendString:string];
+}
+
+- (void)parser:(NSXMLParser *)parser didEndElement:(NSString *)name namespaceURI:(NSString *)uri qualifiedName:(NSString *)qName
+{
+    (void)parser; (void)uri; (void)qName;
+    if ([name isEqualToString:@"text"] || [name isEqualToString:@"tspan"]) {
+        [self finishRun];
+        if ([name isEqualToString:@"text"])
+            textDepth = 0;
+    }
+    if ([matrices count]) [matrices removeLastObject];
+    if ([styles count]) [styles removeLastObject];
+}
+
+@end
+
+/* The text runs of an SVG, each with the matrix that takes its coordinates to the picture NanoSVG draws (size imageW by imageH, the viewBox fitted and centred). */
+static NSArray *svgTextRuns(NSData *svg, double imageW, double imageH, double scale)
+{
+    TBSVGText *scan = [[[TBSVGText alloc] init] autorelease];
+    NSXMLParser *parser;
+    SVGMatrix fit = svgIdentity();
+    NSMutableArray *out = [NSMutableArray array];
+    unsigned i;
+    NSRange tag = [[[[NSString alloc] initWithData:svg encoding:NSISOLatin1StringEncoding] autorelease] rangeOfString:@"<text"];
+    if (tag.location == NSNotFound)
+        return out;
+    parser = [[[NSXMLParser alloc] initWithData:svg] autorelease];
+    [parser setDelegate:scan];
+    [parser setShouldResolveExternalEntities:NO];
+    scan->imageW = imageW; scan->imageH = imageH;
+    [parser parse];
+    if (scan->vbW <= 0 || scan->vbH <= 0) {
+        fit.a = fit.d = scale;      /* no viewBox: the coordinates are the drawing's own units */
+    } else {
+        double s = imageW / scan->vbW < imageH / scan->vbH ? imageW / scan->vbW : imageH / scan->vbH;
+        fit.a = fit.d = s;
+        fit.e = -scan->vbX * s + (imageW - scan->vbW * s) / 2;
+        fit.f = -scan->vbY * s + (imageH - scan->vbH * s) / 2;
+    }
+    for (i = 0; i < [scan->runs count] && i < 500; i++) {
+        NSMutableDictionary *run = [NSMutableDictionary dictionaryWithDictionary:[scan->runs objectAtIndex:i]];
+        [run setObject:matrixData(svgMul(fit, matrixOf([run objectForKey:@"matrix"]))) forKey:@"matrix"];
+        [out addObject:run];
+    }
+    return out;
+}
+
+static void drawSVGTexts(CGContextRef context, NSArray *texts, double k, int dh)
+{
+    unsigned i;
+    for (i = 0; i < [texts count]; i++) {
+        NSDictionary *run = [texts objectAtIndex:i], *style = [run objectForKey:@"style"];
+        SVGMatrix m = matrixOf([run objectForKey:@"matrix"]);
+        float rgb[3] = {0, 0, 0}, alpha = 1;
+        double size = 16, x = [[run objectForKey:@"x"] doubleValue], y = [[run objectForKey:@"y"] doubleValue], width;
+        NSString *fill = [style objectForKey:@"fill"], *anchor = [style objectForKey:@"text-anchor"];
+        BOOL bold = [[style objectForKey:@"font-weight"] isEqualToString:@"bold"] || [[style objectForKey:@"font-weight"] intValue] >= 600;
+        NSData *bytes = [[run objectForKey:@"text"] dataUsingEncoding:NSMacOSRomanStringEncoding allowLossyConversion:YES];
+        double v[1];
+        CGPoint end;
+        if ([fill isEqualToString:@"none"] || ![bytes length])
+            continue;
+        if (fill && !svgColor(fill, rgb))
+            continue;
+        if (svgNumbers([style objectForKey:@"font-size"], v, 1) == 1 && v[0] > 0)
+            size = v[0];
+        alpha = [style objectForKey:@"opacity"] ? [[style objectForKey:@"opacity"] floatValue] : 1;
+        if ([style objectForKey:@"fill-opacity"])
+            alpha *= [[style objectForKey:@"fill-opacity"] floatValue];
+        if ([run objectForKey:@"startx"])
+            x = [[run objectForKey:@"startx"] doubleValue];
+        CGContextSaveGState(context);
+        CGContextConcatCTM(context, CGAffineTransformMake(k * m.a, -k * m.b, k * m.c, -k * m.d, k * m.e, dh - k * m.f));
+        CGContextSelectFont(context, bold ? "Helvetica-Bold" : "Helvetica", size, kCGEncodingMacRoman);
+        CGContextSetTextMatrix(context, CGAffineTransformMakeScale(1, -1));   /* SVG's y runs down: stand the letters up */
+        CGContextSetTextDrawingMode(context, kCGTextInvisible);
+        CGContextShowTextAtPoint(context, 0, 0, (const char *)[bytes bytes], [bytes length]);
+        end = CGContextGetTextPosition(context);
+        width = end.x;
+        if ([anchor isEqualToString:@"middle"]) x -= width / 2;
+        else if ([anchor isEqualToString:@"end"]) x -= width;
+        CGContextSetTextDrawingMode(context, kCGTextFill);
+        CGContextSetRGBFillColor(context, rgb[0], rgb[1], rgb[2], alpha);
+        CGContextShowTextAtPoint(context, x, y, (const char *)[bytes bytes], [bytes length]);
+        CGContextRestoreGState(context);
+    }
+}
+
+/* The drawing as a JPEG (white where it is transparent), or nil when it cannot be drawn (filters, masks and CSS style blocks are not drawn). */
+static NSData *jpegFromSVG(NSData *svg, int longest)
+{
+    int w = 0, h = 0;
+    float scale = 1;
+    unsigned char *pixels = tb_svg_render([svg bytes], [svg length], longest, &w, &h, &scale);
+    NSData *jpeg;
+    if (!pixels)
+        return nil;
+    jpeg = jpegFromRGBAText(pixels, w, h, w * 4, longest, svgTextRuns(svg, w, h, scale));
+    free(pixels);
+    return jpeg;
+}
+
+NSData *TBSVGPreviewJPEG(NSData *svg, int longest)
+{
+    NSData *text = svgBytes(svg);
+    return text && looksLikeSVG(text) ? jpegFromSVG(text, longest) : nil;
 }
 
 /* A JPEG XL picture as a JPEG; an animation as up to four of its frames. *total is the number of frames. nil when it cannot be read.
@@ -1586,7 +1921,7 @@ static NSString *odfText(TBZip *zip)
 static NSArray *types(int which)
 {
     switch (which) {
-    case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jxl", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
+    case 0: return [NSArray arrayWithObjects:@"heic", @"heif", @"webp", @"avif", @"jxl", @"svg", @"svgz", @"jp2", @"jpg", @"jpeg", @"tif", @"tiff", @"bmp", @"gif", @"png", nil];
     case 1: return [NSArray arrayWithObjects:@"docx", @"pptx", @"xlsx", @"doc", @"ppt", @"xls", @"epub", @"zip", @"mp3", @"m4a", @"aac", @"wav", @"aif", @"aiff", @"aifc", @"caf", @"au", @"snd", @"amr", @"mp2", @"mov", @"mp4", @"m4v", @"mpg", @"mpeg", @"3gp", @"3g2", @"avi", @"qt", nil];
     }
     return [NSArray arrayWithObjects:@"pages", @"numbers", @"key", nil];
@@ -2096,6 +2431,23 @@ static NSDictionary *mediaReply(NSString *name, NSData *data, NSString *ext)
         }
         if ([frames count] > 1 || total > 1)
             return [self reply:@"" images:frames note:[NSString stringWithFormat:@"An animated %@ with %d frames; %u of them are shown, in order.", [ext uppercaseString], total, (unsigned)[frames count]]];
+    }
+    if ([ext isEqualToString:@"svg"] || [ext isEqualToString:@"svgz"] || ([ext length] == 0 && looksLikeSVG(data))) {
+        NSData *svg = svgBytes(data);
+        NSString *source;
+        NSData *jpeg;
+        NSString *note;
+        if (!svg || !looksLikeSVG(svg))
+            fail(@"This file does not look like an SVG drawing.");
+        source = [[[NSString alloc] initWithData:svg encoding:NSUTF8StringEncoding] autorelease];
+        if (!source)
+            source = [[[NSString alloc] initWithData:svg encoding:NSISOLatin1StringEncoding] autorelease];
+        if ([source length] > MAX_TEXT)
+            source = [source substringToIndex:MAX_TEXT];
+        jpeg = jpegFromSVG(svg, 1600);
+        note = jpeg ? @"The SVG's source, and a picture of it drawn by the converter (shapes, paths, strokes, fills, gradients, transforms and text in a standard font; filters, masks, CSS style blocks and embedded pictures are not drawn)."
+                    : @"The SVG's source. A picture could not be drawn from it (it may be empty, use features the converter does not draw, or declare no size).";
+        return [self reply:source images:jpeg ? [NSArray arrayWithObject:jpeg] : [NSArray array] note:note];
     }
     if ([ext isEqualToString:@"jxl"] || isJXL(data)) {
         int total = 0, looked = 0;

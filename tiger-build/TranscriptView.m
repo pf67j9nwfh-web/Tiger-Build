@@ -2,6 +2,7 @@
 #import "TBSupport.h"
 #import "TBMarkup.h"
 #import "TBTheme.h"
+#import "TBExtract.h"
 #import "TBEmoji.h"
 #if TB_INLINE_VIDEO
 #import <QTKit/QTKit.h>
@@ -14,6 +15,7 @@
 - (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender;
 - (BOOL)performDragOperation:(id <NSDraggingInfo>)sender;
 - (void)saveCode:(NSString *)code title:(NSString *)title;
+- (void)previewSVG:(NSString *)code;
 - (void)saveFileAtPath:(NSString *)path;
 - (NSMenu *)menuForTextView:(NSTextView *)view base:(NSMenu *)base;
 - (void)textScaleChanged:(NSNotification *)note;
@@ -284,7 +286,9 @@ NSAttributedString *TBEmojiTitle(NSString *text, NSFont *font)
         for (c = 0; c < [copies count]; c++) {
             NSDictionary *entry = [copies objectAtIndex:c];
             if (NSPointInRect(local, [[entry objectForKey:@"rect"] rectValue])) {
-                if ([entry objectForKey:@"save"])
+                if ([entry objectForKey:@"view"])
+                    [(TranscriptView *)[self superview] previewSVG:[entry objectForKey:@"code"]];
+                else if ([entry objectForKey:@"save"])
                     [(TranscriptView *)[self superview] saveCode:[entry objectForKey:@"code"] title:[entry objectForKey:@"title"]];
                 else
                     [(TranscriptView *)[self superview] copyCode:[entry objectForKey:@"code"] key:[entry objectForKey:@"key"]];
@@ -1616,13 +1620,20 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                     NSString *key = [NSString stringWithFormat:@"%p:%u", (void *)[box objectForKey:@"message"], p];
                     NSRect copyLocal = NSMakeRect(NSMaxX(hr) - 58, NSMinY(hr), 58, NSHeight(hr));
                     NSRect saveLocal = NSMakeRect(NSMaxX(hr) - 58 - 46, NSMinY(hr), 46, NSHeight(hr));
+                    NSRect viewLocal = NSMakeRect(NSMaxX(hr) - 58 - 46 - 46, NSMinY(hr), 46, NSHeight(hr));
+                    BOOL isSVG = [[panel objectForKey:@"code"] rangeOfString:@"<svg"].location != NSNotFound;
+                    viewLocal.origin.x += NSMinX(textRect);
+                    viewLocal.origin.y = NSMaxY(textRect) - viewLocal.origin.y - viewLocal.size.height;
                     pr.origin.x += NSMinX(textRect);
                     pr.origin.y = NSMaxY(textRect) - pr.origin.y - pr.size.height;
                     hr.origin.x += NSMinX(textRect);
                     hr.origin.y = NSMaxY(textRect) - hr.origin.y - hr.size.height;
                     [drawn addObject:[NSDictionary dictionaryWithObjectsAndKeys:
                         [NSValue valueWithRect:pr], @"panel", [NSValue valueWithRect:hr], @"header",
-                        [panel objectForKey:@"title"], @"title", key, @"key", nil]];
+                        [panel objectForKey:@"title"], @"title", key, @"key", [NSNumber numberWithBool:isSVG], @"canView", nil]];
+                    if (isSVG)
+                        [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                            [NSValue valueWithRect:viewLocal], @"rect", [panel objectForKey:@"code"], @"code", key, @"key", [NSNumber numberWithBool:YES], @"view", nil]];
                     [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
                         [NSValue valueWithRect:copyLocal], @"rect", [panel objectForKey:@"code"], @"code", key, @"key", nil]];
                     [copies addObject:[NSDictionary dictionaryWithObjectsAndKeys:
@@ -1789,6 +1800,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 [NSColor colorWithCalibratedRed:0.62 green:0.78 blue:1 alpha:1], NSForegroundColorAttributeName, nil];
             NSSize saveSize = [@"Save" sizeWithAttributes:saveAttrs];
             [@"Save" drawAtPoint:NSMakePoint(NSMaxX(header) - 12 - 38 - 14 - saveSize.width, NSMidY(header) - saveSize.height / 2) withAttributes:saveAttrs];
+            if ([[entry objectForKey:@"canView"] boolValue]) {
+                NSSize viewSize = [@"View" sizeWithAttributes:saveAttrs];
+                [@"View" drawAtPoint:NSMakePoint(NSMaxX(header) - 12 - 38 - 14 - 32 - 14 - viewSize.width, NSMidY(header) - viewSize.height / 2) withAttributes:saveAttrs];
+            }
         }
     }
 }
@@ -2055,6 +2070,40 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 }
 
 /* Save As for a block of code the model wrote. */
+/* A drawing from an SVG code block, in a window of its own (View). */
+- (void)previewSVG:(NSString *)code
+{
+    static NSWindow *window = nil;
+    NSData *jpeg = TBSVGPreviewJPEG([code dataUsingEncoding:NSUTF8StringEncoding], 900);
+    NSImage *image = jpeg ? [[[NSImage alloc] initWithData:jpeg] autorelease] : nil;
+    NSImageView *view;
+    NSSize size;
+    if (!image) {
+        NSRunAlertPanel(@"SVG", @"This drawing could not be shown. It may be empty, cut off, or use features the viewer does not draw (text, filters and masks).", @"OK", nil, nil);
+        return;
+    }
+    size = [image size];
+    if (size.width > 700) {
+        size.height = size.height * 700 / size.width;
+        size.width = 700;
+    }
+    if (!window) {
+        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 300) styleMask:NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask backing:NSBackingStoreBuffered defer:NO];
+        [window setReleasedWhenClosed:NO];
+        [window setTitle:@"SVG Preview"];
+        view = [[[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 400, 300)] autorelease];
+        [view setImageScaling:NSScaleProportionally];
+        [view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+        [window setContentView:view];
+        [window setMinSize:NSMakeSize(120, 90)];
+    }
+    view = (NSImageView *)[window contentView];
+    [view setImage:image];
+    [window setContentSize:NSMakeSize(size.width < 160 ? 160 : size.width, size.height < 120 ? 120 : size.height)];
+    [window center];
+    [window makeKeyAndOrderFront:nil];
+}
+
 - (void)saveCode:(NSString *)code title:(NSString *)title
 {
     NSSavePanel *panel = [NSSavePanel savePanel];
