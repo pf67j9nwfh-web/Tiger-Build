@@ -784,7 +784,7 @@ static BOOL svgColor(NSString *text, float *rgb)
     return NO;
 }
 
-@interface TBSVGText : NSObject {
+@interface TBSVGText : NSObject TB_PROTOCOLS(NSXMLParserDelegate) {
 @public
     NSMutableArray *runs;
     NSMutableArray *matrices;       /* NSData of SVGMatrix, one per open element */
@@ -795,6 +795,7 @@ static BOOL svgColor(NSString *text, float *rgb)
     NSMutableDictionary *currentRun;
     int textDepth;
 }
+- (void)finishRun;
 @end
 
 static NSData *matrixData(SVGMatrix m) { return [NSData dataWithBytes:&m length:sizeof(m)]; }
@@ -876,7 +877,22 @@ static NSDictionary *svgProperties(NSDictionary *attrs)
 
 - (void)finishRun
 {
-    NSString *text = [[current componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] componentsJoinedByString:@" "];
+    /* runs of white space become one space (componentsSeparatedByCharactersInSet: is 10.5 and later) */
+    NSMutableString *text = [NSMutableString string];
+    BOOL space = NO;
+    NSCharacterSet *white = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    unsigned c;
+    for (c = 0; c < [current length]; c++) {
+        unichar ch = [current characterAtIndex:c];
+        if ([white characterIsMember:ch]) {
+            space = YES;
+            continue;
+        }
+        if (space && [text length])
+            [text appendString:@" "];
+        space = NO;
+        [text appendFormat:@"%C", ch];
+    }
     if (currentRun && [TBTrim(text) length]) {
         [currentRun setObject:TBTrim(text) forKey:@"text"];
         [runs addObject:currentRun];

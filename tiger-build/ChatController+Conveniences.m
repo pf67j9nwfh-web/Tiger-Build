@@ -7,6 +7,7 @@
 #import "TBIntegrations.h"
 #import "TBSupport.h"
 #import <Carbon/Carbon.h>
+EventTargetRef GetApplicationEventTarget(void);   /* the 10.5 SDK for the 64-bit slices does not declare it */
 #import "mbedtls/sha256.h"
 
 /* Small conveniences: Copy Diagnostics, saved and scheduled prompts, the Services entry and Quick Ask (with its keyboard shortcut), trying a message
