@@ -246,14 +246,8 @@ static BOOL passwordAccepted(NSString *password)
     [note setStringValue:@"It is kept in your Keychain, used only when a command needs sudo, and handed to Commander only while Tiger Build is open. The model never sees it."];
     [label setFont:[NSFont systemFontOfSize:12]];
     [note setFont:[NSFont systemFontOfSize:11]];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
-    [note setBezeled:NO];
-    [note setDrawsBackground:NO];
-    [note setEditable:NO];
-    [note setSelectable:NO];
+    TBStyleAsLabel(label);
+    TBStyleAsLabel(note);
     [ok setTitle:@"OK"];
     [ok setBezelStyle:NSRoundedBezelStyle];
     [ok setKeyEquivalent:@"\r"];

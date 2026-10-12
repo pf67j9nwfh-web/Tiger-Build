@@ -3,14 +3,8 @@
 #import "TBProviders.h"
 #import "TBJSON.h"
 #import "TBHTTP.h"
+#import "expect.h"
 
-static int failures = 0;
-static void expectThat(BOOL ok, NSString *name)
-{
-    fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", [name UTF8String]);
-    if (!ok)
-        failures++;
-}
 
 @interface Sink : NSObject {
 @public

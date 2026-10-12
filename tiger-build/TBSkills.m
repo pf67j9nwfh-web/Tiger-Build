@@ -183,14 +183,7 @@ static NSString *fileText(NSString *path, unsigned limit)
     if (![safe length])
         return NO;
     folder = [[self root] stringByAppendingPathComponent:safe];
-    {
-        NSString *walk = @"/";
-        NSArray *parts = [folder pathComponents];
-        for (i = 1; i < [parts count]; i++) {
-            walk = [walk stringByAppendingPathComponent:[parts objectAtIndex:i]];
-            [[NSFileManager defaultManager] createDirectoryAtPath:walk attributes:nil];
-        }
-    }
+    TBMakePath(folder);
     text = [NSString stringWithFormat:@"---\nname: %@\ndescription: %@\n---\n%@\n", safe, [[description componentsSeparatedByString:@"\n"] componentsJoinedByString:@" "], body];
     return [[text dataUsingEncoding:NSUTF8StringEncoding] writeToFile:[folder stringByAppendingPathComponent:@"SKILL.md"] atomically:YES];
 }

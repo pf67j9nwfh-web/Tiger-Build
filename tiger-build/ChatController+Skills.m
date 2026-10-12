@@ -45,7 +45,7 @@ static TBSkillsWindow *shared = nil;
     [window setReleasedWhenClosed:NO];
     help = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 312, 600, 38)] autorelease];
     [help setStringValue:@"A skill is a folder with a SKILL.md file: instructions for one kind of task. The model sees each skill's name and description, and loads one when the task fits."];
-    [help setBezeled:NO]; [help setDrawsBackground:NO]; [help setEditable:NO]; [help setSelectable:NO];
+    TBStyleAsLabel(help);
     [[window contentView] addSubview:help];
     scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(20, 84, 600, 220)] autorelease];
     [scroll setHasVerticalScroller:YES]; [scroll setBorderType:NSBezelBorder];
@@ -66,7 +66,7 @@ static TBSkillsWindow *shared = nil;
     [scroll setDocumentView:table];
     [[window contentView] addSubview:scroll];
     status = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 6, 600, 16)] autorelease];
-    [status setBezeled:NO]; [status setDrawsBackground:NO]; [status setEditable:NO]; [status setSelectable:NO];
+    TBStyleAsLabel(status);
     [status setFont:[NSFont systemFontOfSize:11]];
     [[window contentView] addSubview:status];
     for (i = 0; i < 6; i++) {
@@ -187,17 +187,11 @@ static TBSkillsWindow *shared = nil;
         NSString *from = [[open filenames] objectAtIndex:0];
         NSString *to = [[TBSkills root] stringByAppendingPathComponent:[from lastPathComponent]];
         NSFileManager *fm = [NSFileManager defaultManager];
-        NSString *walk = @"/";
-        NSArray *parts = [[TBSkills root] pathComponents];
-        unsigned i;
         if (![fm fileExistsAtPath:[from stringByAppendingPathComponent:@"SKILL.md"]]) {
             NSRunAlertPanel(@"Skills", @"That folder has no SKILL.md file in it.", @"OK", nil, nil);
             return;
         }
-        for (i = 1; i < [parts count]; i++) {
-            walk = [walk stringByAppendingPathComponent:[parts objectAtIndex:i]];
-            [fm createDirectoryAtPath:walk attributes:nil];
-        }
+        TBMakePath([TBSkills root]);
         if ([fm fileExistsAtPath:to])
             NSRunAlertPanel(@"Skills", @"A skill with that folder name is already installed.", @"OK", nil, nil);
         else if (![fm copyPath:from toPath:to handler:nil])

@@ -440,10 +440,7 @@ static void appendMessageText(NSMutableAttributedString *out, NSString *text, NS
     accessory = [[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 420, 34)] autorelease];
     label = [[[NSTextField alloc] initWithFrame:NSMakeRect(0, 8, 54, 17)] autorelease];
     [label setStringValue:@"Format:"];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
+    TBStyleAsLabel(label);
     [label setAlignment:NSRightTextAlignment];
     format = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(60, 4, 350, 26) pullsDown:NO] autorelease];
     [format addItemWithTitle:@"Tiger Build chat (can be imported again)"];

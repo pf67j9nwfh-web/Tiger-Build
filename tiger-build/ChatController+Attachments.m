@@ -67,10 +67,7 @@
     [prompt->panel setTitle:title];
     label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 78, 340, 56)] autorelease];
     [label setStringValue:message];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
+    TBStyleAsLabel(label);
     prompt->field = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 50, 340, 22)] autorelease];
     ok = [[[NSButton alloc] initWithFrame:NSMakeRect(280, 12, 80, 28)] autorelease];
     [ok setTitle:@"OK"];

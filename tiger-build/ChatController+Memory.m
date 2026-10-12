@@ -99,10 +99,7 @@
     label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 280, 440, 48)] autorelease];
     [label setStringValue:@"What Tiger Build keeps in mind for every chat in this workspace. It is kept up to date after each reply while memory is on; you can change it "
         @"here at any time. Remove anything you do not want carried over."];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
+    TBStyleAsLabel(label);
     [label setFont:[NSFont systemFontOfSize:11]];
     [[label cell] setWraps:YES];
     scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(20, 56, 440, 216)] autorelease];

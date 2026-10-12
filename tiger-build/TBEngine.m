@@ -76,6 +76,17 @@ BOOL TBTruthy(id v)
 
 #include <sys/sysctl.h>
 
+void TBMakePath(NSString *directory)
+{
+    NSString *walk = @"/";
+    NSArray *parts = [directory pathComponents];
+    unsigned i;
+    for (i = 1; i < [parts count]; i++) {
+        walk = [walk stringByAppendingPathComponent:[parts objectAtIndex:i]];
+        [[NSFileManager defaultManager] createDirectoryAtPath:walk attributes:nil];
+    }
+}
+
 int TBCPUCount(void)
 {
     int count = 0;

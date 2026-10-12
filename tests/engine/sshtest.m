@@ -4,14 +4,8 @@
 #import "TBExtras.h"
 #import "TBEngine.h"
 #import "TBJSON.h"
+#import "expect.h"
 
-static int failures = 0;
-static void expectThat(BOOL ok, NSString *name)
-{
-    fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", [name UTF8String]);
-    if (!ok)
-        failures++;
-}
 
 int main(int argc, char **argv)
 {

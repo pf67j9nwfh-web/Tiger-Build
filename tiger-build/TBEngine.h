@@ -16,6 +16,7 @@ NSArray *TBArray(id container, NSString *key);
 long long TBInteger(id container, NSString *key);
 BOOL TBTruth(id container, NSString *key);
 NSString *TBTrim(NSString *text);
+void TBMakePath(NSString *directory);   /* the folder and every missing folder above it (10.4 has no withIntermediateDirectories) */
 int TBCPUCount(void);                  /* processors in this Mac (NSProcessInfo has no processorCount before 10.5) */
 BOOL TBTruthy(id value);   /* non-empty text or collection, true number, any other object */
 

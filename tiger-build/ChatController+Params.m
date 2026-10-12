@@ -25,7 +25,7 @@
     [panel setTitle:@"Model Parameters"];
     label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 186, 400, 34)] autorelease];
     [label setStringValue:@"Tick a setting to send it with every message of this chat. Unticked settings stay at the model's own default."];
-    [label setBezeled:NO]; [label setDrawsBackground:NO]; [label setEditable:NO]; [label setSelectable:NO];
+    TBStyleAsLabel(label);
     [[panel contentView] addSubview:label];
     for (i = 0; i < 3; i++) {
         id value = [have isKindOfClass:[NSDictionary class]] ? [have objectForKey:keys[i]] : nil;

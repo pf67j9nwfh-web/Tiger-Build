@@ -45,10 +45,7 @@
     [field setDelegate:self];
     [[panel contentView] addSubview:field];
     count = [[[NSTextField alloc] initWithFrame:NSMakeRect(14, 8, 310, 16)] autorelease];
-    [count setBezeled:NO];
-    [count setDrawsBackground:NO];
-    [count setEditable:NO];
-    [count setSelectable:NO];
+    TBStyleAsLabel(count);
     [count setFont:[NSFont systemFontOfSize:11]];
     [count setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1]];
     [count setAutoresizingMask:NSViewWidthSizable | NSViewMaxYMargin];
@@ -245,10 +242,7 @@
     [panel setTitle:@"Custom Instructions"];
     label = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 262, 440, 38)] autorelease];
     [label setStringValue:@"Tell the model how to answer in this chat: a role, a tone, what to avoid. It follows these with every message."];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
+    TBStyleAsLabel(label);
     scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(20, 84, 440, 170)] autorelease];
     [scroll setHasVerticalScroller:YES];
     [scroll setBorderType:NSBezelBorder];

@@ -2,6 +2,15 @@
 #import "EngineRequest.h"
 #import "TBSupport.h"
 
+/* plain text on the window: no border, no background, not editable or selectable */
+static inline void TBStyleAsLabel(NSTextField *field)
+{
+    [field setBezeled:NO];
+    [field setDrawsBackground:NO];
+    [field setEditable:NO];
+    [field setSelectable:NO];
+}
+
 /* Methods the ChatController source files call on each other. They are
    implemented in ChatController.m and ChatController+Preferences.m. */
 @interface ChatController (Internal)

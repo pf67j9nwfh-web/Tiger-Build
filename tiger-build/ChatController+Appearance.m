@@ -47,10 +47,7 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
 {
     NSTextField *field = [[[NSTextField alloc] initWithFrame:frame] autorelease];
     [field setStringValue:text];
-    [field setBezeled:NO];
-    [field setDrawsBackground:NO];
-    [field setEditable:NO];
-    [field setSelectable:NO];
+    TBStyleAsLabel(field);
     [field setFont:bold ? [NSFont boldSystemFontOfSize:12] : [NSFont systemFontOfSize:12]];
     if (right)
         [field setAlignment:NSRightTextAlignment];

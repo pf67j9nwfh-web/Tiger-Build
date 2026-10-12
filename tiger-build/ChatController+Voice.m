@@ -129,10 +129,7 @@ static NSString *kVoice = @"TBVoiceName";
     (void)sender;
     [panel setTitle:@"Voice"];
     [label setStringValue:@"The voice used to read replies aloud:"];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
+    TBStyleAsLabel(label);
     [popup addItemWithTitle:@"System default voice"];
     for (i = 0; i < [voices count]; i++) {
         NSDictionary *info = [NSSpeechSynthesizer attributesForVoice:[voices objectAtIndex:i]];

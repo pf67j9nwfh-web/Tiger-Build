@@ -410,6 +410,18 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     return [NSString stringWithFormat:@"mcp_%@_%@", serverId, clean];
 }
 
+/* The tool group (the chat's Tools menu row) a built-in tool belongs to. */
+static NSString *toolGroup(NSString *name)
+{
+    static NSString *const prefixes[][2] = { {@"agent_web_search", @"search"}, {@"agent_image_search", @"search"}, {@"agent_show_image", @"search"}, {@"agent_read_page", @"search"},
+        {@"agent_download_file", @"download"}, {@"knowledge_", @"knowledge"}, {@"skill_", @"skills"}, {@"mac_", @"macapps"} };
+    unsigned i;
+    for (i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++)
+        if ([name hasPrefix:prefixes[i][0]])
+            return prefixes[i][1];
+    return @"toolbox";
+}
+
 - (NSArray *)definitionsForProvider:(NSString *)provider skip:(NSSet *)skip
 {
     [lastProvider release];
@@ -419,8 +431,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
     unsigned i, t;
     for (i = 0; i < [tools count]; i++) {
         NSString *n = TBString([tools objectAtIndex:i], @"name");
-        [owners setObject:([n isEqualToString:@"agent_web_search"] || [n isEqualToString:@"agent_image_search"] || [n isEqualToString:@"agent_show_image"] || [n isEqualToString:@"agent_read_page"]) ? @"search"
-            : ([n isEqualToString:@"agent_download_file"] ? @"download" : ([n hasPrefix:@"knowledge_"] ? @"knowledge" : ([n hasPrefix:@"skill_"] ? @"skills" : ([n hasPrefix:@"mac_"] ? @"macapps" : @"toolbox")))) forKey:n];
+        [owners setObject:toolGroup(n) forKey:n];
     }
     for (i = 0; i < [servers count]; i++) {
         NSDictionary *server = [servers objectAtIndex:i];

@@ -1099,29 +1099,18 @@ static NSMutableArray *allControllers = nil;
 /* Shortcuts live on items inside submenus too, so walk the whole tree. */
 static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
-    /* the ones added in 2.2 that take Option as well */
-    NSSet *optionOnly = [NSSet setWithObjects:@"copyDiagnostics:", @"checkForUpdates:", @"forgetMCPSignIns:", @"uninstallTigerBuild:", @"showSkills:", @"editParameters:",
-        @"quickAsk:", @"showCostReport:", @"movePinnedUp:", @"movePinnedDown:", @"toggleStats:", @"importOtherExport:", @"lockNow:", @"commanderRemote:", nil];
+    /* the items whose shortcut takes Option as well as Command */
+    NSSet *optionOnly = [NSSet setWithObjects:@"biggerText:", @"checkForUpdates:", @"chooseVoice:", @"commanderAutostart:", @"commanderIP:", @"commanderRemote:", @"copyDiagnostics:", @"editInstructions:", @"editParameters:", @"exportChat:", @"forgetMCPSignIns:", @"importChat:", @"importOtherExport:", @"lockNow:", @"movePinnedDown:", @"movePinnedUp:", @"normalTextSize:", @"quickAsk:", @"showAbout:", @"showAppearance:", @"showCostReport:", @"showIntegrations:", @"showSkills:", @"showWorkspaceSettings:", @"smallerText:", @"speakLast:", @"stopSpeaking:", @"toggleAutoSpeak:", @"toggleDictation:", @"toggleDictationSend:", @"toggleStats:", @"toggleVoiceCommands:", @"uninstallTigerBuild:", nil];
     unsigned i;
     for (i = 0; i < [menu numberOfItems]; i++) {
         NSMenuItem *item = [menu itemAtIndex:i];
         NSMenu *child = [item submenu];
-        NSString *key = [shortcuts objectForKey:([item action] ? NSStringFromSelector([item action]) : @"")];
+        NSString *name = [item action] ? NSStringFromSelector([item action]) : @"";
+        NSString *key = [shortcuts objectForKey:name];
         if (key) {
             BOOL shifted = [key isEqualToString:[key uppercaseString]] && ![[key lowercaseString] isEqualToString:[key uppercaseString]];
-            unsigned mask = NSCommandKeyMask | (shifted ? NSShiftKeyMask : 0);
-            if ([item action] == @selector(commanderAutostart:) || [item action] == @selector(commanderIP:) || [item action] == @selector(showAbout:) || [item action] == @selector(showIntegrations:)
-                || [item action] == @selector(showWorkspaceSettings:)
-                || [item action] == @selector(exportChat:) || [item action] == @selector(importChat:)
-                || [item action] == @selector(toggleDictation:) || [item action] == @selector(toggleDictationSend:)
-                || [item action] == @selector(speakLast:) || [item action] == @selector(stopSpeaking:) || [item action] == @selector(toggleAutoSpeak:)
-                || [item action] == @selector(toggleVoiceCommands:) || [item action] == @selector(chooseVoice:)
-                || [item action] == @selector(editInstructions:) || [item action] == @selector(biggerText:)
-                || [item action] == @selector(showAppearance:) || [item action] == @selector(smallerText:) || [item action] == @selector(normalTextSize:)
-                || [optionOnly containsObject:NSStringFromSelector([item action])])
-                mask |= NSAlternateKeyMask;
             [item setKeyEquivalent:[key lowercaseString]];
-            [item setKeyEquivalentModifierMask:mask];
+            [item setKeyEquivalentModifierMask:NSCommandKeyMask | (shifted ? NSShiftKeyMask : 0) | ([optionOnly containsObject:name] ? NSAlternateKeyMask : 0)];
         }
         if (child)
             applyMenuShortcuts(child, shortcuts);

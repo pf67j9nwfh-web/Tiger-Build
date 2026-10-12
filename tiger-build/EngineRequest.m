@@ -121,7 +121,6 @@
     [self complete];
 }
 
-- (NSArray *)usage { return usageEvents; }
 - (NSArray *)takeUsage
 {
     NSArray *taken = [[usageEvents retain] autorelease];

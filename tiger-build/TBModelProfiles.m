@@ -1,4 +1,5 @@
 #import "TBModelProfiles.h"
+#import "TBEngine.h"
 
 #define RETRY_AFTER (7 * 24 * 3600.0)
 #define NOTE_LIMIT 200
@@ -24,13 +25,7 @@ static void load(void)
 static void save(void)
 {
     NSString *path = [TBModelProfiles notesPath];
-    NSString *walk = @"/";
-    NSArray *parts = [[path stringByDeletingLastPathComponent] pathComponents];
-    unsigned i;
-    for (i = 1; i < [parts count]; i++) {
-        walk = [walk stringByAppendingPathComponent:[parts objectAtIndex:i]];
-        [[NSFileManager defaultManager] createDirectoryAtPath:walk attributes:nil];
-    }
+    TBMakePath([path stringByDeletingLastPathComponent]);
     [notes writeToFile:path atomically:YES];
 }
 

@@ -39,7 +39,6 @@
 - (BOOL)timedOut;
 - (NSData *)data;
 - (NSString *)text;
-- (NSArray *)usage;
 - (NSArray *)takeUsage;     /* the usage lines, once: a second call gets none */
 - (id)context;
 - (NSString *)path;

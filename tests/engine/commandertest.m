@@ -2,15 +2,9 @@
 #import <Foundation/Foundation.h>
 #import "TBMCP.h"
 #import "TBEngine.h"
+#import "expect.h"
 #include <sys/time.h>
 
-static int failures = 0;
-static void expectThat(BOOL ok, NSString *name)
-{
-    fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", [name UTF8String]);
-    if (!ok)
-        failures++;
-}
 static double now(void) { struct timeval tv; gettimeofday(&tv, NULL); return tv.tv_sec + tv.tv_usec / 1e6; }
 
 int main(int argc, char **argv)

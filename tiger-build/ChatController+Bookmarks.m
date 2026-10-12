@@ -124,7 +124,7 @@
     int result;
     [panel setTitle:@"Bookmark Note"];
     [label setStringValue:@"A note to find this by (optional):"];
-    [label setBezeled:NO]; [label setDrawsBackground:NO]; [label setEditable:NO]; [label setSelectable:NO];
+    TBStyleAsLabel(label);
     [field setStringValue:*note ? *note : @""];
     [ok setTitle:@"OK"]; [ok setBezelStyle:NSRoundedBezelStyle]; [ok setKeyEquivalent:@"\r"];
     [ok setTarget:self]; [ok setAction:@selector(endInstructionsOK:)];
