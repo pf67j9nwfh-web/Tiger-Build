@@ -142,7 +142,7 @@
         [self integrationSwitch:@"Web and picture search for other providers" key:@"search_enabled" y:y in:tab];y-=23;
         [self integrationSwitch:@"Grok native web search" key:@"grok_native_search" y:y in:tab];y-=23;
         [self integrationSwitch:@"Gemini searches with Google (needs a Gemini key)" key:@"gemini_native_search" y:y in:tab];y-=23;
-        [self integrationSwitch:@"Show model thinking (Claude, ChatGPT, Gemini, Mistral, local)" key:@"claude_thinking" y:y in:tab];y-=34;
+        [self integrationSwitch:@"Show model thinking, on services that provide it" key:@"claude_thinking" y:y in:tab];y-=34;
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
         NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
         [steps setToolTip:@"A reply may use this many tool steps (1 to 1000; 0 means no limit, which can run up cost) before Tiger Build stops it and says so. Say continue to go on."];

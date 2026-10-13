@@ -1797,7 +1797,7 @@ static NSString *keyLabel(NSString *provider)
         return @"Muse";
     if ([provider isEqualToString:@"gemini"])
         return @"Google (Gemini)";
-    return @"xAI (Grok)";
+    return @"SpaceXSI (Grok)";
 }
 
 + (void)streamRound:(NSString *)provider system:(NSString *)system log:(NSArray *)log tools:(NSArray *)tools round:(TBRound *)round model:(NSString *)model

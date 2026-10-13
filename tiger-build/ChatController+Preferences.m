@@ -435,7 +435,7 @@
         frame:NSMakeRect(16, y - 14, 520, 30) inView:tab];
     y -= 40;
     keys = [NSArray arrayWithObjects:
-        [NSArray arrayWithObjects:@"SpaceXAI (Grok)", @"xai_api_key", @"1", @"", nil],
+        [NSArray arrayWithObjects:@"SpaceXSI (Grok)", @"xai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"OpenAI (ChatGPT)", @"openai_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Anthropic (Claude)", @"anthropic_api_key", @"1", @"", nil],
         [NSArray arrayWithObjects:@"Workspace ID (optional)", @"anthropic_workspace_id", @"0",

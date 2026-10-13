@@ -31,6 +31,48 @@ static double numberOf(id v)
     return [v respondsToSelector:@selector(doubleValue)] ? [v doubleValue] : 0;
 }
 
+/* ---- the download's progress window ---- */
+
+static NSPanel *updatePanel = nil;
+static NSProgressIndicator *updateBar = nil;
+static NSTextField *updateText = nil;
+static volatile int updateCancelled = 0;
+static TBHTTP *updateHTTP = nil;
+
+/* Takes the body of the download as it arrives (and ignores the body of a redirect), counting it for the progress window. */
+@interface TBUpdateSink : NSObject {
+@public
+    NSMutableData *data;
+    long long total;
+    double lastShown;
+    id controller;
+}
+@end
+
+@implementation TBUpdateSink
+- (id)init { self = [super init]; data = [[NSMutableData alloc] init]; return self; }
+- (void)dealloc { [data release]; [super dealloc]; }
+- (BOOL)http:(TBHTTP *)http gotData:(NSData *)piece
+{
+    double now = CFAbsoluteTimeGetCurrent();
+    if ([http status] != 200)
+        return NO;
+    [data appendData:piece];
+    if (total == 0)
+    {
+        const char *length = [[http responseHeader:@"Content-Length"] UTF8String];   /* none when the body comes in chunks: then only the amount so far is shown */
+        total = length ? strtoll(length, NULL, 10) : 0;
+        if (total == 0)
+            total = -1;
+    }
+    if (now - lastShown > 0.1) {
+        lastShown = now;
+        [controller performSelectorOnMainThread:@selector(updateProgress:) withObject:[NSArray arrayWithObjects:[NSNumber numberWithLongLong:[data length]], [NSNumber numberWithLongLong:total], nil] waitUntilDone:NO];
+    }
+    return NO;
+}
+@end
+
 @implementation ChatController (Housekeeping)
 
 /* ---- the Alerts tab ---- */
@@ -318,7 +360,7 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
     {
         BOOL direct = [result objectForKey:@"asset"] != nil;
         int choice = NSRunAlertPanel([NSString stringWithFormat:@"Tiger Build %@ is available", [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag],
-            direct ? @"You have version %@. Download the new installer now? It goes to your Downloads folder and opens; installing it asks for your administrator password."
+            direct ? @"You have version %@. Download the new installer now? It goes to your Downloads folder and opens; installing it asks for your administrator password and closes Tiger Build."
                    : @"You have version %@. The download page has the new installer and what changed.",
             direct ? @"Download Installer" : @"Open Download Page", @"Not Now", @"Skip This Version", [self thisVersion]);
         if (choice == NSAlertDefaultReturn && direct)
@@ -330,6 +372,71 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
     }
 }
 
+- (void)showUpdateProgress:(NSString *)title
+{
+    NSButton *cancel;
+    if (!updatePanel) {
+        updatePanel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 400, 112) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
+        updateText = [[[NSTextField alloc] initWithFrame:NSMakeRect(20, 74, 360, 18)] autorelease];
+        TBStyleAsLabel(updateText);
+        updateBar = [[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(20, 50, 360, 16)] autorelease];
+        [updateBar setStyle:NSProgressIndicatorBarStyle];
+        [updateBar setIndeterminate:NO];
+        [updateBar setMinValue:0];
+        [updateBar setMaxValue:100];
+        cancel = [[[NSButton alloc] initWithFrame:NSMakeRect(300, 12, 80, 28)] autorelease];
+        [cancel setTitle:@"Cancel"];
+        [cancel setBezelStyle:NSRoundedBezelStyle];
+        [cancel setKeyEquivalent:@"\033"];
+        [cancel setTarget:self];
+        [cancel setAction:@selector(cancelUpdateDownload:)];
+        [[updatePanel contentView] addSubview:updateText];
+        [[updatePanel contentView] addSubview:updateBar];
+        [[updatePanel contentView] addSubview:cancel];
+    }
+    updateCancelled = 0;
+    [updatePanel setTitle:title];
+    [updateText setStringValue:@"Starting the download..."];
+    [updateBar setIndeterminate:NO];
+    [updateBar setDoubleValue:0];
+    [updatePanel center];
+    [updatePanel makeKeyAndOrderFront:nil];
+}
+
+- (void)cancelUpdateDownload:(id)sender
+{
+    (void)sender;
+    updateCancelled = 1;
+    [updateHTTP cancel];
+    [updatePanel orderOut:nil];
+}
+
+/* {bytes so far, total bytes or 0} from the worker; or a status line (a string) for the steps after the download */
+- (void)updateProgress:(id)what
+{
+    if (![updatePanel isVisible])
+        return;
+    if ([what isKindOfClass:[NSString class]]) {
+        [updateText setStringValue:what];
+        [updateBar setIndeterminate:YES];
+        [updateBar startAnimation:nil];
+        return;
+    }
+    {
+        double done = [[what objectAtIndex:0] doubleValue], total = [[what objectAtIndex:1] doubleValue];
+        if (total > 0) {
+            [updateBar setIndeterminate:NO];
+            [updateBar setDoubleValue:done * 100.0 / total];
+            [updateText setStringValue:[NSString stringWithFormat:@"%@ of %@ (%d%%)", TBHumanSize(done), TBHumanSize(total), (int)(done * 100.0 / total)]];
+        } else {
+            /* the size is not known (GitHub sent the file in chunks): a moving bar and the amount so far */
+            [updateBar setIndeterminate:YES];
+            [updateBar startAnimation:nil];
+            [updateText setStringValue:[NSString stringWithFormat:@"%@ downloaded", TBHumanSize(done)]];
+        }
+    }
+}
+
 /* on a worker thread: the installer's zip from GitHub into ~/Downloads, checked against the digest GitHub gives, unpacked, opened */
 - (void)updateDownloadWorker:(NSDictionary *)asset
 {
@@ -337,14 +444,21 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
     NSString *nextURL = [asset objectForKey:@"url"], *problem = nil, *opened = nil;
     int hop;
     NSData *bytes = nil;
+    TBUpdateSink *sink = [[[TBUpdateSink alloc] init] autorelease];
+    sink->controller = self;
     [TBHTTP loadRoots];
-    for (hop = 0; hop < 6 && !bytes && !problem; hop++) {
+    [self performSelectorOnMainThread:@selector(showUpdateProgress:) withObject:[NSString stringWithFormat:@"Downloading %@", [[asset objectForKey:@"name"] lastPathComponent]] waitUntilDone:YES];
+    for (hop = 0; hop < 6 && !bytes && !problem && !updateCancelled; hop++) {
         TBHTTP *http = [TBHTTP request:@"GET" url:nextURL];
         [http setHeader:@"User-Agent" value:[@"TigerBuild/" stringByAppendingString:[self thisVersion]]];
         [http setPublicOnly:YES];
         [http setIdleTimeout:60];
+        [http setDelegate:sink];
+        [sink->data setLength:0];
+        updateHTTP = http;
         if ([http perform] != TBNET_OK) {
-            problem = [http error] ? [http error] : @"The download failed.";
+            if (!updateCancelled)
+                problem = [http error] ? [http error] : @"The download failed.";
             break;
         }
         if ([http status] >= 301 && [http status] <= 308 && [[http responseHeader:@"Location"] length]) {
@@ -360,8 +474,14 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
             problem = [NSString stringWithFormat:@"GitHub answered with status %d.", [http status]];
             break;
         }
-        bytes = [http data];
+        bytes = sink->data;
     }
+    updateHTTP = nil;
+    if (updateCancelled) {
+        [pool release];
+        return;
+    }
+    [self performSelectorOnMainThread:@selector(updateProgress:) withObject:@"Checking and unpacking the installer..." waitUntilDone:NO];
     if (!bytes && !problem)
         problem = @"Too many redirects.";
     if (bytes) {
@@ -402,7 +522,7 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
                 {
                     NSTask *fix = [[[NSTask alloc] init] autorelease];
                     [fix setLaunchPath:@"/bin/chmod"];
-                    [fix setArguments:[NSArray arrayWithObjects:@"755", [opened stringByAppendingPathComponent:@"Contents/Resources/postflight"], nil]];
+                    [fix setArguments:[NSArray arrayWithObjects:@"755", [opened stringByAppendingPathComponent:@"Contents/Resources/postflight"], [opened stringByAppendingPathComponent:@"Contents/Resources/preflight"], nil]];
                     @try { [fix launch]; [fix waitUntilExit]; } @catch (NSException *e) {}
                 }
                 [[NSFileManager defaultManager] removeFileAtPath:zip handler:nil];
@@ -415,6 +535,8 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
 
 - (void)updateDownloaded:(NSDictionary *)result
 {
+    [updateBar stopAnimation:nil];
+    [updatePanel orderOut:nil];
     if ([[result objectForKey:@"problem"] length]) {
         NSRunAlertPanel(@"The installer was not downloaded", @"%@", @"OK", nil, nil, [result objectForKey:@"problem"]);
         return;

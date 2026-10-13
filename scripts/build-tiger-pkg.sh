@@ -42,7 +42,8 @@ cp "$T/../../sshfs/bin/sshfs" "$PAYLOAD/usr/local/tbssh/bin/"
 cp "$T/../../sshfs/LICENSE" "$PAYLOAD/usr/local/tbssh/sshfs-LICENSE"
 mkdir -p "$PAYLOAD/Library/QuickLook" && cp -R "$HOME/TigerBuild-build/quicklook/TigerBuild.qlgenerator" "$PAYLOAD/Library/QuickLook/"
 cp "$S/postflight" "$PKG/Contents/Resources/postflight"
-chmod 755 "$PKG/Contents/Resources/postflight" "$PAYLOAD/usr/local/tbssh/bin/"* "$PAYLOAD/usr/local/tbssh/sbin/sshd" "$PAYLOAD/usr/local/tbssh/libexec/"*
+cp "$S/preflight" "$PKG/Contents/Resources/preflight"
+chmod 755 "$PKG/Contents/Resources/postflight" "$PKG/Contents/Resources/preflight" "$PAYLOAD/usr/local/tbssh/bin/"* "$PAYLOAD/usr/local/tbssh/sbin/sshd" "$PAYLOAD/usr/local/tbssh/libexec/"*
 cd "$PAYLOAD"
 pax -w . | gzip -c > "$PKG/Contents/Archive.pax.gz"
 mkbom . "$PKG/Contents/Archive.bom"

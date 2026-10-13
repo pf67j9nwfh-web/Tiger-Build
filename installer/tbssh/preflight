@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run by the installer as root before anything is installed: a running Tiger Build would keep the old program in memory and could write its
+# chats back over the new files' settings, so every copy of it is stopped (asked politely first, then forced).
+killall TigerBuild > /dev/null 2>&1
+sleep 2
+killall -9 TigerBuild > /dev/null 2>&1
+exit 0

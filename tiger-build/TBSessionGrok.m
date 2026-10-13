@@ -161,7 +161,7 @@ static NSString *eventErrorMessage(NSDictionary *event)
     TBHTTP *http = [TBHTTP request:@"POST" url:[override length] ? override : @"https://api.x.ai/v1/responses"];
     int rc;
     if ([key length] == 0)
-        TBFail(@"Add your xAI (Grok) API key in Tiger Build Preferences.");
+        TBFail(@"Add your SpaceXSI (Grok) API key in Tiger Build Preferences.");
     [body setObject:[NSNumber numberWithBool:YES] forKey:@"stream"];
     [http setHeader:@"Content-Type" value:@"application/json"];
     [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:key]];

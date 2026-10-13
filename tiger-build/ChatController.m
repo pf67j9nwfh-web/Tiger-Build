@@ -549,6 +549,8 @@ static NSMutableArray *allControllers = nil;
     [self syncModelMenu];
     [transcript setMessages:[current objectForKey:@"messages"]];
     [transcript scrollToEnd];
+    /* A tall chat (a bubble over about a thousand pixels) was left blank on screen until the next scroll, and the chats after it too: the redraw is made now. */
+    [transcript display];
     [self rememberContextLimit];
     [self updateContextReadout];
     [self applyBusyUI];
