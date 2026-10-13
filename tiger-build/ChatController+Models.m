@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBProviders.h"
 
 /* Configuration, Update Model List: asks each service with a key for its own list of models and adds the new chat models that work (TBModelUpdate).
    It also runs by itself at start and then every six hours. */
@@ -7,9 +8,13 @@
 
 - (void)sendModelListUpdate:(BOOL)manual
 {
-    if (modelListBusy)
+    if (modelListBusy) {
+        if (manual)
+            NSRunAlertPanel(@"Update Model List", @"An update is already running (it starts by itself when Tiger Build opens). Its result will be shown if you ask again in a minute.", @"OK", nil, nil);
         return;
+    }
     modelListBusy = YES;
+    [self refreshLocalModels];     /* the local server's own list is read again at the same time */
     [EngineRequest send:@"POST" path:@"/v1/models/refresh" body:@"" timeout:300 target:self action:@selector(modelListUpdated:) context:[NSNumber numberWithBool:manual]];
 }
 
@@ -36,8 +41,10 @@
     if ([request ok])
         [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970]] forKey:@"TBModelListUpdated"];
     [self refreshCatalog];
-    if ([[request context] boolValue])
-        NSRunAlertPanel(@"Update Model List", @"%@", @"OK", nil, nil, [request ok] ? summary : @"The update could not be completed.");
+    if ([[request context] boolValue]) {
+        NSString *local = [[TBProviders localBase] length] ? [NSString stringWithFormat:@"\nLocal server: %u model%@", (unsigned)[localModels count], [localModels count] == 1 ? @"" : @"s"] : @"";
+        NSRunAlertPanel(@"Update Model List", @"%@%@", @"OK", nil, nil, [request ok] ? summary : @"The update could not be completed.", local);
+    }
 }
 
 @end

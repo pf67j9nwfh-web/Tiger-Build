@@ -314,6 +314,8 @@ static NSString *baseOverride(NSString *provider, NSString *standard)
 /* Models found at the services themselves (TBModelUpdate): kept in a file so they are there at the next start, offline too. */
 static NSMutableDictionary *addedModels = nil;
 
+static NSMutableDictionary *goneModels = nil;     /* provider -> ids of bundled models the service no longer offers */
+
 static void loadAdded(void)
 {
     NSDictionary *saved;
@@ -321,6 +323,7 @@ static void loadAdded(void)
         return;
     saved = [NSDictionary dictionaryWithContentsOfFile:[TBProviders liveModelsPath]];
     addedModels = [[NSMutableDictionary alloc] initWithDictionary:[[saved objectForKey:@"added"] isKindOfClass:[NSDictionary class]] ? [saved objectForKey:@"added"] : [NSDictionary dictionary]];
+    goneModels = [[NSMutableDictionary alloc] initWithDictionary:[[saved objectForKey:@"gone"] isKindOfClass:[NSDictionary class]] ? [saved objectForKey:@"gone"] : [NSDictionary dictionary]];
 }
 
 + (void)setAddedModels:(NSArray *)list forProvider:(NSString *)provider
@@ -338,10 +341,25 @@ static void loadAdded(void)
     return addedModels;
 }
 
++ (void)setGoneModels:(NSArray *)ids forProvider:(NSString *)provider
+{
+    loadAdded();
+    if ([ids count])
+        [goneModels setObject:ids forKey:provider];
+    else
+        [goneModels removeObjectForKey:provider];
+}
+
++ (NSDictionary *)goneModels
+{
+    loadAdded();
+    return goneModels;
+}
+
 + (NSArray *)bundledModelsForProvider:(NSString *)provider
 {
     loadCatalog();
-    return [modelLists objectForKey:provider];
+    return [modelLists objectForKey:provider];     /* all of them, withdrawn or not */
 }
 
 /* The models that came with the app, with any found since at the top (the newest are usually the ones wanted). */
@@ -352,6 +370,17 @@ static void loadAdded(void)
     loadAdded();
     bundled = [modelLists objectForKey:provider];
     added = [addedModels objectForKey:provider];
+    if ([[goneModels objectForKey:provider] count]) {
+        /* models the service has withdrawn are left out (never the provider's default, so a choice always exists) */
+        NSMutableArray *kept = [NSMutableArray array];
+        unsigned i;
+        for (i = 0; i < [bundled count]; i++) {
+            NSString *mid = [[bundled objectAtIndex:i] objectForKey:@"id"];
+            if (![[goneModels objectForKey:provider] containsObject:mid] || [mid isEqualToString:[defaultModels objectForKey:provider]])
+                [kept addObject:[bundled objectAtIndex:i]];
+        }
+        bundled = kept;
+    }
     if (![added count])
         return bundled;
     return [added arrayByAddingObjectsFromArray:bundled];

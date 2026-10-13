@@ -360,7 +360,7 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
     {
         BOOL direct = [result objectForKey:@"asset"] != nil;
         int choice = NSRunAlertPanel([NSString stringWithFormat:@"Tiger Build %@ is available", [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag],
-            direct ? @"You have version %@. Download the new installer now? It goes to your Downloads folder and opens; installing it asks for your administrator password and closes Tiger Build."
+            direct ? @"You have version %@. Download the new installer now? It is saved in your Downloads folder (your Desktop on Mac OS X 10.4, which has none) and opens; installing it asks for your administrator password and closes Tiger Build."
                    : @"You have version %@. The download page has the new installer and what changed.",
             direct ? @"Download Installer" : @"Open Download Page", @"Not Now", @"Skip This Version", [self thisVersion]);
         if (choice == NSAlertDefaultReturn && direct)
@@ -437,7 +437,20 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
     }
 }
 
-/* on a worker thread: the installer's zip from GitHub into ~/Downloads, checked against the digest GitHub gives, unpacked, opened */
+/* Where the installer goes: ~/Downloads when it exists; otherwise the Desktop on Tiger (a new account there has no Downloads folder, and Safari
+   saves to the Desktop); on later systems ~/Downloads is made. */
+- (NSString *)updateFolder
+{
+    NSString *downloads = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+    BOOL isDirectory = NO;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:downloads isDirectory:&isDirectory] && isDirectory)
+        return downloads;
+    if (TBSystemMinor() < 5)
+        return [NSHomeDirectory() stringByAppendingPathComponent:@"Desktop"];
+    return downloads;
+}
+
+/* on a worker thread: the installer's zip from GitHub into the Downloads folder, checked against the digest GitHub gives, unpacked, opened */
 - (void)updateDownloadWorker:(NSDictionary *)asset
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
@@ -498,12 +511,12 @@ static BOOL versionIsNewer(NSString *candidate, NSString *have)
         }
     }
     if (bytes && !problem) {
-        NSString *downloads = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+        NSString *downloads = [self updateFolder];
         NSString *zip = [downloads stringByAppendingPathComponent:[[asset objectForKey:@"name"] lastPathComponent]];
         NSTask *task;
         [[NSFileManager defaultManager] createDirectoryAtPath:downloads attributes:nil];
         if (![bytes writeToFile:zip atomically:YES])
-            problem = @"The installer could not be saved in your Downloads folder.";
+            problem = [NSString stringWithFormat:@"The installer could not be saved in %@.", [downloads lastPathComponent]];
         else {
             task = [[[NSTask alloc] init] autorelease];
             [task setLaunchPath:@"/usr/bin/ditto"];

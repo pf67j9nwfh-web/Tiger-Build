@@ -4,6 +4,7 @@
 - **Updates**: the installer download shows its progress (with Cancel), and the installer closes every open copy of Tiger Build when it starts (a `preflight` script in the package).
 - **Fixed**: a chat with one very tall reply (over about a thousand pixels) was left blank on screen, and the chats viewed after it; *Show model thinking* now says it works on the services that provide it (Grok was missing from the list); **SpaceXAI** is now **SpaceXSI**.
 - **SVG support**: `.svg` and `.svgz` files can be attached and are read by `convert_file`: the model gets the source as text and a picture of the drawing (drawn with NanoSVG, plus text in a standard font; not filters, masks or CSS style blocks). An SVG code block in a reply has a *View* button that opens the drawing, and an `.svg` file the model hands over is shown in the chat as well as offered for saving.
+- **Model list**: models a service has withdrawn are hidden (after a test call), Muse (Meta) is asked too, the command also refreshes the local server's models, the dialog is compact, and a service that cannot be asked says why.
 - **The model list updates itself**: Configuration, *Update Model List* (⌥⇧⌘M), and automatically at start and every six hours, asks each service with a key for its models, tests the new chat models with a one-word question and adds those that answer. The README's old "live model list" paragraph described the 1.x relay and is corrected.
 
 ## 2.3

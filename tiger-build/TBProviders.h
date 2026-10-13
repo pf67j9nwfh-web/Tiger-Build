@@ -34,6 +34,8 @@
 + (NSArray *)bundledModelsForProvider:(NSString *)provider;
 + (void)setAddedModels:(NSArray *)list forProvider:(NSString *)provider;
 + (NSDictionary *)addedModels;
++ (void)setGoneModels:(NSArray *)ids forProvider:(NSString *)provider;   /* bundled models the service no longer lists */
++ (NSDictionary *)goneModels;
 + (NSString *)liveModelsPath;
 + (NSString *)defaultModelForProvider:(NSString *)provider;
 + (NSString *)normalize:(NSString *)name;                 /* "openai" -> "chatgpt"; fails on a name it does not know */

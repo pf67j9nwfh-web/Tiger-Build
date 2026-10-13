@@ -49,6 +49,7 @@ static NSString *listURL(NSString *provider)
     if ([provider isEqualToString:@"gemini"]) return @"https://generativelanguage.googleapis.com/v1beta/models?pageSize=200";
     if ([provider isEqualToString:@"mistral"]) return @"https://api.mistral.ai/v1/models";
     if ([provider isEqualToString:@"grok"]) return @"https://api.x.ai/v1/models";
+    if ([provider isEqualToString:@"muse"]) return @"https://api.meta.ai/v1/models";
     return nil;
 }
 
@@ -59,7 +60,7 @@ static NSString *listURL(NSString *provider)
     NSMutableArray *out = [NSMutableArray array];
     NSArray *items = [json isKindOfClass:[NSDictionary class]] ? ([json objectForKey:@"data"] ? [json objectForKey:@"data"] : [json objectForKey:@"models"]) : nil;
     NSArray *noise = [NSArray arrayWithObjects:@"embed", @"whisper", @"tts", @"audio", @"realtime", @"image", @"imagen", @"dall", @"moderation", @"transcribe", @"instruct", @"davinci", @"babbage",
-        @"preview", @"-exp", @"aqa", @"ocr", @"imagine", @"video", @"live", @"computer-use", @"search", nil];
+        @"preview", @"-exp", @"aqa", @"ocr", @"imagine", @"video", @"live", @"computer-use", @"search", @"banana", @"vibe", @"labs-", @"zai-", @"glm", @"robotics", @"-tts", @"guard", nil];
     unsigned i;
     if (![items isKindOfClass:[NSArray class]])
         return out;
@@ -94,7 +95,7 @@ static NSString *listURL(NSString *provider)
     return out;
 }
 
-+ (id)fetch:(NSString *)provider
++ (id)fetch:(NSString *)provider problem:(NSString **)problem
 {
     NSString *url = listURL(provider), *key = [TBSettings keyForProvider:provider];
     TBHTTP *http;
@@ -105,14 +106,24 @@ static NSString *listURL(NSString *provider)
     if ([provider isEqualToString:@"claude"]) {
         [http setHeader:@"x-api-key" value:key];
         [http setHeader:@"anthropic-version" value:@"2023-06-01"];
+        if ([[TBSettings valueForName:@"anthropic_workspace_id"] length])
+            [http setHeader:@"anthropic-workspace-id" value:[TBSettings valueForName:@"anthropic_workspace_id"]];
     } else if ([provider isEqualToString:@"gemini"])
         [http setHeader:@"x-goog-api-key" value:key];
     else
         [http setHeader:@"Authorization" value:[@"Bearer " stringByAppendingString:key]];
     [http setIdleTimeout:20];
     [http setConnectTimeout:15];
-    if ([http perform] != 0 || [http status] != 200)
+    if ([http perform] != 0) {
+        if (problem)
+            *problem = [http error] ? [http error] : @"no answer";
         return nil;
+    }
+    if ([http status] != 200) {
+        if (problem)
+            *problem = [NSString stringWithFormat:@"the service answered %d", [http status]];
+        return nil;
+    }
     return TBJSONParse([http data], NULL);
 }
 
@@ -121,7 +132,7 @@ static NSString *listURL(NSString *provider)
     NSString *path = [TBProviders liveModelsPath];
     NSDictionary *saved = [NSDictionary dictionaryWithContentsOfFile:path];
     NSMutableDictionary *probed = [NSMutableDictionary dictionaryWithDictionary:[[saved objectForKey:@"probed"] isKindOfClass:[NSDictionary class]] ? [saved objectForKey:@"probed"] : [NSDictionary dictionary]];
-    NSMutableDictionary *added = [NSMutableDictionary dictionary];
+    NSMutableDictionary *added = [NSMutableDictionary dictionary], *gone = [NSMutableDictionary dictionary];
     NSMutableArray *lines = [NSMutableArray array];
     NSArray *providers = [TBProviders providers];
     double now = [[NSDate date] timeIntervalSince1970];
@@ -135,15 +146,18 @@ static NSString *listURL(NSString *provider)
         NSMutableArray *newNames = [NSMutableArray array];
         id json;
         int tried = 0;
+        NSString *reason = nil;
         if ([pid isEqualToString:@"local"] || !listURL(pid) || ![TBSettings hasKeyForProvider:pid])
             continue;
-        json = [self fetch:pid];
+        json = [self fetch:pid problem:&reason];
         if (!json) {
             /* the service could not be asked: what was found before stays */
             NSArray *before = [[saved objectForKey:@"added"] objectForKey:pid];
             if ([before count])
                 [added setObject:before forKey:pid];
-            [lines addObject:[NSString stringWithFormat:@"%@: could not get its list", name]];
+            if ([[[saved objectForKey:@"gone"] objectForKey:pid] count])
+                [gone setObject:[[saved objectForKey:@"gone"] objectForKey:pid] forKey:pid];   /* unknown now: what was decided before stays */
+            [lines addObject:[NSString stringWithFormat:@"%@: could not get its list (%@)", name, reason ? reason : @"unreadable answer"]];
             continue;
         }
         for (j = 0; j < [bundled count]; j++)
@@ -179,13 +193,62 @@ static NSString *listURL(NSString *provider)
                 [newNames addObject:TBString(model, @"id")];
             }
         }
+        /* Bundled models the service's list no longer has: tried once; one that really fails is hidden, and stays hidden for as long as the list leaves it out */
+        {
+            NSMutableSet *listed = [NSMutableSet set];
+            NSMutableArray *missing = [NSMutableArray array];
+            NSArray *items = [json isKindOfClass:[NSDictionary class]] ? ([json objectForKey:@"data"] ? [json objectForKey:@"data"] : [json objectForKey:@"models"]) : nil;
+            NSArray *before = [[[saved objectForKey:@"gone"] objectForKey:pid] isKindOfClass:[NSArray class]] ? [[saved objectForKey:@"gone"] objectForKey:pid] : [NSArray array];
+            unsigned k;
+            for (k = 0; k < [items count]; k++) {
+                NSString *mid = [[items objectAtIndex:k] isKindOfClass:[NSDictionary class]] ? TBString([items objectAtIndex:k], @"id") : @"";
+                if ([mid length] == 0 && [[[items objectAtIndex:k] isKindOfClass:[NSDictionary class]] ? TBString([items objectAtIndex:k], @"name") : @"" hasPrefix:@"models/"])
+                    mid = [TBString([items objectAtIndex:k], @"name") substringFromIndex:7];
+                [listed addObject:mid];
+            }
+            if ([listed count] >= 3) {      /* a list too short to trust (an error page, a partial answer) hides nothing */
+                for (k = 0; k < [bundled count]; k++) {
+                    NSString *mid = TBString([bundled objectAtIndex:k], @"id");
+                    if (![listed containsObject:mid] && ![mid isEqualToString:[TBProviders defaultModelForProvider:pid]])
+                        [missing addObject:mid];
+                }
+                for (k = 0; k < [missing count]; k++) {
+                    NSString *mid = [missing objectAtIndex:k];
+                    BOOL dead = NO;
+                    if ([before containsObject:mid])
+                        dead = YES;
+                    else if (tried < PROBE_LIMIT) {
+                        tried++;
+                        @try {
+                            [session completeProvider:pid model:mid system:@"Reply with the single word OK."
+                                messages:[NSArray arrayWithObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role", @"Hello", @"content", nil]]];
+                        } @catch (NSException *failed) {
+                            if ([[failed name] isEqualToString:TBStoppedException])
+                                @throw;
+                            dead = YES;
+                        }
+                    }
+                    if (dead) {
+                        if (![gone objectForKey:pid])
+                            [gone setObject:[NSMutableArray array] forKey:pid];
+                        [[gone objectForKey:pid] addObject:mid];
+                    }
+                }
+            }
+        }
+        [TBProviders setGoneModels:[gone objectForKey:pid] forProvider:pid];
         if ([kept count])
             [added setObject:kept forKey:pid];
-        [lines addObject:[NSString stringWithFormat:@"%@: %@", name, [kept count] ? [NSString stringWithFormat:@"%u new (%@)", (unsigned)[kept count], [newNames componentsJoinedByString:@", "]] : @"no new models"]];
+        {
+            NSString *news = [kept count] ? [NSString stringWithFormat:@"%u new (%@%@)", (unsigned)[kept count], [[newNames subarrayWithRange:NSMakeRange(0, [newNames count] > 4 ? 4 : [newNames count])] componentsJoinedByString:@", "],
+                [newNames count] > 4 ? [NSString stringWithFormat:@", and %u more", (unsigned)[newNames count] - 4] : @""] : @"no new models";
+            unsigned goneCount = (unsigned)[[gone objectForKey:pid] count];
+            [lines addObject:[NSString stringWithFormat:@"%@: %@%@", name, news, goneCount ? [NSString stringWithFormat:@"; %u withdrawn", goneCount] : @""]];
+        }
         [TBProviders setAddedModels:kept forProvider:pid];
     }
     {
-        NSDictionary *file = [NSDictionary dictionaryWithObjectsAndKeys:added, @"added", probed, @"probed", [NSNumber numberWithDouble:now], @"at", nil];
+        NSDictionary *file = [NSDictionary dictionaryWithObjectsAndKeys:added, @"added", gone, @"gone", probed, @"probed", [NSNumber numberWithDouble:now], @"at", nil];
         TBMakePath([path stringByDeletingLastPathComponent]);
         [file writeToFile:path atomically:YES];
     }

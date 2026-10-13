@@ -51,6 +51,7 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (BOOL)autoModelWanted;
 - (IBAction)updateModelList:(id)sender;
 - (void)updateModelListIfDue;
+- (void)refreshLocalModels;
 - (void)refreshCatalog;
 - (void)noteTurnStats:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
 - (void)markTurnStart:(NSMutableDictionary *)chat;

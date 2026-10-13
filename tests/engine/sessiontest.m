@@ -315,6 +315,17 @@ int main(int argc, char **argv)
         [d setObject:[base stringByAppendingString:@"/openai-down"] forKey:@"TBBaseURL.chatgpt"];
         summary = [TBModelUpdate refreshWithSession:session];
         expectThat([summary rangeOfString:@"no new models"].location != NSNotFound && ![[[[TBProviders modelsForProvider:@"chatgpt"] objectAtIndex:0] objectForKey:@"id"] isEqualToString:@"gpt-9-test"], @"model list: a model that fails the test question is not added");
+        expectThat([summary rangeOfString:@"withdrawn"].location != NSNotFound && [[[TBProviders goneModels] objectForKey:@"chatgpt"] count] > 0, @"model list: bundled models the service no longer lists and that fail the test question are hidden");
+        {
+            NSArray *shown = [TBProviders modelsForProvider:@"chatgpt"];
+            NSString *standard = [TBProviders defaultModelForProvider:@"chatgpt"];
+            unsigned n;
+            BOOL hasDefault = NO;
+            for (n = 0; n < [shown count]; n++)
+                if ([[[shown objectAtIndex:n] objectForKey:@"id"] isEqualToString:standard]) hasDefault = YES;
+            expectThat(hasDefault && [shown count] < [[TBProviders bundledModelsForProvider:@"chatgpt"] count], @"model list: hidden ones are gone from the list but the default stays");
+        }
+        [TBProviders setGoneModels:[NSArray array] forProvider:@"chatgpt"];
         [TBRun finish:run];
         [TBProviders setAddedModels:[NSArray array] forProvider:@"chatgpt"];
         [d removeObjectForKey:@"TBLiveModelsPath"];
