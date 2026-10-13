@@ -28,6 +28,9 @@
 - (void)round:(TBRound *)round thinking:(NSString *)text;
 @end
 
+NSString *TBModelFamilyKey(NSString *mid);                       /* the same model under another spelling gives the same key */
+NSString *TBModelTitleFor(NSString *provider, NSString *mid);   /* a name in the style of the bundled list */
+
 @interface TBProviders : NSObject
 + (NSArray *)providers;                                   /* {id, title} in menu order */
 + (NSArray *)modelsForProvider:(NSString *)provider;      /* {id, title}: found at the service first, then the bundled ones */

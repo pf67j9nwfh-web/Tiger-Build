@@ -90,7 +90,8 @@ static NSString *listURL(NSString *provider)
         title = TBString(item, @"display_name");
         if ([title length] == 0)
             title = TBString(item, @"displayName");
-        [out addObject:[NSDictionary dictionaryWithObjectsAndKeys:mid, @"id", [title length] ? title : mid, @"title", nil]];
+        (void)title;
+        [out addObject:[NSDictionary dictionaryWithObjectsAndKeys:mid, @"id", TBModelTitleFor(provider, mid), @"title", nil]];
     }
     return out;
 }
@@ -145,7 +146,7 @@ static NSString *listURL(NSString *provider)
         NSMutableArray *fresh = [NSMutableArray array], *kept = [NSMutableArray array];
         NSMutableArray *newNames = [NSMutableArray array];
         id json;
-        int tried = 0;
+        int tried = 0, checkedGone = 0;
         NSString *reason = nil;
         if ([pid isEqualToString:@"local"] || !listURL(pid) || ![TBSettings hasKeyForProvider:pid])
             continue;
@@ -163,9 +164,15 @@ static NSString *listURL(NSString *provider)
         for (j = 0; j < [bundled count]; j++)
             [known addObject:TBString([bundled objectAtIndex:j], @"id")];
         candidates = [[self candidatesFromList:json provider:pid] sortedArrayUsingDescriptors:[NSArray arrayWithObject:[[[NSSortDescriptor alloc] initWithKey:@"id" ascending:NO] autorelease]]];
-        for (j = 0; j < [candidates count]; j++)
-            if (![known containsObject:TBString([candidates objectAtIndex:j], @"id")])
+        for (j = 0; j < [bundled count]; j++)
+            [known addObject:TBModelFamilyKey(TBString([bundled objectAtIndex:j], @"id"))];
+        for (j = 0; j < [candidates count]; j++) {
+            NSString *family = TBModelFamilyKey(TBString([candidates objectAtIndex:j], @"id"));
+            if (![known containsObject:TBString([candidates objectAtIndex:j], @"id")] && ![known containsObject:family]) {
+                [known addObject:family];      /* 3.5 and 3-5, or a -latest alias of one already taken, are one model */
                 [fresh addObject:[candidates objectAtIndex:j]];
+            }
+        }
         for (j = 0; j < [fresh count]; j++) {
             NSDictionary *model = [fresh objectAtIndex:j];
             NSString *key = [NSString stringWithFormat:@"%@|%@", pid, TBString(model, @"id")];
@@ -217,8 +224,8 @@ static NSString *listURL(NSString *provider)
                     BOOL dead = NO;
                     if ([before containsObject:mid])
                         dead = YES;
-                    else if (tried < PROBE_LIMIT) {
-                        tried++;
+                    else if (checkedGone < 40) {
+                        checkedGone++;
                         @try {
                             [session completeProvider:pid model:mid system:@"Reply with the single word OK."
                                 messages:[NSArray arrayWithObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role", @"Hello", @"content", nil]]];

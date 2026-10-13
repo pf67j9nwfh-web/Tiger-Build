@@ -3,6 +3,7 @@
 #import "TBLocalTools.h"
 #import "TBSkills.h"
 #import "TBModelProfiles.h"
+#import "TBProviders.h"
 #import "TBEngine.h"
 #import "expect.h"
 
@@ -103,6 +104,10 @@ int main(int argc, char **argv)
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBModelNotesPath"];
         [m removeFileAtPath:file handler:nil];
     }
+    expectThat([TBModelTitleFor(@"chatgpt", @"gpt-6.1-sol") isEqualToString:@"6.1 Sol"] && [TBModelTitleFor(@"claude", @"claude-opus-4-8") isEqualToString:@"Opus 4.8"] && [TBModelTitleFor(@"mistral", @"mistral-medium-3-5") isEqualToString:@"Mistral Medium 3.5"]
+        && [TBModelTitleFor(@"chatgpt", @"o3") isEqualToString:@"o3"] && [TBModelTitleFor(@"gemini", @"gemini-2.5-flash-lite") isEqualToString:@"2.5 Flash Lite"], @"model names: found models are named in the style of the bundled ones");
+    expectThat([TBModelFamilyKey(@"mistral-medium-3.5") isEqualToString:TBModelFamilyKey(@"mistral-medium-3-5")] && [TBModelFamilyKey(@"mistral-medium-latest") isEqualToString:TBModelFamilyKey(@"mistral-medium")]
+        && [TBModelFamilyKey(@"claude-x-4-5-20251101") isEqualToString:TBModelFamilyKey(@"claude-x-4-5")] && ![TBModelFamilyKey(@"gpt-6-sol") isEqualToString:TBModelFamilyKey(@"gpt-6.1-sol")], @"model names: the same model in another spelling is recognised");
     [pool release];
     return failures ? 1 : 0;
 }

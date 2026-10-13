@@ -314,6 +314,58 @@ static NSString *baseOverride(NSString *provider, NSString *standard)
 /* Models found at the services themselves (TBModelUpdate): kept in a file so they are there at the next start, offline too. */
 static NSMutableDictionary *addedModels = nil;
 
+/* The same model under another spelling: 5.3 and 5-3, a trailing -latest, a date suffix. */
+NSString *TBModelFamilyKey(NSString *mid)
+{
+    NSMutableString *key = [NSMutableString stringWithString:[mid lowercaseString]];
+    NSArray *parts;
+    NSString *last;
+    [key replaceOccurrencesOfString:@"." withString:@"-" options:0 range:NSMakeRange(0, [key length])];
+    if ([key hasSuffix:@"-latest"])
+        [key deleteCharactersInRange:NSMakeRange([key length] - 7, 7)];
+    parts = [key componentsSeparatedByString:@"-"];
+    last = [parts lastObject];
+    if ([parts count] > 2 && ([last length] == 8 || [last length] == 4) && [last intValue] > 1000)
+        [key deleteCharactersInRange:NSMakeRange([key length] - [last length] - 1, [last length] + 1)];
+    return key;
+}
+
+static BOOL allIn(NSString *t, NSString *chars)
+{
+    return [t length] > 0 && [[t stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:chars]] length] == 0;
+}
+
+/* A model's name in the style of the bundled list: "6 Sol" for gpt-6-sol, "Opus 4.8" for claude-opus-4-8, "Medium 3.5" for mistral-medium-3-5. */
+NSString *TBModelTitleFor(NSString *provider, NSString *mid)
+{
+    NSString *name = mid;
+    NSArray *prefixes = [NSArray arrayWithObjects:@"gpt-", @"claude-", @"gemini-", @"grok-", @"muse-", nil];
+    NSArray *tokens;
+    NSMutableArray *out = [NSMutableArray array];
+    unsigned i;
+    (void)provider;
+    for (i = 0; i < [prefixes count]; i++)
+        if ([name hasPrefix:[prefixes objectAtIndex:i]] && [name length] > [[prefixes objectAtIndex:i] length]) {
+            name = [name substringFromIndex:[[prefixes objectAtIndex:i] length]];
+            break;
+        }
+    if (name == mid && ![mid hasPrefix:@"mistral"] && ![mid hasPrefix:@"magistral"] && ![mid hasPrefix:@"ministral"] && ![mid hasPrefix:@"codestral"] && ![mid hasPrefix:@"devstral"] && ![mid hasPrefix:@"pixtral"])
+        return mid;      /* o3, chat-latest, sam-3.1: named as the service names them */
+    tokens = [name componentsSeparatedByString:@"-"];
+    for (i = 0; i < [tokens count]; i++) {
+        NSString *t = [tokens objectAtIndex:i];
+        if (![t length])
+            continue;
+        if (allIn(t, @"0123456789") && [t length] <= 2 && [out count] && allIn([out lastObject], @"0123456789."))
+            [out replaceObjectAtIndex:[out count] - 1 withObject:[[out lastObject] stringByAppendingFormat:@".%@", t]];   /* 4-8 is 4.8 */
+        else if (allIn(t, @"0123456789."))
+            [out addObject:t];
+        else
+            [out addObject:[[[t substringToIndex:1] uppercaseString] stringByAppendingString:[t substringFromIndex:1]]];
+    }
+    return [out componentsJoinedByString:@" "];
+}
+
 static NSMutableDictionary *goneModels = nil;     /* provider -> ids of bundled models the service no longer offers */
 
 static void loadAdded(void)
@@ -323,6 +375,21 @@ static void loadAdded(void)
         return;
     saved = [NSDictionary dictionaryWithContentsOfFile:[TBProviders liveModelsPath]];
     addedModels = [[NSMutableDictionary alloc] initWithDictionary:[[saved objectForKey:@"added"] isKindOfClass:[NSDictionary class]] ? [saved objectForKey:@"added"] : [NSDictionary dictionary]];
+    {
+        /* names in the bundled style, whatever an older run stored */
+        NSEnumerator *keys = [[addedModels allKeys] objectEnumerator];
+        NSString *pid;
+        while ((pid = [keys nextObject])) {
+            NSMutableArray *fixed = [NSMutableArray array];
+            NSArray *list = [addedModels objectForKey:pid];
+            unsigned i;
+            for (i = 0; i < [list count]; i++) {
+                NSString *mid = [[list objectAtIndex:i] objectForKey:@"id"];
+                [fixed addObject:[NSDictionary dictionaryWithObjectsAndKeys:mid, @"id", TBModelTitleFor(pid, mid), @"title", nil]];
+            }
+            [addedModels setObject:fixed forKey:pid];
+        }
+    }
     goneModels = [[NSMutableDictionary alloc] initWithDictionary:[[saved objectForKey:@"gone"] isKindOfClass:[NSDictionary class]] ? [saved objectForKey:@"gone"] : [NSDictionary dictionary]];
 }
 
@@ -383,7 +450,22 @@ static void loadAdded(void)
     }
     if (![added count])
         return bundled;
-    return [added arrayByAddingObjectsFromArray:bundled];
+    {
+        /* a found model that is the bundled one under another spelling is not listed twice */
+        NSMutableSet *have = [NSMutableSet set];
+        NSMutableArray *fresh = [NSMutableArray array];
+        unsigned i;
+        for (i = 0; i < [[modelLists objectForKey:provider] count]; i++)
+            [have addObject:TBModelFamilyKey([[[modelLists objectForKey:provider] objectAtIndex:i] objectForKey:@"id"])];
+        for (i = 0; i < [added count]; i++) {
+            NSString *key = TBModelFamilyKey([[added objectAtIndex:i] objectForKey:@"id"]);
+            if (![have containsObject:key]) {
+                [have addObject:key];
+                [fresh addObject:[added objectAtIndex:i]];
+            }
+        }
+        return [fresh arrayByAddingObjectsFromArray:bundled];
+    }
 }
 
 + (NSString *)defaultModelForProvider:(NSString *)provider
