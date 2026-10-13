@@ -323,6 +323,8 @@ NSString *TBModelFamilyKey(NSString *mid)
     [key replaceOccurrencesOfString:@"." withString:@"-" options:0 range:NSMakeRange(0, [key length])];
     if ([key hasSuffix:@"-latest"])
         [key deleteCharactersInRange:NSMakeRange([key length] - 7, 7)];
+    if ([key hasSuffix:@"-0"])
+        [key deleteCharactersInRange:NSMakeRange([key length] - 2, 2)];      /* 4-0 is 4 */
     parts = [key componentsSeparatedByString:@"-"];
     last = [parts lastObject];
     if ([parts count] > 2 && ([last length] == 8 || [last length] == 4) && [last intValue] > 1000)
