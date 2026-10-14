@@ -368,6 +368,80 @@ NSString *TBModelTitleFor(NSString *provider, NSString *mid)
     return [out componentsJoinedByString:@" "];
 }
 
+/* The numbers in a model id (gpt-5.4-mini: 5, 4), left out a date suffix; and its family, the words (gpt mini). */
+static NSArray *versionOf(NSString *mid)
+{
+    NSMutableString *flat = [NSMutableString stringWithString:[mid lowercaseString]];
+    NSMutableArray *numbers = [NSMutableArray array];
+    NSArray *tokens;
+    unsigned i;
+    [flat replaceOccurrencesOfString:@"." withString:@"-" options:0 range:NSMakeRange(0, [flat length])];
+    tokens = [flat componentsSeparatedByString:@"-"];
+    for (i = 0; i < [tokens count]; i++) {
+        NSString *t = [tokens objectAtIndex:i];
+        if (allIn(t, @"0123456789") && [t length] <= 3)
+            [numbers addObject:[NSNumber numberWithInt:[t intValue]]];
+    }
+    return numbers;
+}
+
+static NSString *familyOf(NSString *mid)
+{
+    NSMutableString *flat = [NSMutableString stringWithString:[mid lowercaseString]];
+    NSMutableArray *words = [NSMutableArray array];
+    NSArray *tokens;
+    unsigned i;
+    [flat replaceOccurrencesOfString:@"." withString:@"-" options:0 range:NSMakeRange(0, [flat length])];
+    tokens = [flat componentsSeparatedByString:@"-"];
+    for (i = 0; i < [tokens count]; i++)
+        if (!allIn([tokens objectAtIndex:i], @"0123456789") && [[tokens objectAtIndex:i] length])
+            [words addObject:[tokens objectAtIndex:i]];
+    return [words componentsJoinedByString:@"-"];
+}
+
+/* -1 when a is the older version, 1 when newer, 0 when equal (1.2 against 1.2.1: the longer one is newer) */
+static int compareVersions(NSArray *a, NSArray *b)
+{
+    unsigned i;
+    for (i = 0; i < [a count] && i < [b count]; i++) {
+        int x = [[a objectAtIndex:i] intValue], y = [[b objectAtIndex:i] intValue];
+        if (x != y)
+            return x < y ? -1 : 1;
+    }
+    return [a count] == [b count] ? 0 : ([a count] < [b count] ? -1 : 1);
+}
+
+/* The bundled list is in the order it was written (newest first within each family); a model found later is put where it belongs in it: just before the first
+   entry of its own family that is older, otherwise after the family's last entry, otherwise before the first entry anywhere that is older. */
+static NSArray *mergedInOrder(NSArray *bundled, NSArray *added)
+{
+    NSMutableArray *list = [NSMutableArray arrayWithArray:bundled];
+    unsigned a, i;
+    for (a = 0; a < [added count]; a++) {
+        NSDictionary *model = [added objectAtIndex:a];
+        NSString *mid = [model objectForKey:@"id"], *family = familyOf(mid);
+        NSArray *version = versionOf(mid);
+        int at = -1, lastSame = -1;
+        for (i = 0; i < [list count] && at < 0; i++) {
+            NSString *other = [[list objectAtIndex:i] objectForKey:@"id"];
+            if ([familyOf(other) isEqualToString:family]) {
+                lastSame = (int)i;
+                if (compareVersions(versionOf(other), version) < 0)
+                    at = (int)i;
+            }
+        }
+        if (at < 0 && lastSame >= 0)
+            at = lastSame + 1;
+        for (i = 0; i < [list count] && at < 0; i++)
+            if (compareVersions(versionOf([[list objectAtIndex:i] objectForKey:@"id"]), version) < 0 && [version count])
+                at = (int)i;
+        if (at < 0)
+            at = (int)[list count];
+        [list insertObject:model atIndex:at];
+    }
+    return list;
+}
+
 static NSMutableDictionary *goneModels = nil;     /* provider -> ids of bundled models the service no longer offers */
 
 static void loadAdded(void)
@@ -466,7 +540,7 @@ static void loadAdded(void)
                 [fresh addObject:[added objectAtIndex:i]];
             }
         }
-        return [fresh arrayByAddingObjectsFromArray:bundled];
+        return mergedInOrder(bundled, fresh);
     }
 }
 

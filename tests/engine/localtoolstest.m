@@ -108,6 +108,27 @@ int main(int argc, char **argv)
         && [TBModelTitleFor(@"chatgpt", @"o3") isEqualToString:@"o3"] && [TBModelTitleFor(@"gemini", @"gemini-2.5-flash-lite") isEqualToString:@"2.5 Flash Lite"], @"model names: found models are named in the style of the bundled ones");
     expectThat([TBModelFamilyKey(@"mistral-medium-3.5") isEqualToString:TBModelFamilyKey(@"mistral-medium-3-5")] && [TBModelFamilyKey(@"mistral-medium-latest") isEqualToString:TBModelFamilyKey(@"mistral-medium")]
         && [TBModelFamilyKey(@"claude-x-4-5-20251101") isEqualToString:TBModelFamilyKey(@"claude-x-4-5")] && [TBModelFamilyKey(@"mistral-large-4-0") isEqualToString:TBModelFamilyKey(@"mistral-large-4")] && ![TBModelFamilyKey(@"gpt-6-sol") isEqualToString:TBModelFamilyKey(@"gpt-6.1-sol")], @"model names: the same model in another spelling is recognised");
+    {
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tb-order-test.plist"];
+        NSArray *shown;
+        unsigned n, sol6 = 99, sol61 = 99, base2 = 99, codex = 99;
+        [[NSUserDefaults standardUserDefaults] setObject:file forKey:@"TBLiveModelsPath"];
+        [TBProviders setAddedModels:[NSArray arrayWithObjects:[NSDictionary dictionaryWithObjectsAndKeys:@"gpt-6.1-sol", @"id", @"6.1 Sol", @"title", nil],
+            [NSDictionary dictionaryWithObjectsAndKeys:@"gpt-5.3-codex", @"id", @"5.3 Codex", @"title", nil], nil] forProvider:@"chatgpt"];
+        shown = [TBProviders modelsForProvider:@"chatgpt"];
+        for (n = 0; n < [shown count]; n++) {
+            NSString *mid = [[shown objectAtIndex:n] objectForKey:@"id"];
+            if ([mid isEqualToString:@"gpt-6-sol"]) sol6 = n;
+            if ([mid isEqualToString:@"gpt-6.1-sol"]) sol61 = n;
+            if ([mid isEqualToString:@"gpt-5.2"]) base2 = n;
+            if ([mid isEqualToString:@"gpt-5.3-codex"]) codex = n;
+        }
+        expectThat(sol61 + 1 == sol6, @"model order: a newer model goes just above its older sibling (6.1 Sol above 6 Sol)");
+        expectThat(codex < base2 && codex > sol6, @"model order: a model of a new family goes among the versions it falls between");
+        [TBProviders setAddedModels:[NSArray array] forProvider:@"chatgpt"];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBLiveModelsPath"];
+        unlink([file fileSystemRepresentation]);
+    }
     [pool release];
     return failures ? 1 : 0;
 }
