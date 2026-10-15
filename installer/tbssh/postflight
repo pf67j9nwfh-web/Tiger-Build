@@ -9,4 +9,9 @@ chown -R root:admin "/Applications/Tiger Build.app" 2>/dev/null
 chown -R root:wheel /Library/QuickLook/TigerBuild.qlgenerator 2>/dev/null
 qlmanage -r > /dev/null 2>&1
 mkdir -p /var/empty
+# open Tiger Build for whoever is at the screen once the Installer window is closed (not as root, and not if the installer is run from a terminal)
+U=`stat -f %Su /dev/console 2>/dev/null`
+if [ -n "$U" ] && [ "$U" != root ] && ps -axco command | grep -x Installer > /dev/null 2>&1; then
+  nohup sh -c "n=0; while ps -axco command | grep -x Installer > /dev/null 2>&1 && [ \$n -lt 900 ]; do sleep 1; n=\$((n+1)); done; su '$U' -c 'open \"/Applications/Tiger Build.app\"'" > /dev/null 2>&1 < /dev/null &
+fi
 exit 0
