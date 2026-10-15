@@ -561,10 +561,16 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
             if (color)
                 [item setAttributedTitle:[[[NSAttributedString alloc] initWithString:[item title]
                     attributes:[NSDictionary dictionaryWithObjectsAndKeys:font, NSFontAttributeName, color, NSForegroundColorAttributeName, nil]] autorelease]];
-            else
-                [item setTitle:[item title]];
+            else {
+                /* before 10.5, setTitle: leaves an attributed title in place, so the themed font and colour stayed until the next launch */
+                NSString *plain = [[[item title] copy] autorelease];
+                [item setAttributedTitle:nil];
+                [item setTitle:plain];
+            }
         }
     }
+    [popup synchronizeTitleAndSelectedItem];
+    [popup setNeedsDisplay:YES];
 }
 
 - (void)applyButtonTheme:(NSButton *)button
@@ -578,8 +584,15 @@ static NSString *kinds[] = {nil, @"solid", @"gradient", @"picture"};
         [centered setAlignment:NSCenterTextAlignment];
         [button setAttributedTitle:[[[NSAttributedString alloc] initWithString:title attributes:[NSDictionary dictionaryWithObjectsAndKeys:
             font, NSFontAttributeName, color, NSForegroundColorAttributeName, centered, NSParagraphStyleAttributeName, nil]] autorelease]];
-    } else
+    } else {
+        /* the same on Tiger: an attributed title from a colour theme has to be taken off explicitly */
+        NSMutableParagraphStyle *centered = [[[NSMutableParagraphStyle alloc] init] autorelease];
+        [centered setAlignment:NSCenterTextAlignment];
+        [button setAttributedTitle:[[[NSAttributedString alloc] initWithString:title ? title : @"" attributes:
+            [NSDictionary dictionaryWithObjectsAndKeys:font, NSFontAttributeName, [NSColor controlTextColor], NSForegroundColorAttributeName, centered, NSParagraphStyleAttributeName, nil]] autorelease]];
         [button setTitle:title];
+    }
+    [button setNeedsDisplay:YES];
 }
 
 /* The chat list, the labels, buttons and menus, and the window behind them, in the chosen look. Called when a setting changes and after
