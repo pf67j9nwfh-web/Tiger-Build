@@ -1904,7 +1904,7 @@ static int claudeLimitIn(NSString *message)
     {
         NSMutableDictionary *config = [NSMutableDictionary dictionary];
         if (thinking)
-            [config setObject:[NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"includeThoughts"] forKey:@"thinkingConfig"];
+            [config setObject:[NSMutableDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"includeThoughts"] forKey:@"thinkingConfig"];
         if (paramNumber(round, @"temperature"))
             [config setObject:paramNumber(round, @"temperature") forKey:@"temperature"];
         if (paramNumber(round, @"top_p"))
@@ -1921,10 +1921,20 @@ static int claudeLimitIn(NSString *message)
         streamer = [[[TBStreamer alloc] initFor:StreamGemini round:round thinking:thinking] autorelease];
         http = postStream(url, payload, headers, round, streamer);
     }
+    if ([http status] >= 400 && thinking) {
+        /* Some models want the thinking amount named (a budget of -1 lets the model choose); try that before giving up on showing the thinking. */
+        NSMutableDictionary *tc = [[payload objectForKey:@"generationConfig"] objectForKey:@"thinkingConfig"];
+        if (tc && ![tc objectForKey:@"thinkingBudget"]) {
+            [tc setObject:[NSNumber numberWithInt:-1] forKey:@"thinkingBudget"];
+            streamer = [[[TBStreamer alloc] initFor:StreamGemini round:round thinking:YES] autorelease];
+            http = postStream(url, payload, headers, round, streamer);
+        }
+    }
     if ([http status] >= 400) {
         if (!thinking)
             TBFail(@"%@", refusal(http));
         /* Models without thinking reject thinkingConfig; answer without it. */
+        [round->droppedParams addObject:@"a thinking display"];
         [[payload objectForKey:@"generationConfig"] removeObjectForKey:@"thinkingConfig"];
         if (![[payload objectForKey:@"generationConfig"] count])
             [payload removeObjectForKey:@"generationConfig"];

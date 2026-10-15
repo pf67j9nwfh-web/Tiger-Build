@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2.4
+- **Grok can search X (Twitter)** through xAI's `x_search` tool (switch in Tool Settings); **Guide** now works with Muse and local models too; Gemini asks for its thinking with a fallback (and says when a model will not show it); the Send button is wide enough for "Working." and "Guide".
 - **Updates**: the installer download shows its progress (with Cancel), and the installer closes every open copy of Tiger Build when it starts (a `preflight` script in the package).
 - **Fixed**: a chat with one very tall reply (over about a thousand pixels) was left blank on screen, and the chats viewed after it; *Show model thinking* now says it works on the services that provide it (Grok was missing from the list); **SpaceXAI** is now **SpaceXSI**.
 - **SVG support**: `.svg` and `.svgz` files can be attached and are read by `convert_file`: the model gets the source as text and a picture of the drawing (drawn with NanoSVG, plus text in a standard font; not filters, masks or CSS style blocks). An SVG code block in a reply has a *View* button that opens the drawing, and an `.svg` file the model hands over is shown in the chat as well as offered for saving.

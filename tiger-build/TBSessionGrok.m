@@ -199,6 +199,9 @@ static NSString *eventErrorMessage(NSDictionary *event)
     [payload setObject:input forKey:@"input"];
     if (!bare && [TBSettings flag:@"grok_native_search"] && ![[self skipKeys] containsObject:@"search"])
         [tools addObject:[NSDictionary dictionaryWithObject:@"web_search" forKey:@"type"]];
+    /* Grok's own search of X (Twitter) posts, from xAI's server-side tools */
+    if (!bare && [TBSettings flag:@"grok_x_search"] && ![[self skipKeys] containsObject:@"search"])
+        [tools addObject:[NSDictionary dictionaryWithObject:@"x_search" forKey:@"type"]];
     if ([tools count]) {
         [payload setObject:tools forKey:@"tools"];
         [payload setObject:@"auto" forKey:@"tool_choice"];

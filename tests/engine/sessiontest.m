@@ -207,7 +207,10 @@ int main(int argc, char **argv)
     seen = fetch(@"/seen");
     expectThat([seen count] == 2 && [[[[seen objectAtIndex:1] objectForKey:@"body"] objectForKey:@"previous_response_id"] isEqualToString:@"r1"]
         && [[[[[[seen objectAtIndex:1] objectForKey:@"body"] objectForKey:@"input"] objectAtIndex:0] objectForKey:@"call_id"] isEqualToString:@"fc_9"], @"grok loop: the tool result goes back with the response id");
-    expectThat([[[[[[seen objectAtIndex:0] objectForKey:@"body"] objectForKey:@"tools"] lastObject] objectForKey:@"type"] isEqualToString:@"web_search"], @"grok loop: native search offered");
+    {
+        NSString *tools = TBJSONString([[[seen objectAtIndex:0] objectForKey:@"body"] objectForKey:@"tools"]);
+        expectThat([tools rangeOfString:@"web_search"].location != NSNotFound && [tools rangeOfString:@"x_search"].location != NSNotFound, @"grok loop: native web search and X search offered");
+    }
 
     /* subagents: the parent calls run_subagents, two helpers answer, the parent answers */
     fetch(@"/reset");

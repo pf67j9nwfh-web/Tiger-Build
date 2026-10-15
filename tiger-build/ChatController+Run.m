@@ -16,7 +16,7 @@ static BOOL providerTakesGuidance(NSString *provider)
 {
     return [provider isEqualToString:@"grok"] || [provider isEqualToString:@"chatgpt"]
         || [provider isEqualToString:@"claude"] || [provider isEqualToString:@"gemini"]
-        || [provider isEqualToString:@"mistral"];
+        || [provider isEqualToString:@"mistral"] || [provider isEqualToString:@"muse"] || [provider isEqualToString:@"local"];
 }
 
 static NSString *newRunId(void)

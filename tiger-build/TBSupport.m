@@ -30,7 +30,7 @@ NSString *TBJSONEscape(NSString *value)
 TBChatLayout TBLayoutChatPane(float paneWidth, float paneHeight, float wanted, float statusHeight, float thinkingHeight)
 {
     TBChatLayout layout;
-    float sendW = 76;
+    float sendW = 92;     /* wide enough for "Working." and "Guide ●" */
     float stopW = 76;
     /* The rounded bezels are drawn about 9 pixels in from the left of their frames and
        5 from the right, so frames that sit side by side look 14 pixels apart. These
