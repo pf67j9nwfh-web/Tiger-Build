@@ -359,6 +359,60 @@ static long cpuCount(void)
     return sysctlbyname("hw.ncpu", &n, &size, NULL, 0) == 0 ? n : 1;
 }
 
+/* sysctl numbers come as 32 or 64 bits depending on the system, so read whatever size it gives */
+static long long sysctlNumber(const char *key)
+{
+    long long v = 0;
+    size_t size = sizeof v;
+    if (sysctlbyname(key, &v, &size, NULL, 0) != 0) return -1;
+    if (size == sizeof(int)) return *(int *)&v;
+    return v;
+}
+
+static NSString *sysctlText(const char *key)
+{
+    char buffer[256];
+    size_t size = sizeof buffer;
+    if (sysctlbyname(key, buffer, &size, NULL, 0) != 0 || size == 0) return nil;
+    return [NSString stringWithUTF8String:buffer];
+}
+
+static NSString *hardwareReport(void)
+{
+    NSMutableString *r = [NSMutableString string];
+    NSString *text = sysctlText("hw.model");
+    if (text) [r appendFormat:@"model: %@\n", text];
+    text = sysctlText("machdep.cpu.brand_string");
+    if (text) [r appendFormat:@"cpu: %@\n", text];
+    long long n = sysctlNumber("hw.cpusubtype");
+    if (!text && n >= 0) {
+        const char *ppc = n == 9 ? "PowerPC G3 (750)" : n == 10 ? "PowerPC G4 (7400)" : n == 11 ? "PowerPC G4 (7450)" : n == 100 ? "PowerPC G5 (970)" : NULL;
+        if (ppc) [r appendFormat:@"cpu: %s\n", ppc];
+    }
+    n = sysctlNumber("hw.cpufrequency");
+    if (n > 0) [r appendFormat:@"cpu speed: %.0f MHz\n", n / 1e6];
+    n = sysctlNumber("hw.busfrequency");
+    if (n > 0) [r appendFormat:@"bus speed: %.0f MHz\n", n / 1e6];
+    long long phys = sysctlNumber("hw.physicalcpu"), logical = sysctlNumber("hw.logicalcpu");
+    if (phys > 0) [r appendFormat:@"cores: %lld physical, %lld logical\n", phys, logical];
+    else [r appendFormat:@"cpus: %ld\n", cpuCount()];
+    n = sysctlNumber("hw.cpu64bit_capable");
+    if (n >= 0) [r appendFormat:@"64-bit capable: %s\n", n ? "yes" : "no"];
+    const char *caches[][2] = {{"hw.l1icachesize", "L1 instruction cache"}, {"hw.l1dcachesize", "L1 data cache"}, {"hw.l2cachesize", "L2 cache"}, {"hw.l3cachesize", "L3 cache"}};
+    int i;
+    for (i = 0; i < 4; i++) {
+        n = sysctlNumber(caches[i][0]);
+        if (n > 0) [r appendFormat:@"%s: %lld KB\n", caches[i][1], n / 1024];
+    }
+    n = sysctlNumber("hw.cachelinesize");
+    if (n > 0) [r appendFormat:@"cache line: %lld bytes\n", n];
+    n = sysctlNumber("hw.memsize");
+    if (n > 0) [r appendFormat:@"memory: %.0f MB\n", n / 1048576.0];
+    n = sysctlNumber("hw.pagesize");
+    if (n > 0) [r appendFormat:@"page size: %lld bytes\n", n];
+    return r;
+}
+
 /* ---- the servers ---- */
 
 /* The displays, read through CoreGraphics. Newer calls are looked up when the program runs so the same code works from Tiger on. */
@@ -613,7 +667,7 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
             tool(@"note_delete", @"Delete a note by its title. This cannot be undone.", [NSArray arrayWithObject:@"title"], text, [NSArray arrayWithObject:@"title"]), nil];
     else if ([name isEqualToString:@"sysinfo"])
         tools = [NSArray arrayWithObjects:
-            tool(@"host_info", @"Name, operating system and CPU count of this Mac. Use display_info for its screens.", none, none, none),
+            tool(@"host_info", @"Name, operating system, model, CPU type and speed, cores, caches and memory of this Mac. Use display_info for its screens.", none, none, none),
             tool(@"display_info", @"The displays attached to this Mac: how many, and for each its resolution in pixels, colour depth, refresh rate, physical size, rotation and position.", none, none, none),
             tool(@"disk_free", @"Free and total disk space for a path on this Mac.", [NSArray arrayWithObject:@"path"], text, none),
             tool(@"current_time", @"This Mac's local date and time with its UTC offset.", none, none, none),
@@ -705,7 +759,9 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
             struct utsname u;
             gethostname(host, sizeof host);
             uname(&u);
-            return [NSString stringWithFormat:@"host: %s\nsystem: %s %s (%s)\ncpus: %ld", host, u.sysname, u.release, u.machine, cpuCount()];
+            NSMutableString *out = [NSMutableString stringWithFormat:@"host: %s\nsystem: %s %s (%s)\n", host, u.sysname, u.release, u.machine];
+            [out appendString:hardwareReport()];
+            return out;
         }
         if ([name isEqualToString:@"display_info"])
             return TBTrim(displayReport());

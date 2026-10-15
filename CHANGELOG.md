@@ -5,6 +5,7 @@
 - **Update Model List** shows a progress window (the update takes a few minutes on a slow Mac), and pressing it while the automatic update at start is still running now waits for that one and shows its result, instead of saying it is running.
 - Models found by an update are placed in version order in the list, not at the top.
 - Reset to Default in Appearance now puts the drop-down menus' font and colour back at once on Mac OS X 10.4 (it took a restart).
+- The built-in host information tool also reports the Mac's model, CPU type and speed, bus speed, cores, cache sizes and memory.
 
 ## 2.4
 - **Updates**: the installer download shows its progress (with Cancel), and the installer closes every open copy of Tiger Build when it starts (a `preflight` script in the package).

@@ -32,6 +32,7 @@ int main(int argc, char **argv)
     expectThat([[TBBuiltin call:@"convert_units" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:1], @"value", @"mi", @"from", @"km", @"to", nil] server:@"calc" run:run] hasPrefix:@"1 mi = 1.60934"], @"units");
     expectThat([[TBBuiltin call:@"convert_units" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:212], @"value", @"F", @"from", @"C", @"to", nil] server:@"calc" run:run] isEqualToString:@"212 F = 100 C"], @"temperature");
     expectThat([[TBBuiltin call:@"sha256" arguments:[NSDictionary dictionaryWithObject:@"abc" forKey:@"text"] server:@"sysinfo" run:run] isEqualToString:@"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"], @"sha256");
+    expectThat([[TBBuiltin call:@"host_info" arguments:[NSDictionary dictionary] server:@"sysinfo" run:run] rangeOfString:@"memory:"].length > 0, @"host_info reports memory");
     [[NSUserDefaults standardUserDefaults] setObject:@"/tmp/tb-notes-test.json" forKey:@"TBNotesFile"];
     unlink("/tmp/tb-notes-test.json");
     [TBBuiltin call:@"note_set" arguments:[NSDictionary dictionaryWithObjectsAndKeys:@"a", @"title", @"hello", @"text", nil] server:@"notes" run:run];
