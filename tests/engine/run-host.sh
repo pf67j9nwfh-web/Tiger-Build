@@ -28,9 +28,9 @@ LIBS="-framework Foundation -framework Security -framework AppKit -framework App
 build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
 build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
-build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBLocalTools.m TBExtras.m TBSkills.m TBOutputs.m TBMedia.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build extras ../tests/engine/extrastest.m TBBuiltin.m TBSSH.m TBLocalTools.m TBExtras.m TBSkills.m TBOutputs.m TBMedia.m TBWebTools.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build prov ../tests/engine/provtest.m TBProviders.m $COMMON
-build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBSessionSub.m TBModelProfiles.m TBModelUpdate.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBSkills.m TBBuiltin.m TBMedia.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build session ../tests/engine/sessiontest.m TBSession.m TBSessionGrok.m TBSessionSub.m TBModelProfiles.m TBModelUpdate.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBSkills.m TBBuiltin.m TBMedia.m TBWebTools.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build formats ../tests/engine/formatstest.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build localtools ../tests/engine/localtoolstest.m TBLocalTools.m TBSkills.m TBModelProfiles.m TBProviders.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build chatexport ../tests/engine/chatexporttest.m TBChatExport.m $COMMON

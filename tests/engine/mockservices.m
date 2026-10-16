@@ -317,6 +317,50 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
     id request = nil;
     int count;
     BOOL tools;
+    if ([path isEqualToString:@"/echo"]) {
+        /* the web tool's test: what the request was */
+        NSMutableString *text = [NSMutableString stringWithFormat:@"%@ %@\n", method, fullPath];
+        NSArray *keys = [[headers allKeys] sortedArrayUsingSelector:@selector(compare:)];
+        unsigned k;
+        for (k = 0; k < [keys count]; k++)
+            [text appendFormat:@"%@: %@\n", [keys objectAtIndex:k], [headers objectForKey:[keys objectAtIndex:k]]];
+        [text appendFormat:@"\n%@", [[[NSString alloc] initWithData:raw encoding:NSUTF8StringEncoding] autorelease]];
+        sendBody(fd, 200, @"text/plain", [text dataUsingEncoding:NSUTF8StringEncoding], nil);
+        return;
+    }
+    if ([path isEqualToString:@"/redirect"]) {
+        sendBody(fd, 302, @"text/plain", [NSData data], @"Location: /echo?from=redirect\r\n");
+        return;
+    }
+    if ([path hasPrefix:@"/px"]) {
+        NSString *b64 = @"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        sendBody(fd, 200, @"image/png", [[[NSData alloc] initWithBase64EncodedString:b64 options:0] autorelease], nil);
+        return;
+    }
+    if ([path isEqualToString:@"/clip.mp4"]) {
+        sendBody(fd, 200, @"video/mp4", [@"\0\0\0\x18" "ftypmp42 fake video" dataUsingEncoding:NSISOLatin1StringEncoding], nil);
+        return;
+    }
+    if ([path hasPrefix:@"/status/"]) {
+        sendJSON(fd, 200, D(D(N(321), @"retweets", N(9000), @"views", N(1), @"likes"), @"tweet"));
+        return;
+    }
+    if ([path isEqualToString:@"/tweet-result"]) {
+        NSString *me = [NSString stringWithFormat:@"http://%@", [headers objectForKey:@"host"]];
+        NSString *id_ = [fullPath rangeOfString:@"id=999"].length ? @"999" : @"";
+        if (![id_ length]) {
+            sendBody(fd, 404, @"text/html", [@"<html>gone</html>" dataUsingEncoding:NSUTF8StringEncoding], nil);
+            return;
+        }
+        sendJSON(fd, 200, D(@"999", @"id_str", @"Hello &amp; welcome https://t.co/abc https://t.co/pic", @"text", @"2022-10-26T18:45:58.000Z", @"created_at", N(1200), @"favorite_count", N(57), @"conversation_count",
+            D(@"Ada", @"name", @"ada", @"screen_name", Y, @"is_blue_verified", [me stringByAppendingString:@"/px_normal.png"], @"profile_image_url_https"), @"user",
+            D(A(D(@"https://t.co/abc", @"url", @"https://example.com/page", @"expanded_url", @"example.com/page", @"display_url")), @"urls", A(D(@"https://t.co/pic", @"url")), @"media"), @"entities",
+            A(D(@"photo", @"type", [me stringByAppendingString:@"/px.png"], @"media_url_https", D(N(640), @"width", N(480), @"height"), @"original_info"),
+              D(@"photo", @"type", [me stringByAppendingString:@"/px.png"], @"media_url_https", D(N(640), @"width", N(480), @"height"), @"original_info"),
+              D(@"video", @"type", [me stringByAppendingString:@"/px.png"], @"media_url_https", D(N(640), @"width", N(360), @"height"), @"original_info",
+                D(N(5000), @"duration_millis", A(D(@"video/mp4", @"content_type", N(800000), @"bitrate", [me stringByAppendingString:@"/clip.mp4"], @"url"), D(@"application/x-mpegURL", @"content_type", [me stringByAppendingString:@"/x.m3u8"], @"url")), @"variants"), @"video_info")), @"mediaDetails"));
+        return;
+    }
     if ([method isEqualToString:@"GET"]) {
         if ([path isEqualToString:@"/seen"]) {
             pthread_mutex_lock(&lock);

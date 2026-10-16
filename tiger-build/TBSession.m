@@ -757,8 +757,13 @@ static BOOL mentionsWord(NSString *line, NSString *word)
     [run check];
     [self emit:@"a" text:[self toolEventForCall:call phase:@"result" output:output failed:failed elapsed:-[started timeIntervalSinceNow]]];
     [self emitSide];
-    if ([media length])
-        [self emit:@"m" text:media];
+    if ([media length]) {
+        NSArray *lines = [media componentsSeparatedByString:@"\n"];
+        unsigned m;
+        for (m = 0; m < [lines count]; m++)
+            if ([[lines objectAtIndex:m] length])
+                [self emit:@"m" text:[lines objectAtIndex:m]];
+    }
     return [NSDictionary dictionaryWithObjectsAndKeys:output, @"output", [NSNumber numberWithBool:failed], @"failed", images, @"images", nil];
 }
 

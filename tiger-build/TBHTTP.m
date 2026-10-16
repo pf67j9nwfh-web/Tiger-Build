@@ -205,6 +205,11 @@ static int bodyArrived(void *context, const unsigned char *bytes, size_t length)
     return [text autorelease];
 }
 
+- (NSString *)allResponseHeaders
+{
+    return responseHeaders ? responseHeaders : @"";
+}
+
 - (NSString *)responseHeader:(NSString *)name
 {
     NSArray *lines = [responseHeaders componentsSeparatedByString:@"\r\n"];

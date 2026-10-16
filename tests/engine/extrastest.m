@@ -1,10 +1,12 @@
 /* The built-in servers, the HTTP MCP client and the toolbox, against mock_services.py: extrastest PORT [HOST]   from tiger-build/ */
 #import <Foundation/Foundation.h>
 #import "TBBuiltin.h"
+#import "TBWebTools.h"
 #import "TBMCP.h"
 #import "TBExtras.h"
 #import "TBOutputs.h"
 #import "TBEngine.h"
+#import "TBJSON.h"
 #import "expect.h"
 
 
@@ -112,6 +114,64 @@ int main(int argc, char **argv)
         expectThat([[r objectForKey:@"failed"] boolValue], @"a tool that was not offered is refused");
         (void)tools;
         [extras release];
+    }
+    {
+        /* the web tool and X posts, against the stand-in service (which is on this Mac, so local addresses are let through) */
+        NSDictionary *r;
+        NSString *out;
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"TBAllowLocalPictures"];
+        [[NSUserDefaults standardUserDefaults] setObject:base forKey:@"TBBaseURL.xposts"];
+        [[NSUserDefaults standardUserDefaults] setObject:base forKey:@"TBBaseURL.fxtwitter"];
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo?x=1"], @"url", @"X-Test: yes\nAuthorization: Bearer k", @"headers", nil] server:@"web" run:run];
+        out = [r objectForKey:@"output"];
+        expectThat([out hasPrefix:@"HTTP/1.1 200"] && [out rangeOfString:@"GET /echo?x=1"].length && [out rangeOfString:@"x-test: yes"].length, @"curl: a GET shows the status and the text, and sends the headers");
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo"], @"url", @"{\"a\":1}", @"data", nil] server:@"web" run:run];
+        out = [r objectForKey:@"output"];
+        expectThat([out rangeOfString:@"POST /echo"].length && [out rangeOfString:@"content-type: application/json"].length && [out hasSuffix:@"{\"a\":1}"], @"curl: data makes a POST with a JSON content type");
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/redirect"], @"url", [NSNumber numberWithBool:YES], @"include_headers", nil] server:@"web" run:run];
+        expectThat([[r objectForKey:@"output"] rangeOfString:@"Final address:"].length && [[r objectForKey:@"output"] rangeOfString:@"from=redirect"].length, @"curl: redirects are followed");
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObject:[base stringByAppendingString:@"/px.png"] forKey:@"url"] server:@"web" run:run];
+        expectThat([[r objectForKey:@"media"] hasPrefix:@"image "], @"curl: a picture is shown in the chat");
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObject:[base stringByAppendingString:@"/clip.mp4"] forKey:@"url"] server:@"web" run:run];
+        expectThat([[r objectForKey:@"media"] hasPrefix:@"video "], @"curl: a video is shown in the chat");
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo"], @"url", @"echo.txt", @"save_as", nil] server:@"web" run:run];
+        expectThat([[r objectForKey:@"media"] hasPrefix:@"file "] && [[r objectForKey:@"output"] rangeOfString:@"SHA-256"].length, @"curl: save_as keeps text as a file");
+        r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo"], @"url", [NSNumber numberWithInt:500], @"max_chars", nil] server:@"web" run:run];
+        expectThat([r objectForKey:@"media"] == nil, @"curl: text gives no media");
+        {
+            /* ftyp, then moov > trak > mdia > minf > stbl > ctts (version 1, offsets 0, -40, 60) */
+            unsigned char file[] = {0,0,0,12,'f','t','y','p','i','s','o','m',
+                0,0,0,72,'m','o','o','v', 0,0,0,64,'t','r','a','k', 0,0,0,56,'m','d','i','a', 0,0,0,48,'m','i','n','f', 0,0,0,40,'s','t','b','l',
+                0,0,0,32,'c','t','t','s', 1,0,0,0, 0,0,0,2, 0,0,0,1, 0xff,0xff,0xff,0xd8, 0,0,0,1, 0,0,0,60};
+            NSData *fixed = [TBWebTools playableVideo:[NSData dataWithBytes:file length:sizeof file]];
+            const unsigned char *f = [fixed bytes];
+            expectThat([fixed length] == sizeof file && f[60] == 0 && f[75] == 0 && f[83] == 100, @"video: signed composition offsets are rewritten so old QuickTime opens it");
+        }
+        expectThat([[TBWebTools postIdFrom:@"https://x.com/ada/status/1585341984679469056?s=20"] isEqualToString:@"1585341984679469056"]
+            && [[TBWebTools postIdFrom:@"https://twitter.com/i/web/status/123"] isEqualToString:@"123"] && [[TBWebTools postIdFrom:@"456"] isEqualToString:@"456"] && ![TBWebTools postIdFrom:@"https://x.com/ada"], @"x_post: the post number from an address");
+        r = [TBWebTools call:@"x_post" arguments:[NSDictionary dictionaryWithObject:@"https://x.com/ada/status/999" forKey:@"url"] server:@"xposts" run:run];
+        out = [r objectForKey:@"output"];
+        expectThat([out rangeOfString:@"Post by Ada (@ada), verified"].length && [out rangeOfString:@"Hello & welcome https://example.com/page"].length && [out rangeOfString:@"pic"].length && [out rangeOfString:@"Replies 57, likes 1200, reposts 321, views 9000."].length, @"x_post: the text is read, with links opened and the picture link left out");
+        {
+            NSArray *lines = [[r objectForKey:@"media"] componentsSeparatedByString:@"\n"];
+            NSArray *first = [[lines objectAtIndex:0] componentsSeparatedByString:@" "];
+            id data = [first count] == 3 ? TBJSONParse(TBBase64Decode([first objectAtIndex:2]), NULL) : nil;
+            expectThat([lines count] == 3 && [[lines objectAtIndex:2] hasPrefix:@"tweetvideo "] && [[lines objectAtIndex:2] hasSuffix:@" tweet"] && [[first objectAtIndex:0] isEqualToString:@"tweet"] && [[first objectAtIndex:1] isEqualToString:@"999"] && [[lines objectAtIndex:1] hasPrefix:@"image "] && [[lines objectAtIndex:1] hasSuffix:@" tweet"], @"x_post: the post and its photos as one picture come back for the chat");
+            expectThat([[data objectForKey:@"name"] isEqualToString:@"Ada"] && [[data objectForKey:@"reposts"] intValue] == 321 && [[data objectForKey:@"text"] hasPrefix:@"Hello & welcome"] && [[data objectForKey:@"avatar"] length] > 20, @"x_post: the post's data and author picture travel with it");
+        }
+        r = [TBWebTools call:@"x_post" arguments:[NSDictionary dictionaryWithObjectsAndKeys:@"999", @"url", @"all", @"show", nil] server:@"xposts" run:run];
+        expectThat([[[r objectForKey:@"media"] componentsSeparatedByString:@"\n"] count] == 5, @"x_post: show all gives the post, its photos and video, and both photos at full size");
+        r = [TBWebTools call:@"x_post" arguments:[NSDictionary dictionaryWithObjectsAndKeys:@"999", @"url", @"text", @"show", nil] server:@"xposts" run:run];
+        expectThat([r objectForKey:@"media"] == nil, @"x_post: show text gives no pictures");
+        {
+            BOOL refused = NO;
+            @try { [TBWebTools call:@"x_post" arguments:[NSDictionary dictionaryWithObject:@"888" forKey:@"url"] server:@"xposts" run:run]; }
+            @catch (NSException *x) { refused = [[x reason] rangeOfString:@"could not be found"].length > 0; }
+            expectThat(refused, @"x_post: a missing post is explained");
+        }
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBAllowLocalPictures"];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBBaseURL.xposts"];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBBaseURL.fxtwitter"];
     }
     [pool release];
     return failures ? 1 : 0;

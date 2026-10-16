@@ -1,4 +1,5 @@
 #import "TranscriptView.h"
+#import "TBWebTools.h"
 #import "TBSupport.h"
 #import "TBMarkup.h"
 #import "TBTheme.h"
@@ -388,7 +389,7 @@ static NSString *statsLine(NSDictionary *message)
     double seconds = [[message objectForKey:@"statsSeconds"] doubleValue];
     int in = [[message objectForKey:@"statsIn"] intValue], out = [[message objectForKey:@"statsOut"] intValue];
     NSMutableArray *parts = [NSMutableArray array];
-    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"] || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"])
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"] || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"] || [message objectForKey:@"tweet"])
         return nil;
     if (in + out > 0) {
         [parts addObject:[NSString stringWithFormat:@"in %@", tokenCount(in)]];
@@ -657,6 +658,14 @@ static void paintThoughtCloud(NSRect rect, int phase)
         [dot fill];
     }
 }
+
+@interface TranscriptView (TweetDrawing)
+- (void)drawTweet:(NSDictionary *)box;
+@end
+
+static NSMutableDictionary *tweetAvatars = nil;
+static NSString *shareCopiedLink = nil;
+static NSDate *shareCopiedAt = nil;
 
 @implementation TranscriptView
 
@@ -1441,6 +1450,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         float videoW = 0;
         NSString *filePath = [message objectForKey:@"file"];
         float fileH = 0;
+        NSDictionary *tweet = status ? nil : [message objectForKey:@"tweet"];
+        float tweetHeaderH = tweet ? 34 : 0, tweetFooterH = tweet ? 28 : 0;
         BOOL typing = NO;
         if (!text)
             text = @"";
@@ -1483,16 +1494,22 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             imageH = 160;
             if (isize.width > 1 && isize.height > 1) {
                 imageH = isize.height * (imageW / isize.width);
-                if (imageH > 220) {
+                if (tweet) {
+                    /* the photos of a post are shown larger than a picture the model fetched */
+                    imageW = MIN(maxText, 460);
+                    imageH = isize.height * (imageW / isize.width);
+                } else if (imageH > 220) {
                     imageH = 220;
                     imageW = isize.width * (220.0 / isize.height);
                 }
             }
         }
         if (!status && videoPath && [[NSFileManager defaultManager] fileExistsAtPath:videoPath]) {
-            videoW = maxText;
+            videoW = tweet ? MIN(maxText, 460) : maxText;
             videoH = videoW * 9.0 / 16.0;
-            if (videoH > 220) {
+            if (tweet) {
+                /* a post's video keeps its width */
+            } else if (videoH > 220) {
                 videoH = 220;
                 videoW = 220.0 * 16.0 / 9.0;
             }
@@ -1517,6 +1534,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         }
         if (fileH > 0)
             [box setObject:filePath forKey:@"file"];
+        if (tweet) {
+            [box setObject:tweet forKey:@"tweet"];
+            [box setObject:[NSNumber numberWithFloat:tweetHeaderH] forKey:@"tweetHeaderH"];
+            [box setObject:[NSNumber numberWithFloat:tweetFooterH] forKey:@"tweetFooterH"];
+        }
         if (videoH > 0) {
             [box setObject:videoPath forKey:@"video"];
             [box setObject:[NSValue valueWithSize:NSMakeSize(videoW, videoH)] forKey:@"videoSize"];
@@ -1532,13 +1554,22 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 bubble.size.width = videoW + 34;
             bubble.size.height = used.size.height + 18;
             if (!typing && statsLine(message)) {
+                float statsW = [statsLine(message) sizeWithAttributes:[NSDictionary dictionaryWithObject:[NSFont systemFontOfSize:9] forKey:NSFontAttributeName]].width + 36;
                 bubble.size.height += 13;
+                /* a short reply still has to hold its line of tokens and time */
+                if (statsW > bubble.size.width)
+                    bubble.size.width = statsW;
                 [box setObject:statsLine(message) forKey:@"stats"];
             }
             if (imageH > 0)
                 bubble.size.height += imageH + 8;
             if (videoH > 0)
                 bubble.size.height += videoH + 8;
+            if (tweet) {
+                bubble.size.height += tweetHeaderH + tweetFooterH;
+                if (bubble.size.width < 300)
+                    bubble.size.width = 300;
+            }
             if (fileH > 0) {
                 bubble.size.height += fileH;
                 if (bubble.size.width < 150)
@@ -1577,7 +1608,13 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             rect.origin.x = 16;
         [box setObject:[NSValue valueWithRect:rect] forKey:@"rect"];
         if (!status) {
-            float stackY = NSMinY(rect) + 10;
+            float stackY = NSMinY(rect) + 10 + [[box objectForKey:@"tweetFooterH"] floatValue];
+            if ([box objectForKey:@"tweet"]) {
+                float headerH = [[box objectForKey:@"tweetHeaderH"] floatValue];
+                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMaxY(rect) - 9 - headerH, NSWidth(rect) - 34, headerH - 2)] forKey:@"tweetHeaderRect"];
+                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMinY(rect) + 8, NSWidth(rect) - 34, 22)] forKey:@"tweetFooterRect"];
+                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMaxX(rect) - 17 - 34, NSMinY(rect) + 6, 34, 26)] forKey:@"shareRect"];
+            }
             if ([box objectForKey:@"image"]) {
                 NSSize imageSize = [[box objectForKey:@"imageSize"] sizeValue];
                 NSRect imageRect = NSMakeRect(NSMinX(rect) + 17, stackY, imageSize.width, imageSize.height);
@@ -1602,7 +1639,9 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 NSSize textSize = [[box objectForKey:@"textSize"] sizeValue];
                 textRect.size = textSize;
                 textRect.origin.x = NSMinX(rect) + 17;
-                if ([box objectForKey:@"image"] || [box objectForKey:@"video"] || [box objectForKey:@"file"])
+                if ([box objectForKey:@"tweet"])
+                    textRect.origin.y = NSMaxY(rect) - 10 - [[box objectForKey:@"tweetHeaderH"] floatValue] - textSize.height;
+                else if ([box objectForKey:@"image"] || [box objectForKey:@"video"] || [box objectForKey:@"file"])
                     textRect.origin.y = NSMaxY(rect) - 10 - textSize.height;
                 else
                     textRect.origin.y = NSMinY(rect) + (NSHeight(rect) - textSize.height) / 2.0;
@@ -1830,6 +1869,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 continue;
             }
             paintBubble(rect, fromUser);
+            if ([box objectForKey:@"tweet"])
+                [self drawTweet:box];
             if ([box objectForKey:@"stats"]) {
                 NSDictionary *attrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:9], NSFontAttributeName,
                     [NSColor colorWithCalibratedWhite:0.38 alpha:1], NSForegroundColorAttributeName, nil];
@@ -2033,6 +2074,29 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             [self saveFileAtPath:[fileBox objectForKey:@"file"]];return;
         }
     }
+    for(i=0;i<[boxes count];i++) {
+        NSDictionary *tweetBox=[boxes objectAtIndex:i];
+        NSString *link=[[tweetBox objectForKey:@"message"] objectForKey:@"tweetLink"];
+        /* the Share button of a post copies its address */
+        if(link&&[tweetBox objectForKey:@"shareRect"]&&NSPointInRect(point,[[tweetBox objectForKey:@"shareRect"] rectValue])) {
+            NSPasteboard *board=[NSPasteboard generalPasteboard];
+            [board declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+            [board setString:link forType:NSStringPboardType];
+            [shareCopiedLink release];shareCopiedLink=[link copy];
+            [shareCopiedAt release];shareCopiedAt=[[NSDate date] retain];
+            [self setNeedsDisplay:YES];
+            [self performSelector:@selector(setNeedsDisplayLater) withObject:nil afterDelay:2.1];
+            return;
+        }
+    }
+    for(i=0;i<[boxes count];i++) {
+        NSDictionary *clipBox=[boxes objectAtIndex:i];
+        NSString *clip=[[clipBox objectForKey:@"message"] objectForKey:@"tweetVideo"];
+        /* the picture of a post's video plays it in the Mac's own player */
+        if(clip&&[clipBox objectForKey:@"imageRect"]&&NSPointInRect(point,[[clipBox objectForKey:@"imageRect"] rectValue])&&[[NSFileManager defaultManager] fileExistsAtPath:clip]) {
+            [[NSWorkspace sharedWorkspace] openFile:clip];return;
+        }
+    }
     if([event clickCount]>1) {
         for(i=0;i<[boxes count];i++) {
             NSDictionary *pictureBox=[boxes objectAtIndex:i];
@@ -2056,6 +2120,82 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         }
     }
     [super mouseDown:event];
+}
+/* the author line and the row of counts of a post, in the colours of the bubble */
+- (void)drawTweet:(NSDictionary *)box
+{
+    NSDictionary *tweet = [box objectForKey:@"tweet"];
+    NSRect header = [[box objectForKey:@"tweetHeaderRect"] rectValue], footer = [[box objectForKey:@"tweetFooterRect"] rectValue];
+    NSColor *ink = [[box objectForKey:@"attrs"] objectForKey:NSForegroundColorAttributeName], *faint;
+    NSDictionary *nameAttrs, *faintAttrs, *countAttrs;
+    NSRect avatarRect = NSMakeRect(NSMinX(header), NSMidY(header) - 13, 26, 26);
+    NSString *handle = [NSString stringWithFormat:@"@%@", [tweet objectForKey:@"handle"]], *age = [tweet objectForKey:@"created"] ? TBTweetAge([NSDate dateWithTimeIntervalSince1970:[[tweet objectForKey:@"created"] doubleValue]]) : @"";
+    NSString *keys[4] = {@"replies", @"reposts", @"likes", @"views"};
+    int kinds[4] = {0, 1, 2, 3};
+    float x;
+    int k;
+    NSValue *key = [NSValue valueWithPointer:[box objectForKey:@"message"]];
+    NSImage *avatar = [tweetAvatars objectForKey:key];
+    if (!ink)
+        ink = [NSColor blackColor];
+    faint = [ink colorWithAlphaComponent:0.6];
+    nameAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont boldSystemFontOfSize:12], NSFontAttributeName, ink, NSForegroundColorAttributeName, nil];
+    faintAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:12], NSFontAttributeName, faint, NSForegroundColorAttributeName, nil];
+    countAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont systemFontOfSize:11], NSFontAttributeName, faint, NSForegroundColorAttributeName, nil];
+    if (!avatar && [[tweet objectForKey:@"avatar"] isKindOfClass:[NSData class]]) {
+        avatar = [[[NSImage alloc] initWithData:[tweet objectForKey:@"avatar"]] autorelease];
+        if (avatar) {
+            if (!tweetAvatars)
+                tweetAvatars = [[NSMutableDictionary alloc] init];
+            [tweetAvatars setObject:avatar forKey:key];
+        }
+    }
+    [NSGraphicsContext saveGraphicsState];
+    [[NSBezierPath bezierPathWithOvalInRect:avatarRect] addClip];
+    [[ink colorWithAlphaComponent:0.15] set];
+    NSRectFill(avatarRect);
+    if (avatar)
+        [avatar drawInRect:avatarRect fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+    [NSGraphicsContext restoreGraphicsState];
+    x = NSMaxX(avatarRect) + 8;
+    {
+        NSString *name = [tweet objectForKey:@"name"] ? [tweet objectForKey:@"name"] : @"";
+        NSSize nameSize = [name sizeWithAttributes:nameAttrs];
+        float baseline = NSMidY(header) - nameSize.height / 2;
+        [name drawAtPoint:NSMakePoint(x, baseline) withAttributes:nameAttrs];
+        x += nameSize.width + 4;
+        if ([[tweet objectForKey:@"verified"] boolValue]) {
+            TBDrawTweetBadge(NSMakePoint(x + 6, NSMidY(header)));
+            x += 16;
+        }
+        [[age length] ? [NSString stringWithFormat:@"%@ %C %@", handle, (unichar)0xb7, age] : handle drawAtPoint:NSMakePoint(x, baseline) withAttributes:faintAttrs];
+    }
+    x = NSMinX(footer);
+    for (k = 0; k < 4; k++) {
+        NSString *count;
+        if (![[tweet objectForKey:keys[k]] isKindOfClass:[NSNumber class]])
+            continue;
+        count = TBTweetCount([[tweet objectForKey:keys[k]] doubleValue]);
+        TBDrawTweetIcon(kinds[k], NSMakeRect(x, NSMidY(footer) - 7, 15, 14), faint);
+        [count drawAtPoint:NSMakePoint(x + 21, NSMidY(footer) - [count sizeWithAttributes:countAttrs].height / 2) withAttributes:countAttrs];
+        x += 21 + [count sizeWithAttributes:countAttrs].width + 22;
+    }
+    TBDrawTweetIcon(4, NSMakeRect(NSMaxX(footer) - 15, NSMidY(footer) - 7, 15, 14), faint);
+    if (shareCopiedAt && [[[box objectForKey:@"message"] objectForKey:@"tweetLink"] isEqualToString:shareCopiedLink] && -[shareCopiedAt timeIntervalSinceNow] < 2) {
+        NSDictionary *pillAttrs = [NSDictionary dictionaryWithObjectsAndKeys:[NSFont boldSystemFontOfSize:11], NSFontAttributeName, [NSColor whiteColor], NSForegroundColorAttributeName, nil];
+        NSSize words = [@"Link copied" sizeWithAttributes:pillAttrs];
+        NSRect pill = NSMakeRect(NSMaxX(footer) - 24 - words.width - 16, NSMidY(footer) - 10, words.width + 16, 20);
+        NSBezierPath *tag = [NSBezierPath bezierPath];
+        appendRoundedRect(tag, pill, 10);
+        [[NSColor colorWithCalibratedRed:0.11 green:0.61 blue:0.94 alpha:1] set];
+        [tag fill];
+        [@"Link copied" drawAtPoint:NSMakePoint(NSMinX(pill) + 8, NSMinY(pill) + 3) withAttributes:pillAttrs];
+    }
+}
+
+- (void)setNeedsDisplayLater
+{
+    [self setNeedsDisplay:YES];
 }
 - (void)setActivitiesExpanded:(BOOL)expanded
 {

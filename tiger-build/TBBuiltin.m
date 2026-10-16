@@ -1,4 +1,5 @@
 #import "TBBuiltin.h"
+#import "TBWebTools.h"
 #import "TBEngine.h"
 #import "TBJSON.h"
 #import "TBHTTP.h"
@@ -647,7 +648,7 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
 
 + (BOOL)knows:(NSString *)name
 {
-    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", nil] containsObject:name];
+    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", @"web", @"xposts", nil] containsObject:name];
 }
 
 + (NSDictionary *)listTools:(NSString *)name
@@ -683,6 +684,21 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
         tools = [NSArray arrayWithObjects:
             tool(@"inflation_adjust", @"What an amount of US dollars from one year is worth in another year, by the US consumer price index (CPI-U): yearly averages from 1913. to_year defaults to the latest year with data.",
                 [NSArray arrayWithObjects:@"amount", @"from_year", @"to_year", nil], [NSArray arrayWithObjects:@"number", @"number", @"number", nil], [NSArray arrayWithObjects:@"amount", @"from_year", nil]), nil];
+    else if ([name isEqualToString:@"web"])
+        tools = [NSArray arrayWithObjects:
+            tool(@"curl", @"Fetch a web address like the curl command: GET by default, or POST, PUT, PATCH, DELETE or HEAD with a body and headers. Works for pages, JSON APIs and files. "
+                "Text (HTML, JSON, XML, plain text) comes back as text, up to max_chars; a picture or video is shown in the chat; any other file is given to the person with a Save As button. "
+                "The reply starts with the status line and content type. Public addresses only; redirects are followed. "
+                "Examples: url=https://api.example.com/items ; url=https://api.example.com/items method=POST headers=\"Authorization: Bearer KEY\" data={\"name\":\"x\"} ; url=https://example.com/report.pdf (kept as a file).",
+                [NSArray arrayWithObjects:@"url", @"method", @"headers", @"data", @"include_headers", @"save", @"save_as", @"max_chars", @"follow_redirects", @"timeout", nil],
+                [NSArray arrayWithObjects:@"string", @"string", @"string", @"string", @"boolean", @"boolean", @"string", @"number", @"boolean", @"number", nil],
+                [NSArray arrayWithObject:@"url"]), nil];
+    else if ([name isEqualToString:@"xposts"])
+        tools = [NSArray arrayWithObjects:
+            tool(@"x_post", @"Get one post on X (Twitter) from its address (https://x.com/name/status/123...) or its number: the author, time, full text, counts, and the addresses of its pictures and video. "
+                "show=card (the default) puts a drawn copy of the post in the chat, like an embedded post, with its pictures and a Share button that copies the link, and the video if it has one; "
+                "show=media shows the pictures at full size and the video; show=all does both; show=text gives only the text, with no pictures. Use it on the post addresses that a search returns.",
+                [NSArray arrayWithObjects:@"url", @"show", nil], [NSArray arrayWithObjects:@"string", @"string", nil], [NSArray arrayWithObject:@"url"]), nil];
     else if ([name isEqualToString:@"weather"])
         tools = [NSArray arrayWithObjects:
             tool(@"current_weather", @"Current conditions from wttr.in for a place (a city, postcode or 'City,Country').", [NSArray arrayWithObject:@"place"], text, [NSArray arrayWithObject:@"place"]),

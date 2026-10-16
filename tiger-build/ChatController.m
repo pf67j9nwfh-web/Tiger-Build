@@ -7,6 +7,8 @@
 #import "TBEngine.h"
 #import "TBTheme.h"
 #import "TBExtract.h"
+#import "TBOutputs.h"
+#import "TBJSON.h"
 #import "TBProviders.h"
 #import <CoreServices/CoreServices.h>
 
@@ -2675,7 +2677,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.5";
+        version = @"2.6";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];
@@ -2760,6 +2762,56 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return;
     kind = [parts objectAtIndex:0];
     name = [parts objectAtIndex:1];
+    if ([kind isEqualToString:@"tweet"]) {
+        /* a post on X: its data comes in the line itself and becomes a bubble; its pictures follow as "image NAME tweet" lines */
+        NSData *json = [parts count] > 2 ? TBBase64Decode([parts objectAtIndex:2]) : nil;
+        NSDictionary *post = json ? TBJSONParse(json, NULL) : nil;
+        NSMutableDictionary *shown, *bubble;
+        NSString *postText, *avatar;
+        unsigned d;
+        for (d = 0; d < [name length]; d++)
+            if ([name characterAtIndex:d] < '0' || [name characterAtIndex:d] > '9')
+                return;
+        if (![post isKindOfClass:[NSDictionary class]] || ![name length])
+            return;
+        open = [self openMessageIn:chat];
+        if (open && [[open objectForKey:@"text"] length] == 0 && ![open objectForKey:@"image"] && ![open objectForKey:@"video"] && ![open objectForKey:@"pendingMedia"])
+            [[chat objectForKey:@"messages"] removeObject:open];
+        else if (open)
+            [open setObject:[NSNumber numberWithBool:NO] forKey:@"open"];
+        shown = [NSMutableDictionary dictionaryWithDictionary:post];
+        avatar = [post objectForKey:@"avatar"];
+        [shown removeObjectForKey:@"avatar"];
+        if ([avatar isKindOfClass:[NSString class]] && TBBase64Decode(avatar))
+            [shown setObject:TBBase64Decode(avatar) forKey:@"avatar"];
+        postText = [post objectForKey:@"text"];
+        bubble = [NSMutableDictionary dictionary];
+        [bubble setObject:@"assistant" forKey:@"role"];
+        [bubble setObject:[postText isKindOfClass:[NSString class]] && [postText length] ? postText : @" " forKey:@"text"];
+        [bubble setObject:[NSNumber numberWithBool:NO] forKey:@"status"];
+        [bubble setObject:shown forKey:@"tweet"];
+        [bubble setObject:[@"https://x.com/i/status/" stringByAppendingString:name] forKey:@"tweetLink"];
+        [[chat objectForKey:@"messages"] addObject:bubble];
+        [self saveStore];
+        [self refreshTranscriptIfCurrent:chat];
+        return;
+    }
+    if ([parts count] > 2 && [[parts objectAtIndex:2] isEqualToString:@"tweet"] && ![kind isEqualToString:@"file"]) {
+        /* a picture or video that belongs to the last post bubble */
+        NSArray *all = [chat objectForKey:@"messages"];
+        NSMutableDictionary *target = nil;
+        int t;
+        for (t = (int)[all count] - 1; t >= 0 && !target; t--)
+            if ([[all objectAtIndex:t] objectForKey:@"tweet"])
+                target = [all objectAtIndex:t];
+        if (target && [name length] && [name rangeOfString:@"/"].location == NSNotFound && [name rangeOfString:@".."].location == NSNotFound) {
+            [target setObject:[NSNumber numberWithInt:[[target objectForKey:@"pendingMedia"] intValue] + 1] forKey:@"pendingMedia"];
+            info = [NSDictionary dictionaryWithObjectsAndKeys:kind, @"kind", name, @"name", target, @"message", chat, @"chat", nil];
+            [EngineRequest send:@"GET" path:[@"/v1/media/" stringByAppendingString:name] body:nil timeout:([kind hasSuffix:@"video"] ? 180 : 90)
+                target:self action:@selector(mediaArrived:) context:info];
+            return;
+        }
+    }
     if ([name length] == 0 || [name rangeOfString:@"/"].location != NSNotFound
         || [name rangeOfString:@".."].location != NSNotFound)
         return;
@@ -2837,7 +2889,9 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
             [message setObject:[NSString stringWithFormat:@"%@ could not be read.", TBDisplayFileName(path)] forKey:@"text"];
         }
     } else if ([request ok] && [[request data] length] > 0 && [[request data] writeToFile:path atomically:YES]) {
-        if ([[info objectForKey:@"kind"] isEqualToString:@"image"])
+        if ([[info objectForKey:@"kind"] isEqualToString:@"tweetvideo"])
+            [message setObject:path forKey:@"tweetVideo"];
+        else if ([[info objectForKey:@"kind"] isEqualToString:@"image"])
             [message setObject:path forKey:@"image"];
         else
             [message setObject:path forKey:@"video"];

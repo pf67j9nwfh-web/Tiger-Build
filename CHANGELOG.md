@@ -1,12 +1,18 @@
 # Changelog
 
+## 2.6
+- **Web requests for agents** (new built-in server *Web requests (curl)*): one `curl` tool with a url, method, headers and body, like the command. Text comes back as text with the status line and content type, pictures and videos are shown in the chat, other files are kept with a Save As button; redirects are followed and public addresses only. It asks before each use. (The old *download tool* is still there as an option.)
+- **X posts with pictures and video** (new built-in server *X (Twitter) posts*): `x_post` reads a post from its address and shows it in the chat as a bubble: the author's picture and name with the verified badge, the text, replies, reposts, likes and views, its photos in X's arrangement or a video's picture with a play button (click it to play the video in QuickTime Player), and a Share button that copies the link. It can also show the pictures at full size or give text only. Works with any model, with no key. Grok's own X search stays as it was.
+- A short reply now stretches its bubble to hold the line of tokens and time, when that is switched on, instead of letting it spill out.
+- The tool result can now put several pictures, videos or files in the chat at once.
+- The host info tool reports the model, CPU type and speed, cores, caches and memory.
+- The installer opens Tiger Build when its window is closed.
+- Reset to Default in Appearance puts the drop-down menus' font and colour back at once on Mac OS X 10.4.
+
 ## 2.5
 - **Grok can search X (Twitter)** through xAI's `x_search` tool (switch in Tool Settings); **Guide** now works with Muse and local models too; **Gemini 4 shows its thinking** (it only sends summaries when its thinking level is named, so Tiger Build asks for "high"; other Gemini models are asked as before, with a fallback and a note if a model will not show thinking); the Send button is wide enough for "Working." and "Guide".
 - **Update Model List** shows a progress window (the update takes a few minutes on a slow Mac), and pressing it while the automatic update at start is still running now waits for that one and shows its result, instead of saying it is running.
 - Models found by an update are placed in version order in the list, not at the top.
-- Reset to Default in Appearance now puts the drop-down menus' font and colour back at once on Mac OS X 10.4 (it took a restart).
-- The built-in host information tool also reports the Mac's model, CPU type and speed, bus speed, cores, cache sizes and memory.
-- The installer opens Tiger Build when its window is closed.
 
 ## 2.4
 - **Updates**: the installer download shows its progress (with Cancel), and the installer closes every open copy of Tiger Build when it starts (a `preflight` script in the package).

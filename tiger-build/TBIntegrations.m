@@ -281,7 +281,9 @@ static NSArray *validated(id list, BOOL forceOff)
         [NSArray arrayWithObjects:@"sysinfo", @"System info", [NSNumber numberWithBool:NO], nil],
         [NSArray arrayWithObjects:@"weather", @"Weather (wttr.in)", [NSNumber numberWithBool:NO], nil],
         [NSArray arrayWithObjects:@"currency", @"Currency exchange rates", [NSNumber numberWithBool:NO], nil],
-        [NSArray arrayWithObjects:@"inflation", @"US inflation (CPI-U)", [NSNumber numberWithBool:NO], nil], nil];
+        [NSArray arrayWithObjects:@"inflation", @"US inflation (CPI-U)", [NSNumber numberWithBool:NO], nil],
+        [NSArray arrayWithObjects:@"web", @"Web requests (curl)", [NSNumber numberWithBool:YES], nil],
+        [NSArray arrayWithObjects:@"xposts", @"X (Twitter) posts", [NSNumber numberWithBool:NO], nil], nil];
     for (e = 0; e < [examples count]; e++) {
         NSArray *x = [examples objectAtIndex:e];
         BOOL there = [given containsObject:[x objectAtIndex:0]];

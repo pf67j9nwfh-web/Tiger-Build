@@ -5,6 +5,7 @@
 #import "TBIntegrations.h"
 #import "TBSSH.h"
 #import "TBBuiltin.h"
+#import "TBWebTools.h"
 #import "TBMCP.h"
 #import "TBMedia.h"
 #import "TBOutputs.h"
@@ -538,6 +539,10 @@ static NSString *toolGroup(NSString *name)
                         builtin = [TBString([servers objectAtIndex:i], @"command") substringFromIndex:8];
                 if (!builtin)
                     TBFail(@"The server %@ is not running.", sid);
+                if ([TBWebTools knows:builtin]) {
+                    NSDictionary *made = [TBWebTools call:original arguments:args server:builtin run:run];
+                    return result(TBString(made, @"output"), NO, [TBString(made, @"media") length] ? TBString(made, @"media") : nil);
+                }
                 return result([TBBuiltin call:original arguments:args server:builtin run:run], NO, nil);
             }
             {

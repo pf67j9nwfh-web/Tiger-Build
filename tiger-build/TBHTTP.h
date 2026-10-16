@@ -41,6 +41,8 @@
 - (NSData *)data;
 - (NSString *)text;
 - (NSString *)responseHeader:(NSString *)name;
+/* The status line and every header, as the server sent them. */
+- (NSString *)allResponseHeaders;
 @end
 
 @interface NSObject (TBHTTPDelegate)
