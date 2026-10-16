@@ -689,9 +689,10 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
             tool(@"curl", @"Fetch a web address like the curl command: GET by default, or POST, PUT, PATCH, DELETE or HEAD with a body and headers. Works for pages, JSON APIs and files. "
                 "Text (HTML, JSON, XML, plain text) comes back as text, up to max_chars; a picture or video is shown in the chat; any other file is given to the person with a Save As button. "
                 "The reply starts with the status line and content type. Public addresses only; redirects are followed. "
+                "With output_path (a full path such as ~/Downloads/report.pdf, only when Commander is on) the response is written to that file on this Mac instead, however large (up to the limit in Tool Settings), and the reply gives the size and SHA-256; an existing file is kept unless overwrite is true. "
                 "Examples: url=https://api.example.com/items ; url=https://api.example.com/items method=POST headers=\"Authorization: Bearer KEY\" data={\"name\":\"x\"} ; url=https://example.com/report.pdf (kept as a file).",
-                [NSArray arrayWithObjects:@"url", @"method", @"headers", @"data", @"include_headers", @"save", @"save_as", @"max_chars", @"follow_redirects", @"timeout", nil],
-                [NSArray arrayWithObjects:@"string", @"string", @"string", @"string", @"boolean", @"boolean", @"string", @"number", @"boolean", @"number", nil],
+                [NSArray arrayWithObjects:@"url", @"method", @"headers", @"data", @"include_headers", @"save", @"save_as", @"max_chars", @"follow_redirects", @"timeout", @"output_path", @"overwrite", nil],
+                [NSArray arrayWithObjects:@"string", @"string", @"string", @"string", @"boolean", @"boolean", @"string", @"number", @"boolean", @"number", @"string", @"boolean", nil],
                 [NSArray arrayWithObject:@"url"]), nil];
     else if ([name isEqualToString:@"xposts"])
         tools = [NSArray arrayWithObjects:

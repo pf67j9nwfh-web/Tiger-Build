@@ -384,6 +384,23 @@ static NSString *tokenCount(int n)
     return n >= 1000 ? [NSString stringWithFormat:@"%.1fk", n / 1000.0] : [NSString stringWithFormat:@"%d", n];
 }
 
+/* how wide the author line and the row of counts of a post need to be */
+static float tweetNeededWidth(NSDictionary *tweet)
+{
+    NSFont *bold = [NSFont boldSystemFontOfSize:12], *plain = [NSFont systemFontOfSize:12], *small = [NSFont systemFontOfSize:11];
+    NSDictionary *boldAttrs = [NSDictionary dictionaryWithObject:bold forKey:NSFontAttributeName], *plainAttrs = [NSDictionary dictionaryWithObject:plain forKey:NSFontAttributeName], *smallAttrs = [NSDictionary dictionaryWithObject:small forKey:NSFontAttributeName];
+    NSString *age = [tweet objectForKey:@"created"] ? TBTweetAge([NSDate dateWithTimeIntervalSince1970:[[tweet objectForKey:@"created"] doubleValue]]) : @"";
+    NSString *handle = [NSString stringWithFormat:@"@%@ %C %@", [tweet objectForKey:@"handle"], (unichar)0xb7, age];
+    NSString *keys[4] = {@"replies", @"reposts", @"likes", @"views"};
+    float header = 26 + 8 + [[tweet objectForKey:@"name"] sizeWithAttributes:boldAttrs].width + 4 + ([[tweet objectForKey:@"verified"] boolValue] ? 16 : 0) + [handle sizeWithAttributes:plainAttrs].width + 6;
+    float footer = 15 + 12;
+    int k;
+    for (k = 0; k < 4; k++)
+        if ([[tweet objectForKey:keys[k]] isKindOfClass:[NSNumber class]])
+            footer += 21 + [TBTweetCount([[tweet objectForKey:keys[k]] doubleValue]) sizeWithAttributes:smallAttrs].width + 22;
+    return header > footer ? header : footer;
+}
+
 static NSString *statsLine(NSDictionary *message)
 {
     double seconds = [[message objectForKey:@"statsSeconds"] doubleValue];
@@ -1566,7 +1583,10 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             if (videoH > 0)
                 bubble.size.height += videoH + 8;
             if (tweet) {
+                float need = tweetNeededWidth(tweet) + 34;
                 bubble.size.height += tweetHeaderH + tweetFooterH;
+                if (bubble.size.width < need)
+                    bubble.size.width = need;
                 if (bubble.size.width < 300)
                     bubble.size.width = 300;
             }
@@ -2151,7 +2171,13 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         }
     }
     [NSGraphicsContext saveGraphicsState];
-    [[NSBezierPath bezierPathWithOvalInRect:avatarRect] addClip];
+    if ([[tweet objectForKey:@"square"] boolValue]) {
+        /* a business or organisation has a square picture */
+        NSBezierPath *rounded = [NSBezierPath bezierPath];
+        appendRoundedRect(rounded, avatarRect, 5);
+        [rounded addClip];
+    } else
+        [[NSBezierPath bezierPathWithOvalInRect:avatarRect] addClip];
     [[ink colorWithAlphaComponent:0.15] set];
     NSRectFill(avatarRect);
     if (avatar)
@@ -2165,7 +2191,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         [name drawAtPoint:NSMakePoint(x, baseline) withAttributes:nameAttrs];
         x += nameSize.width + 4;
         if ([[tweet objectForKey:@"verified"] boolValue]) {
-            TBDrawTweetBadge(NSMakePoint(x + 6, NSMidY(header)));
+            TBDrawTweetBadge(NSMakePoint(x + 6, NSMidY(header)), [tweet objectForKey:@"badge"]);
             x += 16;
         }
         [[age length] ? [NSString stringWithFormat:@"%@ %C %@", handle, (unichar)0xb7, age] : handle drawAtPoint:NSMakePoint(x, baseline) withAttributes:faintAttrs];

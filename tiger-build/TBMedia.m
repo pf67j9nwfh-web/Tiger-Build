@@ -4,6 +4,7 @@
 #import "TBJSON.h"
 #import "TBSupport.h"
 #import "TBOutputs.h"
+#import "TBIntegrations.h"
 #import "mbedtls/sha256.h"
 #import <sys/socket.h>
 #import <netdb.h>
@@ -481,7 +482,6 @@ static void checkPictureURL(NSString *url, BOOL httpsOnly)
 }
 @end
 
-#define DOWNLOAD_LIMIT (50UL * 1024 * 1024)
 
 @implementation TBMedia (Download)
 
@@ -507,14 +507,14 @@ static void checkPictureURL(NSString *url, BOOL httpsOnly)
         [http setPublicOnly:![[NSUserDefaults standardUserDefaults] boolForKey:@"TBAllowLocalPictures"]];
         [http setHeader:@"User-Agent" value:userAgent];
         [http setIdleTimeout:30];
-        sink->limit = DOWNLOAD_LIMIT;
+        sink->limit = [TBIntegrations downloadLimit];
         [http setDelegate:sink];
         [run attach:http];
         result = [http perform];
         [run detach:http];
         [run check];
         if (sink->tooBig)
-            TBFail(@"That file is larger than 50 MB.");
+            TBFail(@"That file is larger than %lu MB (the limit in Tool Settings).", [TBIntegrations downloadLimit] / (1024UL * 1024UL));
         if (result != TBNET_OK)
             TBFail(@"%@", [http error]);
         if ([http status] >= 301 && [http status] <= 308 && [[http responseHeader:@"Location"] length]) {

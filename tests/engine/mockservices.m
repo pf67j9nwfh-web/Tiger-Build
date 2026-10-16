@@ -328,6 +328,13 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
         sendBody(fd, 200, @"text/plain", [text dataUsingEncoding:NSUTF8StringEncoding], nil);
         return;
     }
+    if ([path isEqualToString:@"/big"]) {
+        /* two megabytes, for the size limit */
+        NSMutableData *big = [NSMutableData dataWithLength:2 * 1024 * 1024];
+        memset([big mutableBytes], 'x', [big length]);
+        sendBody(fd, 200, @"application/octet-stream", big, nil);
+        return;
+    }
     if ([path isEqualToString:@"/redirect"]) {
         sendBody(fd, 302, @"text/plain", [NSData data], @"Location: /echo?from=redirect\r\n");
         return;
@@ -353,7 +360,7 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             return;
         }
         sendJSON(fd, 200, D(@"999", @"id_str", @"Hello &amp; welcome https://t.co/abc https://t.co/pic", @"text", @"2022-10-26T18:45:58.000Z", @"created_at", N(1200), @"favorite_count", N(57), @"conversation_count",
-            D(@"Ada", @"name", @"ada", @"screen_name", Y, @"is_blue_verified", [me stringByAppendingString:@"/px_normal.png"], @"profile_image_url_https"), @"user",
+            D(@"Ada", @"name", @"ada", @"screen_name", Y, @"is_blue_verified", @"Business", @"verified_type", @"Square", @"profile_image_shape", [me stringByAppendingString:@"/px_normal.png"], @"profile_image_url_https"), @"user",
             D(A(D(@"https://t.co/abc", @"url", @"https://example.com/page", @"expanded_url", @"example.com/page", @"display_url")), @"urls", A(D(@"https://t.co/pic", @"url")), @"media"), @"entities",
             A(D(@"photo", @"type", [me stringByAppendingString:@"/px.png"], @"media_url_https", D(N(640), @"width", N(480), @"height"), @"original_info"),
               D(@"photo", @"type", [me stringByAppendingString:@"/px.png"], @"media_url_https", D(N(640), @"width", N(480), @"height"), @"original_info"),

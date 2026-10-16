@@ -6,18 +6,24 @@
 #import "TBSupport.h"
 #import "TBOutputs.h"
 #import "TBMedia.h"
+#import "TBIntegrations.h"
 #import "mbedtls/sha256.h"
 #include <time.h>
 
 static NSString *const webAgent = @"TigerBuild/2.6 (Tiger Build; https://github.com/pf67j9nwfh-web/Tiger-Build)";
-#define WEB_LIMIT (50UL * 1024 * 1024)
 
-/* keeps what a request sends, and stops it when it grows past the limit */
+
+/* keeps what a request sends, and stops it when it grows past the limit. With a file open, a good answer goes straight to the file
+   (never all in memory) and is summed as it arrives. */
 @interface TBWebSink : NSObject {
 @public
     NSMutableData *bytes;
     unsigned long limit;
     BOOL tooBig;
+    FILE *file;
+    unsigned long written;
+    BOOL writeFailed;
+    mbedtls_sha256_context sum;
 }
 @end
 
@@ -30,12 +36,32 @@ static NSString *const webAgent = @"TigerBuild/2.6 (Tiger Build; https://github.
 }
 - (void)dealloc
 {
+    if (file)
+        fclose(file);
     [bytes release];
     [super dealloc];
 }
 - (BOOL)http:(TBHTTP *)http gotData:(NSData *)data
 {
-    (void)http;
+    if (file && [http status] >= 200 && [http status] < 300) {
+        if (written + [data length] > limit) {
+            tooBig = YES;
+            return YES;
+        }
+        if (fwrite([data bytes], 1, [data length], file) != [data length]) {
+            writeFailed = YES;
+            return YES;
+        }
+        mbedtls_sha256_update(&sum, [data bytes], [data length]);
+        written += [data length];
+        return NO;
+    }
+    /* an answer that is not kept: an error page or a redirect is read, but only the start of it */
+    if (file) {
+        if ([bytes length] < 200000)
+            [bytes appendData:data];
+        return NO;
+    }
     if ([bytes length] + [data length] > limit) {
         tooBig = YES;
         return YES;
@@ -95,7 +121,7 @@ static NSString *replaceAll(NSString *text, NSString *from, NSString *to)
 /* ---- one request, with redirects followed by hand so every address is checked ---- */
 
 /* {status, data, type, headers, url}. Sign-in headers are not sent on to another host. */
-static NSDictionary *webRequest(NSString *method, NSString *url, NSArray *headers, NSData *body, BOOL follow, int timeout, TBRun *run)
+static NSDictionary *webRequestSaving(NSString *method, NSString *url, NSArray *headers, NSData *body, BOOL follow, int timeout, TBRun *run, NSString *savePart)
 {
     NSString *current = url;
     int hop;
@@ -121,14 +147,23 @@ static NSDictionary *webRequest(NSString *method, NSString *url, NSArray *header
         if (body)
             [http setBody:body];
         [http setIdleTimeout:timeout];
-        sink->limit = WEB_LIMIT;
+        sink->limit = [TBIntegrations downloadLimit];
+        if (savePart) {
+            sink->file = fopen([savePart fileSystemRepresentation], "wb");
+            if (!sink->file)
+                TBFail(@"Cannot write %@.", savePart);
+            mbedtls_sha256_init(&sink->sum);
+            mbedtls_sha256_starts(&sink->sum, 0);
+        }
         [http setDelegate:sink];
         [run attach:http];
         result = [http perform];
         [run detach:http];
         [run check];
         if (sink->tooBig)
-            TBFail(@"The response is larger than 50 MB.");
+            TBFail(@"The response is larger than %lu MB, the limit in Tool Settings (Built-in Tools, Web Search).", [TBIntegrations downloadLimit] / (1024UL * 1024UL));
+        if (sink->writeFailed)
+            TBFail(@"The file could not be written (is the disk full?).");
         if (result != TBNET_OK)
             TBFail(@"%@", [http error]);
         code = [http status];
@@ -140,8 +175,23 @@ static NSDictionary *webRequest(NSString *method, NSString *url, NSArray *header
             }
             continue;
         }
-        return [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:code], @"status", sink->bytes, @"data",
-            [http responseHeader:@"Content-Type"] ? [http responseHeader:@"Content-Type"] : @"", @"type", [http allResponseHeaders], @"headers", current, @"url", nil];
+        {
+            NSMutableDictionary *done = [NSMutableDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:code], @"status", sink->bytes, @"data",
+                [http responseHeader:@"Content-Type"] ? [http responseHeader:@"Content-Type"] : @"", @"type", [http allResponseHeaders], @"headers", current, @"url", nil];
+            if (sink->file && code >= 200 && code < 300) {
+                unsigned char digest[32];
+                NSMutableString *hex = [NSMutableString string];
+                int d;
+                fclose(sink->file);
+                sink->file = NULL;
+                mbedtls_sha256_finish(&sink->sum, digest);
+                for (d = 0; d < 32; d++)
+                    [hex appendFormat:@"%02x", digest[d]];
+                [done setObject:[NSNumber numberWithUnsignedLong:sink->written] forKey:@"written"];
+                [done setObject:hex forKey:@"sha256"];
+            }
+            return done;
+        }
     }
     TBFail(@"Too many redirects.");
     return nil;
@@ -267,20 +317,56 @@ static NSString *fileNameFor(NSString *url, NSString *type, NSString *asked)
     return name;
 }
 
+static NSDictionary *webRequest(NSString *method, NSString *url, NSArray *headers, NSData *body, BOOL follow, int timeout, TBRun *run)
+{
+    return webRequestSaving(method, url, headers, body, follow, timeout, run, nil);
+}
+
 /* ---- curl ---- */
 
-static NSDictionary *curlCall(NSDictionary *args, TBRun *run)
+/* where output_path points: the absolute path, a folder getting the name of the file in the address, and never somewhere the system or a login depends on */
+static NSString *savePathFor(NSString *given, NSString *url, BOOL overwrite)
+{
+    NSString *path = [TBTrim(given) stringByExpandingTildeInPath], *lower, *parent;
+    BOOL isFolder = NO;
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSArray *system = [NSArray arrayWithObjects:@"/system/", @"/usr/", @"/bin/", @"/sbin/", @"/etc/", @"/private/etc/", @"/private/var/db/", @"/library/startupitems/", nil];
+    NSArray *anywhere = [NSArray arrayWithObjects:@"/.ssh/", @"/library/keychains/", @"/library/launchagents/", @"/library/launchdaemons/", nil];
+    unsigned i;
+    if (![path hasPrefix:@"/"])
+        TBFail(@"output_path must be a full path (starting with / or ~/), for example ~/Downloads/report.pdf.");
+    if ([files fileExistsAtPath:path isDirectory:&isFolder] && isFolder)
+        path = [path stringByAppendingPathComponent:fileNameFor(url, @"", nil)];
+    else if ([path hasSuffix:@"/"])
+        TBFail(@"output_path is a folder that does not exist; give a file path, or an existing folder.");
+    path = [path stringByStandardizingPath];
+    lower = [[path stringByAppendingString:@"/"] lowercaseString];
+    for (i = 0; i < [system count]; i++)
+        if ([lower hasPrefix:[system objectAtIndex:i]])
+            TBFail(@"Saving there is not allowed (%@).", [system objectAtIndex:i]);
+    for (i = 0; i < [anywhere count]; i++)
+        if ([lower rangeOfString:[anywhere objectAtIndex:i]].location != NSNotFound)
+            TBFail(@"Saving there is not allowed (a folder named %@).", [anywhere objectAtIndex:i]);
+    if (!overwrite && [files fileExistsAtPath:path])
+        TBFail(@"%@ already exists. Pick another name, or set overwrite to true to replace it.", path);
+    parent = [path stringByDeletingLastPathComponent];
+    TBMakePath(parent);
+    return path;
+}
+
+static NSDictionary *curlCall(NSDictionary *args, TBRun *run, BOOL allowSave)
 {
     NSString *url = TBTrim(TBString(args, @"url")), *method = [TBTrim(TBString(args, @"method")) uppercaseString];
     id dataArg = TBValue(args, @"data");
     NSString *dataText = nil;
     NSData *body = nil;
     NSMutableArray *headers;
-    NSDictionary *got;
+    NSDictionary *got = nil;
     NSData *data;
     NSString *type, *statusLine, *finalURL, *saveAs = TBString(args, @"save_as");
     NSMutableString *out = [NSMutableString string];
     int code, maxChars = intArg(args, @"max_chars", 20000, 500, 200000);
+    NSString *outPath = TBTrim(TBString(args, @"output_path")), *part = nil, *target = nil;
     BOOL wantHeaders = flagArg(args, @"include_headers", NO), follow = flagArg(args, @"follow_redirects", YES), save = flagArg(args, @"save", NO) || [TBTrim(saveAs) length] > 0;
     unsigned i;
     BOOL hasType = NO;
@@ -310,7 +396,38 @@ static NSDictionary *curlCall(NSDictionary *args, TBRun *run)
         [headers addObject:@"Content-Type"];
         [headers addObject:[first isEqualToString:@"{"] || [first isEqualToString:@"["] ? @"application/json" : @"application/x-www-form-urlencoded"];
     }
-    got = webRequest(method, url, headers, body, follow, intArg(args, @"timeout", 30, 5, 120), run);
+    if ([outPath length]) {
+        if (!allowSave)
+            TBFail(@"Saving to a file needs Commander switched on in this chat (Tools menu).");
+        if ([method isEqualToString:@"HEAD"])
+            TBFail(@"A HEAD request has no body to save.");
+        target = savePathFor(outPath, url, flagArg(args, @"overwrite", NO));
+        part = [target stringByAppendingString:@".part"];
+    }
+    @try {
+        got = webRequestSaving(method, url, headers, body, follow, intArg(args, @"timeout", 30, 5, 120), run, part);
+    } @catch (NSException *e) {
+        if (part)
+            [[NSFileManager defaultManager] removeFileAtPath:part handler:nil];
+        @throw;
+    }
+    if (part) {
+        BOOL kept = [got objectForKey:@"written"] != nil;
+        NSFileManager *files = [NSFileManager defaultManager];
+        if (kept) {
+            if ([files fileExistsAtPath:target])
+                [files removeFileAtPath:target handler:nil];
+            if (![files movePath:part toPath:target handler:nil]) {
+                [files removeFileAtPath:part handler:nil];
+                TBFail(@"The file could not be saved at %@.", target);
+            }
+            return answer([NSString stringWithFormat:@"%@\nSaved %lu bytes (%@) to %@\nSHA-256 %@",
+                [[[[got objectForKey:@"headers"] componentsSeparatedByString:@"\r\n"] objectAtIndex:0] description], [[got objectForKey:@"written"] unsignedLongValue],
+                [[got objectForKey:@"type"] length] ? [got objectForKey:@"type"] : @"unknown type", target, [got objectForKey:@"sha256"]], nil);
+        }
+        [files removeFileAtPath:part handler:nil];
+        /* not a good answer: nothing was saved, and what the server said is shown below */
+    }
     data = [got objectForKey:@"data"];
     type = [got objectForKey:@"type"];
     code = [[got objectForKey:@"status"] intValue];
@@ -476,7 +593,14 @@ static NSString *durationText(double ms)
     [post setObject:TBString(json, @"id_str") forKey:@"id"];
     [post setObject:[TBString(user, @"name") length] ? TBString(user, @"name") : handle forKey:@"name"];
     [post setObject:handle ? handle : @"" forKey:@"handle"];
-    [post setObject:[NSNumber numberWithBool:TBTruth(user, @"is_blue_verified") || TBTruth(user, @"verified")] forKey:@"verified"];
+    [post setObject:[NSNumber numberWithBool:TBTruth(user, @"is_blue_verified") || TBTruth(user, @"verified") || [TBString(user, @"verified_type") length]] forKey:@"verified"];
+    /* the badge is blue for a person, gold for a business and grey for a government account; those accounts also have square pictures */
+    if ([[TBString(user, @"verified_type") lowercaseString] isEqualToString:@"business"])
+        [post setObject:@"gold" forKey:@"badge"];
+    else if ([[TBString(user, @"verified_type") lowercaseString] isEqualToString:@"government"])
+        [post setObject:@"grey" forKey:@"badge"];
+    if ([[TBString(user, @"profile_image_shape") lowercaseString] isEqualToString:@"square"])
+        [post setObject:[NSNumber numberWithBool:YES] forKey:@"square"];
     if ([avatar length])
         [post setObject:replaceAll(avatar, @"_normal.", @"_200x200.") forKey:@"avatar"];
     if (parseCreated(TBString(json, @"created_at")))
@@ -670,10 +794,15 @@ static void drawViews(NSRect r, NSColor *color)
     [p stroke];
 }
 
-static void drawBadge(NSPoint center)
+static void drawBadge(NSPoint center, NSString *kind)
 {
     NSBezierPath *check = [NSBezierPath bezierPath];
-    [rgb(29, 155, 240) set];
+    if ([kind isEqualToString:@"gold"])
+        [rgb(226, 183, 25) set];
+    else if ([kind isEqualToString:@"grey"])
+        [rgb(130, 154, 171) set];
+    else
+        [rgb(29, 155, 240) set];
     [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(center.x - 8.5, center.y - 8.5, 17, 17)] fill];
     [check moveToPoint:NSMakePoint(center.x - 4, center.y - 0.5)];
     [check lineToPoint:NSMakePoint(center.x - 1.2, center.y - 3.5)];
@@ -892,6 +1021,10 @@ static NSDictionary *postCall(NSDictionary *args, TBRun *run)
             [post objectForKey:@"verified"], @"verified", [post objectForKey:@"text"], @"text", nil];
         NSString *keys[] = {@"replies", @"reposts", @"likes", @"views"};
         NSData *collage;
+        if ([post objectForKey:@"badge"])
+            [shown setObject:[post objectForKey:@"badge"] forKey:@"badge"];
+        if ([post objectForKey:@"square"])
+            [shown setObject:[post objectForKey:@"square"] forKey:@"square"];
         for (i = 0; i < 4; i++)
             if ([post objectForKey:keys[i]])
                 [shown setObject:[post objectForKey:keys[i]] forKey:keys[i]];
@@ -957,8 +1090,13 @@ static NSDictionary *postCall(NSDictionary *args, TBRun *run)
 
 + (NSDictionary *)call:(NSString *)tool arguments:(NSDictionary *)args server:(NSString *)server run:(TBRun *)run
 {
+    return [self call:tool arguments:args server:server run:run saving:YES];
+}
+
++ (NSDictionary *)call:(NSString *)tool arguments:(NSDictionary *)args server:(NSString *)server run:(TBRun *)run saving:(BOOL)allowSave
+{
     if ([server isEqualToString:@"web"] && [tool isEqualToString:@"curl"])
-        return curlCall(args, run);
+        return curlCall(args, run, allowSave);
     if ([server isEqualToString:@"xposts"] && [tool isEqualToString:@"x_post"])
         return postCall(args, run);
     TBFail(@"Unknown tool %@.", tool);
@@ -985,4 +1123,4 @@ void TBDrawTweetIcon(int kind, NSRect r, NSColor *color)
         drawShare(r, color);
 }
 
-void TBDrawTweetBadge(NSPoint center) { drawBadge(center); }
+void TBDrawTweetBadge(NSPoint center, NSString *kind) { drawBadge(center, kind); }

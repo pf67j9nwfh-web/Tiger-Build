@@ -187,6 +187,10 @@
         NSButton *clearT=[[[NSButton alloc] initWithFrame:NSMakeRect(190,y,350,22)] autorelease];
         [clearT setButtonType:NSSwitchButton];[clearT setTitle:@"Delete saved Tavily key"];[tab addSubview:clearT];[fields setObject:clearT forKey:@"clear_tavily_key"];y-=40;
         [self integrationSwitch:@"Let models download files over https (off by default)" key:@"download_enabled" y:y in:tab];y-=26;
+        [self integrationLabel:@"Largest download or web response, in MB" frame:NSMakeRect(16,y+2,290,18) view:tab];
+        NSTextField *dlMax=[[[NSTextField alloc] initWithFrame:NSMakeRect(310,y,60,22)] autorelease];
+        [dlMax setToolTip:@"1 to 2000. Applies to the download tool and the web requests (curl) server. 50 unless you change it; a big file is held in memory unless it is saved to a path."];
+        [tab addSubview:dlMax];[fields setObject:dlMax forKey:@"download_max_mb"];y-=26;
 
         tab=[self integrationTab:@"MCP Servers" in:tabs];
         [self integrationLabel:@"Custom servers are programs on this Mac, programs on another computer over SSH, or http:// and https:// addresses. Only add ones you trust."
@@ -247,6 +251,7 @@
     [[fields objectForKey:@"subagents_tasks"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"subagents_tasks"] intValue]?[[data objectForKey:@"subagents_tasks"] intValue]:8]];
     [[fields objectForKey:@"subagents_max"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"subagents_max"] intValue]?[[data objectForKey:@"subagents_max"] intValue]:4]];
     [self fillSubagentPolicyPopup:[data objectForKey:@"subagents_policy"]];
+    [[fields objectForKey:@"download_max_mb"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"download_max_mb"] intValue]?[[data objectForKey:@"download_max_mb"] intValue]:50]];
     [[fields objectForKey:@"max_tool_steps"] setStringValue:[NSString stringWithFormat:@"%d",[data objectForKey:@"max_tool_steps"]?[[data objectForKey:@"max_tool_steps"] intValue]:40]];
     [[fields objectForKey:@"table"] reloadData];
     [[fields objectForKey:@"search_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_search_key"] setState:NSOffState];
@@ -497,6 +502,8 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
     [data setObject:[[fields objectForKey:@"search_api_key"] stringValue] forKey:@"search_api_key"];
     [data setObject:[[fields objectForKey:@"tavily_api_key"] stringValue] forKey:@"tavily_api_key"];
     [data setObject:[[fields objectForKey:@"search_provider"] indexOfSelectedItem]==1?@"tavily":@"brave" forKey:@"search_provider"];
+    {int mb=[[[fields objectForKey:@"download_max_mb"] stringValue] intValue];if(mb<1)mb=50;if(mb>2000)mb=2000;
+        [data setObject:[NSNumber numberWithInt:mb] forKey:@"download_max_mb"];}
     {NSString *text=[[fields objectForKey:@"max_tool_steps"] stringValue];int steps=[text length]?[text intValue]:40;if(steps<0)steps=40;if(steps>1000)steps=1000;
         [data setObject:[NSNumber numberWithInt:steps] forKey:@"max_tool_steps"];}
     {int tasks=[[[fields objectForKey:@"subagents_tasks"] stringValue] intValue];int cap=[[[fields objectForKey:@"subagents_max"] stringValue] intValue];

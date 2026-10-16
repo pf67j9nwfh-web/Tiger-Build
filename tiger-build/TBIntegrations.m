@@ -117,6 +117,12 @@ static NSArray *validated(id list, BOOL forceOff)
     return n < low ? low : (n > high ? high : n);
 }
 
+/* the most a download or a web request may bring back, in bytes: 50 MB unless the person set another size (1 to 2000 MB) */
++ (unsigned long)downloadLimit
+{
+    return (unsigned long)[self subagentNumber:@"download_max_mb" fallback:50 low:1 high:2000] * 1024UL * 1024UL;
+}
+
 /* choose (the model picks), same (the chat's own model), or provider|model */
 + (NSString *)subagentPolicy
 {
@@ -131,6 +137,7 @@ static NSArray *validated(id list, BOOL forceOff)
     for (i = 0; i < [flagNames() count]; i++)
         [out setObject:[NSNumber numberWithBool:[TBSettings flag:[flagNames() objectAtIndex:i]]] forKey:[flagNames() objectAtIndex:i]];
     [out setObject:[NSNumber numberWithInt:[self steps]] forKey:@"max_tool_steps"];
+    [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"download_max_mb" fallback:50 low:1 high:2000]] forKey:@"download_max_mb"];
     [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_tasks" fallback:8 low:1 high:16]] forKey:@"subagents_tasks"];
     [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_max" fallback:MIN(4, TBCPUCount()) low:1 high:8]] forKey:@"subagents_max"];
     [out setObject:[self subagentPolicy] forKey:@"subagents_policy"];
@@ -169,6 +176,13 @@ static NSArray *validated(id list, BOOL forceOff)
     }
     if (steps)
         [[NSUserDefaults standardUserDefaults] setInteger:[steps intValue] forKey:@"TBTool.max_tool_steps"];
+    {
+        id megabytes = TBValue(incoming, @"download_max_mb");
+        if (megabytes && (![megabytes isKindOfClass:[NSNumber class]] || [megabytes intValue] < 1 || [megabytes intValue] > 2000))
+            TBFail(@"The largest download must be a whole number of megabytes from 1 to 2000.");
+        if (megabytes)
+            [[NSUserDefaults standardUserDefaults] setInteger:[megabytes intValue] forKey:@"TBTool.download_max_mb"];
+    }
     {
         id tasks = TBValue(incoming, @"subagents_tasks"), cap = TBValue(incoming, @"subagents_max"), rule = TBValue(incoming, @"subagents_policy");
         if (tasks && (![tasks isKindOfClass:[NSNumber class]] || [tasks intValue] < 1 || [tasks intValue] > 16))

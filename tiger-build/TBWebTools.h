@@ -9,6 +9,8 @@
 @interface TBWebTools : NSObject
 + (BOOL)knows:(NSString *)server;
 + (NSDictionary *)call:(NSString *)tool arguments:(NSDictionary *)args server:(NSString *)server run:(TBRun *)run;
+/* saving: whether output_path may be used (only in a chat with Commander on) */
++ (NSDictionary *)call:(NSString *)tool arguments:(NSDictionary *)args server:(NSString *)server run:(TBRun *)run saving:(BOOL)allowSave;
 /* exposed for tests */
 + (NSDictionary *)postFromSyndication:(id)json;
 + (NSData *)collagePNGForPhotos:(NSArray *)photoData video:(NSDictionary *)video;
@@ -21,4 +23,4 @@
 NSString *TBTweetCount(double n);
 NSString *TBTweetAge(NSDate *date);
 void TBDrawTweetIcon(int kind, NSRect rect, NSColor *color);
-void TBDrawTweetBadge(NSPoint center);
+void TBDrawTweetBadge(NSPoint center, NSString *kind);   /* kind: nil or blue, gold (businesses), grey (governments) */

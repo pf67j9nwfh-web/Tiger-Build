@@ -11,6 +11,7 @@
     NSMutableSet *offered;
     NSMutableArray *errors;
     NSString *knowledgeRoot;        /* the workspace's knowledge folder, "" for none */
+    BOOL commanderOn;               /* the latest request had Commander switched on: web requests may then save to a path */
     NSString *lastProvider;         /* the provider of the latest request, for tools that work differently for one */
 }
 - (id)initWithRun:(TBRun *)run;

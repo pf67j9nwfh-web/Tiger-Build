@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import "TBBuiltin.h"
 #import "TBWebTools.h"
+#import "TBIntegrations.h"
 #import "TBMCP.h"
 #import "TBExtras.h"
 #import "TBOutputs.h"
@@ -147,6 +148,40 @@ int main(int argc, char **argv)
             const unsigned char *f = [fixed bytes];
             expectThat([fixed length] == sizeof file && f[60] == 0 && f[75] == 0 && f[83] == 100, @"video: signed composition offsets are rewritten so old QuickTime opens it");
         }
+        {
+            NSString *file = @"/tmp/tb-curl-test/sub/out.txt";
+            NSDictionary *want = [NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo?save=1"], @"url", file, @"output_path", nil];
+            BOOL refusedSecond = NO, refusedSystem = NO, refusedOff = NO;
+            [[NSFileManager defaultManager] removeFileAtPath:@"/tmp/tb-curl-test" handler:nil];
+            r = [TBWebTools call:@"curl" arguments:want server:@"web" run:run];
+            out = [r objectForKey:@"output"];
+            expectThat([out rangeOfString:@"Saved "].length && [out rangeOfString:file].length && [out rangeOfString:@"SHA-256 "].length && [r objectForKey:@"media"] == nil
+                && [[NSString stringWithContentsOfFile:file] hasPrefix:@"GET /echo?save=1"] && ![[NSFileManager defaultManager] fileExistsAtPath:[file stringByAppendingString:@".part"]], @"curl: output_path writes the response to that file (making folders) and says so");
+            @try { [TBWebTools call:@"curl" arguments:want server:@"web" run:run]; } @catch (NSException *x) { refusedSecond = [[x reason] rangeOfString:@"already exists"].length > 0; }
+            expectThat(refusedSecond, @"curl: output_path does not replace a file unless overwrite is set");
+            r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo?again=1"], @"url", file, @"output_path", [NSNumber numberWithBool:YES], @"overwrite", nil] server:@"web" run:run];
+            expectThat([[NSString stringWithContentsOfFile:file] hasPrefix:@"GET /echo?again=1"], @"curl: overwrite replaces it");
+            @try { [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/echo"], @"url", @"/etc/tb-test", @"output_path", nil] server:@"web" run:run]; } @catch (NSException *x) { refusedSystem = [[x reason] rangeOfString:@"not allowed"].length > 0; }
+            expectThat(refusedSystem, @"curl: system folders are refused");
+            @try { [TBWebTools call:@"curl" arguments:want server:@"web" run:run saving:NO]; } @catch (NSException *x) { refusedOff = [[x reason] rangeOfString:@"Commander"].length > 0; }
+            expectThat(refusedOff, @"curl: output_path needs Commander on");
+            [[NSFileManager defaultManager] removeFileAtPath:@"/tmp/tb-curl-test" handler:nil];
+            expectThat([TBIntegrations downloadLimit] == 50UL * 1024 * 1024, @"the download limit is 50 MB unless changed");
+            [[NSUserDefaults standardUserDefaults] setInteger:7 forKey:@"TBTool.download_max_mb"];
+            expectThat([TBIntegrations downloadLimit] == 7UL * 1024 * 1024, @"the download limit follows the setting");
+            [[NSUserDefaults standardUserDefaults] setInteger:1 forKey:@"TBTool.download_max_mb"];
+            {
+                BOOL refusedBig = NO, refusedBigFile = NO;
+                @try { [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObject:[base stringByAppendingString:@"/big"] forKey:@"url"] server:@"web" run:run]; } @catch (NSException *x) { refusedBig = [[x reason] rangeOfString:@"larger than 1 MB"].length > 0; }
+                @try { [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/big"], @"url", @"/tmp/tb-curl-big.bin", @"output_path", nil] server:@"web" run:run]; } @catch (NSException *x) { refusedBigFile = [[x reason] rangeOfString:@"larger than 1 MB"].length > 0; }
+                expectThat(refusedBig && refusedBigFile && ![[NSFileManager defaultManager] fileExistsAtPath:@"/tmp/tb-curl-big.bin"] && ![[NSFileManager defaultManager] fileExistsAtPath:@"/tmp/tb-curl-big.bin.part"], @"curl: a response over the limit is refused, and no partial file is left");
+            }
+            [[NSUserDefaults standardUserDefaults] setInteger:3 forKey:@"TBTool.download_max_mb"];
+            r = [TBWebTools call:@"curl" arguments:[NSDictionary dictionaryWithObjectsAndKeys:[base stringByAppendingString:@"/big"], @"url", @"/tmp/tb-curl-big.bin", @"output_path", nil] server:@"web" run:run];
+            expectThat([[r objectForKey:@"output"] rangeOfString:@"Saved 2097152 bytes"].length > 0, @"curl: a larger limit lets a 2 MB file be saved");
+            unlink("/tmp/tb-curl-big.bin");
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"TBTool.download_max_mb"];
+        }
         expectThat([[TBWebTools postIdFrom:@"https://x.com/ada/status/1585341984679469056?s=20"] isEqualToString:@"1585341984679469056"]
             && [[TBWebTools postIdFrom:@"https://twitter.com/i/web/status/123"] isEqualToString:@"123"] && [[TBWebTools postIdFrom:@"456"] isEqualToString:@"456"] && ![TBWebTools postIdFrom:@"https://x.com/ada"], @"x_post: the post number from an address");
         r = [TBWebTools call:@"x_post" arguments:[NSDictionary dictionaryWithObject:@"https://x.com/ada/status/999" forKey:@"url"] server:@"xposts" run:run];
@@ -157,7 +192,7 @@ int main(int argc, char **argv)
             NSArray *first = [[lines objectAtIndex:0] componentsSeparatedByString:@" "];
             id data = [first count] == 3 ? TBJSONParse(TBBase64Decode([first objectAtIndex:2]), NULL) : nil;
             expectThat([lines count] == 3 && [[lines objectAtIndex:2] hasPrefix:@"tweetvideo "] && [[lines objectAtIndex:2] hasSuffix:@" tweet"] && [[first objectAtIndex:0] isEqualToString:@"tweet"] && [[first objectAtIndex:1] isEqualToString:@"999"] && [[lines objectAtIndex:1] hasPrefix:@"image "] && [[lines objectAtIndex:1] hasSuffix:@" tweet"], @"x_post: the post and its photos as one picture come back for the chat");
-            expectThat([[data objectForKey:@"name"] isEqualToString:@"Ada"] && [[data objectForKey:@"reposts"] intValue] == 321 && [[data objectForKey:@"text"] hasPrefix:@"Hello & welcome"] && [[data objectForKey:@"avatar"] length] > 20, @"x_post: the post's data and author picture travel with it");
+            expectThat([[data objectForKey:@"name"] isEqualToString:@"Ada"] && [[data objectForKey:@"reposts"] intValue] == 321 && [[data objectForKey:@"text"] hasPrefix:@"Hello & welcome"] && [[data objectForKey:@"avatar"] length] > 20 && [[data objectForKey:@"badge"] isEqualToString:@"gold"] && [[data objectForKey:@"square"] boolValue], @"x_post: the post's data, author picture and the gold badge of a business travel with it");
         }
         r = [TBWebTools call:@"x_post" arguments:[NSDictionary dictionaryWithObjectsAndKeys:@"999", @"url", @"all", @"show", nil] server:@"xposts" run:run];
         expectThat([[[r objectForKey:@"media"] componentsSeparatedByString:@"\n"] count] == 5, @"x_post: show all gives the post, its photos and video, and both photos at full size");

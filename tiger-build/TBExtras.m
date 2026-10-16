@@ -393,7 +393,7 @@ static NSString *imageSearch(NSString *query, TBRun *run)
             [NSArray array], [NSArray array], [NSArray array])];
     }
     if ([TBSettings flag:@"download_enabled"] && [skip containsObject:@"download"] == NO)
-        [tools addObject:function(@"agent_download_file", @"Download a file from an https address on the internet (up to 50 MB) and give it to the person with a Save As button. The connection uses TLS and the server's certificate is checked. "
+        [tools addObject:function(@"agent_download_file", @"Download a file from an https address on the internet (up to the size limit in Tool Settings, 50 MB unless changed) and give it to the person with a Save As button. The connection uses TLS and the server's certificate is checked. "
             "Say where it came from and its SHA-256 afterwards. Only download what the person asked for.",
             [NSArray arrayWithObjects:@"url", @"name", nil], [NSArray arrayWithObjects:@"The https address of the file.", @"Optional file name to save it as.", nil], [NSArray arrayWithObject:@"url"])];
     return tools;
@@ -423,10 +423,30 @@ static NSString *toolGroup(NSString *name)
     return @"toolbox";
 }
 
+/* the web tool's list without the option that writes files, for a chat with Commander off */
+static NSDictionary *withoutSaving(NSDictionary *listed)
+{
+    NSMutableArray *tools = [NSMutableArray array];
+    NSArray *given = TBArray(listed, @"tools");
+    unsigned i;
+    for (i = 0; i < [given count]; i++) {
+        NSMutableDictionary *tool = [NSMutableDictionary dictionaryWithDictionary:[given objectAtIndex:i]];
+        NSMutableDictionary *schema = [NSMutableDictionary dictionaryWithDictionary:TBDictionary(tool, @"inputSchema")];
+        NSMutableDictionary *properties = [NSMutableDictionary dictionaryWithDictionary:TBDictionary(schema, @"properties")];
+        [properties removeObjectForKey:@"output_path"];
+        [properties removeObjectForKey:@"overwrite"];
+        [schema setObject:properties forKey:@"properties"];
+        [tool setObject:schema forKey:@"inputSchema"];
+        [tools addObject:tool];
+    }
+    return [NSDictionary dictionaryWithObject:tools forKey:@"tools"];
+}
+
 - (NSArray *)definitionsForProvider:(NSString *)provider skip:(NSSet *)skip
 {
     [lastProvider release];
     lastProvider = [provider copy];
+    commanderOn = ![skip containsObject:@"commander"];
     NSMutableArray *tools = [NSMutableArray arrayWithArray:[self auxiliaryForProvider:provider skip:skip]];
     NSArray *servers = [TBIntegrations servers];
     unsigned i, t;
@@ -447,6 +467,8 @@ static NSString *toolGroup(NSString *name)
                 if (![TBBuiltin knows:name])
                     TBFail(@"Unknown built-in server %@.", name);
                 listed = [TBBuiltin listTools:name];
+                if ([name isEqualToString:@"web"] && !commanderOn)
+                    listed = withoutSaving(listed);
             } else {
                 NSDictionary *env = TBDictionary(server, @"env");
                 if ([[command lowercaseString] hasPrefix:@"http://"] || [[command lowercaseString] hasPrefix:@"https://"])
@@ -540,7 +562,7 @@ static NSString *toolGroup(NSString *name)
                 if (!builtin)
                     TBFail(@"The server %@ is not running.", sid);
                 if ([TBWebTools knows:builtin]) {
-                    NSDictionary *made = [TBWebTools call:original arguments:args server:builtin run:run];
+                    NSDictionary *made = [TBWebTools call:original arguments:args server:builtin run:run saving:commanderOn];
                     return result(TBString(made, @"output"), NO, [TBString(made, @"media") length] ? TBString(made, @"media") : nil);
                 }
                 return result([TBBuiltin call:original arguments:args server:builtin run:run], NO, nil);
