@@ -153,6 +153,16 @@ int main(int argc, char **argv)
             && [[[[[[messages objectAtIndex:2] objectForKey:@"tool_calls"] objectAtIndex:0] objectForKey:@"function"] objectForKey:@"name"] isEqualToString:@"start_process"], @"openai loop: assistant tool_calls then the tool message");
     }
 
+    /* an empty reply after a tool ran: the model is asked to carry on, and the tool's output is not passed off as its answer */
+    fetch(@"/reset");
+    [d setObject:[base stringByAppendingString:@"/empty-openai"] forKey:@"TBBaseURL.chatgpt"];
+    f = turn(@"chatgpt", @"gpt-4o", nil, nil, NULL);
+    expectThat([[f joined:@"t"] rangeOfString:@"Hello"].length > 0 && [[f joined:@"t"] rangeOfString:@"file1"].length == 0, @"empty reply: the turn goes on to a real answer, not the tool output");
+    expectThat([[f joined:@"s"] rangeOfString:@"empty reply"].length > 0, @"empty reply: the person is told it was asked to carry on");
+    seen = fetch(@"/seen");
+    expectThat([seen count] == 3, @"empty reply: one more request after the empty one");
+    [d setObject:[base stringByAppendingString:@"/loop-openai"] forKey:@"TBBaseURL.chatgpt"];
+
     /* approval: asked first; a refusal tells the model not to retry */
     fetch(@"/reset");
     unlink([logPath UTF8String]);

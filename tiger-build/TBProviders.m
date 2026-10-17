@@ -29,6 +29,7 @@
     [usage release];
     [params release];
     [droppedParams release];
+    [finishReason release];
     [super dealloc];
 }
 
@@ -1392,6 +1393,10 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         unsigned p;
         if ([TBString(candidate, @"finishReason") isEqualToString:@"MAX_TOKENS"])
             round->truncated = YES;
+        if ([TBString(candidate, @"finishReason") length]) {
+            [round->finishReason release];
+            round->finishReason = [TBString(candidate, @"finishReason") copy];
+        }
         for (p = 0; p < [parts count]; p++) {
             NSDictionary *part = [parts objectAtIndex:p];
             NSString *signature = TBString(part, @"thoughtSignature");

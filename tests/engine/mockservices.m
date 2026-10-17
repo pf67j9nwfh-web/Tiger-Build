@@ -471,6 +471,16 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendChunked(fd, 200, sse(anthropicEvents(!answered, NO)));
         else
             sendChunked(fd, 200, sse(openaiChunks(!answered)));
+    } else if ([path isEqualToString:@"/empty-openai"]) {
+        /* a tool call, then an empty reply once the tool has answered, then a real answer when asked to carry on */
+        NSString *text = TBJSONString(request);
+        BOOL toolDone = [text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound, nudged = [text rangeOfString:@"last reply was empty"].location != NSNotFound;
+        if (!toolDone)
+            sendChunked(fd, 200, sse(openaiChunks(YES)));
+        else if (!nudged)
+            sendChunked(fd, 200, sse(A(E(nil, D(A(D([NSDictionary dictionary], @"delta", @"stop", @"finish_reason")), @"choices")), E(nil, @"[DONE]"))));
+        else
+            sendChunked(fd, 200, sse(openaiChunks(NO)));
     } else if ([path isEqualToString:@"/sub-claude-model"]) {
         /* like /sub-claude, but the first task names a model of its own */
         NSString *text = TBJSONString(request);

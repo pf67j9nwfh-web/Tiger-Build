@@ -7,6 +7,7 @@
 - The tool result can now put several pictures, videos or files in the chat at once.
 - The host info tool reports the model, CPU type and speed, cores, caches and memory.
 - The installer opens Tiger Build when its window is closed.
+- **Fixed**: when a model (Gemini mostly) sent an empty reply right after a tool ran, the turn ended and the tool's output was printed as if it were the answer. Tiger Build now tells the model its reply was empty and asks it to carry on (up to three times, with the service's stated reason shown), and only then gives up, saying so plainly.
 - **Fixed**: the Commander could be left spinning at full CPU, forever, if it was told to stop at the instant it was freeing memory at exit (its stop handler used Objective-C, which waited on the lock the interrupted code held). The handler now uses only plain system calls.
 - Reset to Default in Appearance puts the drop-down menus' font and colour back at once on Mac OS X 10.4.
 

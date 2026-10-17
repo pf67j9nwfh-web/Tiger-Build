@@ -1217,6 +1217,7 @@ static unsigned long contentSize(NSArray *log)
     NSString *lastOutput = @"";
     BOOL lastFailed = NO;
     BOOL anyText = NO;
+    int emptyRetries = 0;
     unsigned i;
     for (i = 0; i < [messages count]; i++) {
         NSDictionary *message = [messages objectAtIndex:i];
@@ -1274,13 +1275,25 @@ static unsigned long contentSize(NSArray *log)
                 [self emit:@"t" text:kLimitNote];
             return;
         }
+        if ([calls count] == 0 && !sawText && roundIndex > 0 && emptyRetries < 3) {
+            /* A reply with nothing in it right after a tool ran (Gemini does this now and then). Ending the turn here made the last tool output
+               stand in as the answer; ask the model to carry on instead. */
+            NSString *why = round->finishReason && ![round->finishReason isEqualToString:@"STOP"] ? [NSString stringWithFormat:@" (%@)", round->finishReason] : @"";
+            emptyRetries++;
+            [self emit:@"s" text:[NSString stringWithFormat:@"The model sent an empty reply%@, so it is being asked to carry on...", why]];
+            [log addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role",
+                @"Your last reply was empty. Carry on with the task: call the next tool you need, or give your answer in words.", @"content", nil]];
+            roundIndex++;
+            continue;
+        }
         if ([calls count] == 0 || roundIndex >= [self maxSteps]) {
             if ([calls count] && roundIndex >= [self maxSteps])
                 [self emit:@"t" text:[NSString stringWithFormat:kStepNote, [self maxSteps]]];
             else if (!sawText && lastFailed)
                 [self emit:@"t" text:[self stoppedEarlyOutput:lastOutput reason:nil]];
             else if (!sawText && [lastOutput length] && !anyText)
-                [self emit:@"t" text:lastOutput];
+                [self emit:@"t" text:[NSString stringWithFormat:@"The model ended its turn with an empty reply%@, even after being asked to carry on. The last thing it was looking at:\n\n%@",
+                    round->finishReason && ![round->finishReason isEqualToString:@"STOP"] ? [NSString stringWithFormat:@" (%@)", round->finishReason] : @"", lastOutput]];
             else if (!sawText && [calls count] == 0 && !anyText && !roundIndex)
                 TBFail(@"The model returned no text.");
             else if (!sawText && roundIndex && !anyText)

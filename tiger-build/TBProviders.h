@@ -19,6 +19,7 @@
     id sink;                         /* gets -round:text: and -round:thinking: */
     NSDictionary *params;            /* the person's choices for this reply: temperature, top_p, max_tokens (each optional) */
     NSMutableArray *droppedParams;   /* names of choices the model refused, left out of the request */
+    NSString *finishReason;          /* why the service ended the reply, when it said (Gemini: STOP, SAFETY, RECITATION, MALFORMED_FUNCTION_CALL ...) */
 }
 - (void)addUsageInput:(long long)input cached:(long long)cached written:(long long)written output:(long long)output;
 @end
