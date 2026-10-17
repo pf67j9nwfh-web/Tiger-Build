@@ -1282,9 +1282,22 @@ static unsigned long contentSize(NSArray *log)
             /* A reply with nothing in it right after a tool ran (Gemini does this now and then). Ending the turn here made the last tool output
                stand in as the answer; ask the model to carry on instead. */
             NSString *what = round->thoughtParts ? @"only thinking, no answer" : @"nothing at all";
-            NSString *why = [NSString stringWithFormat:@" (%@%@)", what, round->finishReason && ![round->finishReason isEqualToString:@"STOP"] ? [@", finish reason " stringByAppendingString:round->finishReason] : @""];
+            BOOL blocked = [round->finishReason hasPrefix:@"blocked:"];
+            NSString *why = blocked ? [NSString stringWithFormat:@" (the service blocked the reply without saying why: %@)", [round->finishReason substringFromIndex:8]]
+                : [NSString stringWithFormat:@" (%@%@)", what, round->finishReason && ![round->finishReason isEqualToString:@"STOP"] ? [@", finish reason " stringByAppendingString:round->finishReason] : @""];
             emptyRetries++;
-            [self emit:@"s" text:[NSString stringWithFormat:@"The model sent an empty reply%@, so it is being asked to carry on...", why]];
+            /* what the service sent, kept for finding out why (no conversation text: the tail of its own reply, its counts, and the shape of the request) */
+            {
+                NSString *path = [[self home] stringByAppendingString:@"/Library/Application Support/Tiger Build/empty-replies.log"];
+                NSMutableString *entry = [NSMutableString stringWithFormat:@"==== %@  %@/%@  round %d, empty in a row %d, finish %@, parts: %d thinking %d text %d calls, %lu messages in the log\n%@\n",
+                    [NSDate date], provider, model, roundIndex, emptyRetries, round->finishReason ? round->finishReason : @"(none)", round->thoughtParts, round->textParts, round->callParts,
+                    (unsigned long)[log count], round->rawTail ? round->rawTail : @"(no events)"];
+                NSData *old = [NSData dataWithContentsOfFile:path];
+                NSMutableData *all = [NSMutableData dataWithData:old && [old length] < 150000 ? old : [NSData data]];
+                [all appendData:[entry dataUsingEncoding:NSUTF8StringEncoding]];
+                [all writeToFile:path atomically:NO];
+            }
+            [self emit:@"s" text:[NSString stringWithFormat:@"The model sent an empty reply%@, so it is being asked to carry on... (details are in empty-replies.log)", why]];
             [log addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role",
                 @"Your last reply was empty. Carry on with the task: call the next tool you need, or give your answer in words.", @"content", nil]];
             roundIndex++;

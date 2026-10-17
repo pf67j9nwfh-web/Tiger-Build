@@ -21,6 +21,7 @@
     NSMutableArray *droppedParams;   /* names of choices the model refused, left out of the request */
     int emptyRetry;                  /* how many empty replies in a row came before this request (the session sets it; Gemini then thinks less) */
     int thoughtParts, textParts, callParts;   /* what the reply held, to say why an empty one was empty */
+    NSMutableString *rawTail;        /* the end of what a Gemini reply sent, for the log of an empty reply */
     NSString *finishReason;          /* why the service ended the reply, when it said (Gemini: STOP, SAFETY, RECITATION, MALFORMED_FUNCTION_CALL ...) */
 }
 - (void)addUsageInput:(long long)input cached:(long long)cached written:(long long)written output:(long long)output;

@@ -3726,13 +3726,17 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         if (length < (unsigned)(i + 1 + count))
             return;
         {
+            /* a pool for each frame: a long chat is laid out again for each one, and a pile of them at once ran a 32-bit app out of memory */
+            NSAutoreleasePool *framePool = [[NSAutoreleasePool alloc] init];
             NSData *payload = [NSData dataWithBytes:bytes + i + 1 length:count];
             [frameBuffer replaceBytesInRange:NSMakeRange(0, i + 1 + count) withBytes:NULL length:0];
             if (kind == 'd') {
                 [self finishStream];
+                [framePool release];
                 return;
             }
             [self dispatchFrameKind:kind payload:payload];
+            [framePool release];
         }
     }
 }

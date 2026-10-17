@@ -30,6 +30,7 @@
     [params release];
     [droppedParams release];
     [finishReason release];
+    [rawTail release];
     [super dealloc];
 }
 
@@ -1387,6 +1388,11 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         [meta release];
         meta = [TBDictionary(item, @"usageMetadata") retain];
     }
+    /* the service refusing the request or the reply, with no explanation: promptFeedback.blockReason (OTHER, SAFETY, PROHIBITED_CONTENT ...) */
+    if ([TBString(TBDictionary(item, @"promptFeedback"), @"blockReason") length]) {
+        [round->finishReason release];
+        round->finishReason = [[@"blocked:" stringByAppendingString:TBString(TBDictionary(item, @"promptFeedback"), @"blockReason")] copy];
+    }
     for (c = 0; c < [candidates count]; c++) {
         NSDictionary *candidate = [candidates objectAtIndex:c];
         NSArray *parts = TBArray(TBDictionary(candidate, @"content"), @"parts");
@@ -1454,7 +1460,14 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
             case StreamOpenAI: [self openAIItem:item]; break;
             case StreamResponses: [self responsesItem:item]; break;
             case StreamClaude: [self claudeItem:item]; break;
-            case StreamGemini: [self geminiItem:item]; break;
+            case StreamGemini:
+                if (!round->rawTail)
+                    round->rawTail = [[NSMutableString alloc] init];
+                [round->rawTail appendFormat:@"%@\n", [[events objectAtIndex:i] objectForKey:@"data"]];
+                if ([round->rawTail length] > 6000)
+                    [round->rawTail deleteCharactersInRange:NSMakeRange(0, [round->rawTail length] - 6000)];
+                [self geminiItem:item];
+                break;
         }
         if (failure)
             return YES;

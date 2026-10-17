@@ -206,14 +206,34 @@ NSString *TBEmojiSubstitute(NSString *text)
     unsigned i;
     NSMutableString *out;
     BOOL changed = NO;
+    unsigned runStart = 0;
     if (n == 0 || !TBEmojiPicturesAvailable())
         return TBDisplayText(text);
+    /* Most text has nothing that could be an emoji (plain letters, digits, punctuation, code): leave it alone without a copy. Every layout of a chat goes
+       through here for every message, so a copy of each character as its own string used up the memory of a long chat. */
+    {
+        BOOL possible = NO;
+        for (i = 0; i < n; i++) {
+            unichar c = [text characterAtIndex:i];
+            if (c == 0xA9 || c == 0xAE || c >= 0x203C) {
+                possible = YES;
+                break;
+            }
+        }
+        if (!possible)
+            return TBDisplayText(text);
+    }
     if (!emojiList) {
         emojiList = [[NSMutableArray alloc] init];
         emojiNumbers = [[NSMutableDictionary alloc] init];
     }
     cp = malloc(sizeof(unsigned long) * n);
     at = malloc(sizeof(unsigned) * (n + 1));
+    if (!cp || !at) {
+        free(cp);
+        free(at);
+        return TBDisplayText(text);
+    }
     for (i = 0; i < n;) {
         unichar c = [text characterAtIndex:i];
         at[count] = i;
@@ -239,15 +259,19 @@ NSString *TBEmojiSubstitute(NSString *text)
                 [emojiNumbers setObject:number forKey:emoji];
             }
             if (number) {
+                if (at[i] > runStart)
+                    [out appendString:[text substringWithRange:NSMakeRange(runStart, at[i] - runStart)]];
                 [out appendFormat:@"%C", (unichar)(STAND_IN_FIRST + [number unsignedIntValue])];
+                runStart = at[i + length];
                 i += length;
                 changed = YES;
                 continue;
             }
         }
-        [out appendString:[text substringWithRange:NSMakeRange(at[i], at[i + 1] - at[i])]];
         i++;
     }
+    if (changed && runStart < n)
+        [out appendString:[text substringWithRange:NSMakeRange(runStart, n - runStart)]];
     free(cp);
     free(at);
     return TBDisplayText(changed ? out : text);
