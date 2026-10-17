@@ -182,6 +182,8 @@ static int decodeStatus(int status)
     return status;
 }
 
+static void noteSessionPid(pid_t pid, int add);
+
 /* one thread per session reads what the program writes */
 static void *readLoop(void *arg)
 {
@@ -202,6 +204,7 @@ static void *readLoop(void *arg)
     pthread_mutex_lock(&s->lock);
     s->exited = YES;
     pthread_mutex_unlock(&s->lock);
+    noteSessionPid(s->pid, 0);
     close(s->fd);
     s->fd = -1;
     [pool release];
@@ -528,6 +531,7 @@ id CMToolStartProcess(NSDictionary *args)
         pthread_attr_destroy(&attr);
     }
     [sessions setObject:s forKey:[NSNumber numberWithLongLong:pid]];
+    noteSessionPid(pid, 1);
     if ([sessions count] > 40) {
         NSEnumerator *each = [[sessions allValues] objectEnumerator];
         CMSession *other;
@@ -664,13 +668,33 @@ id CMToolKillProcess(NSDictionary *args)
     return [NSString stringWithFormat:@"sent SIGTERM to %lld", pid];
 }
 
+/* The programs started for sessions, as plain numbers. A stop signal can arrive while the main thread is inside malloc or free; a handler that
+   used Objective-C (which allocates) then waited for that lock forever at full speed. This list and the calls below use nothing of the kind. */
+static volatile pid_t livePids[512];
+
+static void noteSessionPid(pid_t pid, int add)
+{
+    int i;
+    if (add) {
+        for (i = 0; i < 512; i++)
+            if (livePids[i] == 0) {
+                livePids[i] = pid;
+                return;
+            }
+    } else
+        for (i = 0; i < 512; i++)
+            if (livePids[i] == pid)
+                livePids[i] = 0;
+}
+
 void CMShutdownSessions(void)
 {
-    NSEnumerator *each = [sessions objectEnumerator];
-    CMSession *s;
-    while ((s = [each nextObject]))
-        if (!s->exited && s->pid > 1 && kill(-s->pid, SIGTERM) != 0)
-            kill(s->pid, SIGTERM);
+    int i;
+    for (i = 0; i < 512; i++) {
+        pid_t pid = livePids[i];
+        if (pid > 1 && kill(-pid, SIGTERM) != 0)
+            kill(pid, SIGTERM);
+    }
 }
 
 /* ---- pictures ---- */

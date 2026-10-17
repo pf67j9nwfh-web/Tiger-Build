@@ -77,6 +77,34 @@ int main(int argc, char **argv)
         }
         [remote close];
     }
+    {
+        /* a stop signal while a program runs: the Commander ends at once, takes the program with it, and does not spin (it once hung at full CPU in its handler) */
+        NSTask *task = [[[NSTask alloc] init] autorelease];
+        NSPipe *input = [NSPipe pipe];
+        NSString *requests = @"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"1\"}}}\n"
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"start_process\",\"arguments\":{\"command\":\"sleep 31\",\"timeout_ms\":800}}}\n";
+        double begun;
+        BOOL gone;
+        [task setLaunchPath:program];
+        [task setEnvironment:[NSDictionary dictionaryWithObjectsAndKeys:@"1", @"TB_LOCAL", @"C", @"LANG", NSHomeDirectory(), @"HOME", nil]];
+        [task setStandardInput:input];
+        [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+        [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+        [task launch];
+        [[input fileHandleForWriting] writeData:[requests dataUsingEncoding:NSUTF8StringEncoding]];
+        [NSThread sleepForTimeInterval:2.0];
+        kill([task processIdentifier], SIGTERM);
+        begun = now();
+        while ([task isRunning] && now() - begun < 3)
+            [NSThread sleepForTimeInterval:0.05];
+        gone = ![task isRunning];
+        [NSThread sleepForTimeInterval:0.3];
+        expectThat(gone && now() - begun < 2.5, @"a stop signal ends the Commander at once");
+        expectThat(system("pgrep -f 'sleep 31' > /dev/null") != 0, @"and the program it was running stops with it");
+        if (!gone)
+            kill([task processIdentifier], SIGKILL);
+    }
     fprintf(stderr, "closed in %.2f s\n", now() - t0);
     [pool release];
     fprintf(stderr, failures ? "%d failed\n" : "all passed\n", failures);

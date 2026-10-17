@@ -10,6 +10,7 @@
 #define MAX_MESSAGE (16 * 1024 * 1024)
 
 static NSString *marker = nil;
+static char markerPath[1024];   /* the same, for the stop handler, which may not use Objective-C */
 
 /* one tool: name, description, then (name, type, description) triples, then the required names */
 static NSDictionary *def(NSString *name, NSString *description, NSArray *props, NSArray *required)
@@ -390,8 +391,8 @@ static void serve(void)
 static void stopped(int sig)
 {
     CMShutdownSessions();
-    if (marker)
-        unlink([marker fileSystemRepresentation]);
+    if (markerPath[0])
+        unlink(markerPath);
     _exit(0);
 }
 
@@ -454,6 +455,7 @@ int main(int argc, char **argv)
         return 1;
     }
     marker = [[state stringByAppendingPathComponent:[NSString stringWithFormat:@"session-%d", (int)getpid()]] retain];
+    strlcpy(markerPath, [marker fileSystemRepresentation], sizeof markerPath);
     [@"session" writeToFile:marker atomically:NO encoding:NSUTF8StringEncoding error:NULL];
     signal(SIGTERM, stopped);
     signal(SIGINT, stopped);
