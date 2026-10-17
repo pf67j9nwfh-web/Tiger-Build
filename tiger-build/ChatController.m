@@ -2677,7 +2677,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.6";
+        version = @"2.6.1";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];

@@ -84,7 +84,7 @@ Your chat history stays on the Mac. API keys are kept in that Mac's Keychain and
 
 ## Setup
 
-**1. Install.** Open `TigerBuild-2.6.pkg` (or build it yourself, below). It installs Tiger Build in `/Applications` (Commander is inside the app) and, in `/usr/local/tbssh`, the OpenSSH tools, `sshfs` and Tiger Build's own SSH server, which stays off until you allow other computers. On Leopard and Snow Leopard it also adds a Quick Look generator. No sharing service is turned on.
+**1. Install.** Open `TigerBuild-2.6.1.pkg` (or build it yourself, below). It installs Tiger Build in `/Applications` (Commander is inside the app) and, in `/usr/local/tbssh`, the OpenSSH tools, `sshfs` and Tiger Build's own SSH server, which stays off until you allow other computers. On Leopard and Snow Leopard it also adds a Quick Look generator. No sharing service is turned on.
 
 **2. Add keys.** Open **Tiger Build → Preferences**. On the **API Keys** tab paste a key for each service you use, then Save. Keys go to the Keychain; Tiger Build only shows whether one is saved. For LM Studio or Ollama, enter its address on the **Local LLM** tab (it can be another computer on your network).
 
@@ -238,7 +238,7 @@ SMOKE_SSH="ssh user@host" scripts/smoke-test.sh   # on an old Mac that has the c
 
 | Script | Makes |
 | --- | --- |
-| `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-2.6.pkg` (the installer for the old Macs) |
+| `scripts/build-tiger-pkg.sh` | `dist/TigerBuild-2.6.1.pkg` (the installer for the old Macs) |
 | `third_party/mbedtls/fetch.sh`, `build-mac.sh` | The TLS libraries (already built and kept in git) |
 | `third_party/libwebp/fetch.sh`, `build-mac.sh` | The WebP decoder (already built and kept in git) |
 | `third_party/libde265/fetch.sh`, `old-compilers.patch`, `build-mac.sh` | The HEIC video decoder as a dynamic library, patched for the old compilers (already built and kept in git) |
@@ -250,7 +250,7 @@ SMOKE_SSH="ssh user@host" scripts/smoke-test.sh   # on an old Mac that has the c
 
 ## Upgrading from 1.x
 
-Install 2.6 over 1.x. The relay is not used any more: stop it and remove it if you like. To bring your keys across, export the relay's settings once (Tiger Build 1.x: Configuration → Export All Settings, or the relay's own backup) and choose Configuration → Import All Settings in 2.2; the keys go to the Keychain and MCP servers come back switched off. Your chats are unchanged.
+Install 2.6.1 over 1.x. The relay is not used any more: stop it and remove it if you like. To bring your keys across, export the relay's settings once (Tiger Build 1.x: Configuration → Export All Settings, or the relay's own backup) and choose Configuration → Import All Settings in 2.2; the keys go to the Keychain and MCP servers come back switched off. Your chats are unchanged.
 
 ## Why Do This?
 
