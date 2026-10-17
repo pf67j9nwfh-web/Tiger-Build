@@ -161,6 +161,11 @@ int main(int argc, char **argv)
     expectThat([[f joined:@"s"] rangeOfString:@"empty reply"].length > 0, @"empty reply: the person is told it was asked to carry on");
     seen = fetch(@"/seen");
     expectThat([seen count] == 3, @"empty reply: one more request after the empty one");
+    /* the limit of three is for empty replies in a row: four spread over a long run are fine */
+    fetch(@"/reset");
+    [d setObject:[base stringByAppendingString:@"/empty-often-openai"] forKey:@"TBBaseURL.chatgpt"];
+    f = turn(@"chatgpt", @"gpt-4o", nil, nil, NULL);
+    expectThat([[f joined:@"t"] rangeOfString:@"Hello"].length > 0 && [[f joined:@"t"] rangeOfString:@"even after being asked"].length == 0, @"empty replies: the limit counts only those in a row");
     [d setObject:[base stringByAppendingString:@"/loop-openai"] forKey:@"TBBaseURL.chatgpt"];
 
     /* approval: asked first; a refusal tells the model not to retry */

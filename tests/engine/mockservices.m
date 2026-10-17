@@ -481,6 +481,14 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendChunked(fd, 200, sse(A(E(nil, D(A(D([NSDictionary dictionary], @"delta", @"stop", @"finish_reason")), @"choices")), E(nil, @"[DONE]"))));
         else
             sendChunked(fd, 200, sse(openaiChunks(NO)));
+    } else if ([path isEqualToString:@"/empty-often-openai"]) {
+        /* four empty replies, never more than one in a row: odd requests call a tool, even ones are empty, the ninth answers */
+        if (count == 9)
+            sendChunked(fd, 200, sse(openaiChunks(NO)));
+        else if (count % 2 == 1)
+            sendChunked(fd, 200, sse(openaiChunks(YES)));
+        else
+            sendChunked(fd, 200, sse(A(E(nil, D(A(D([NSDictionary dictionary], @"delta", @"stop", @"finish_reason")), @"choices")), E(nil, @"[DONE]"))));
     } else if ([path isEqualToString:@"/sub-claude-model"]) {
         /* like /sub-claude, but the first task names a model of its own */
         NSString *text = TBJSONString(request);

@@ -1407,14 +1407,19 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
                 looseSignature = [signature copy];
             }
             if (TBTruthy(TBValue(part, @"thought"))) {
+                round->thoughtParts++;
                 if (thinking && [TBString(part, @"text") length])
                     [self think:TBString(part, @"text")];
                 continue;
             }
             text = TBString(part, @"text");
-            if ([text length])
+            if ([text length]) {
+                round->textParts++;
                 [self say:text];
+            }
             call = TBDictionary(part, @"functionCall");
+            if (call)
+                round->callParts++;
             if (call && [TBString(call, @"name") length]) {
                 NSString *marker = [TBString(call, @"id") length] ? TBString(call, @"id") : TBJSONString(call);
                 NSMutableDictionary *slot = [seen objectForKey:marker];
@@ -1908,6 +1913,7 @@ static int claudeLimitIn(NSString *message)
         [payload setObject:declared forKey:@"tools"];
     {
         NSMutableDictionary *config = [NSMutableDictionary dictionary];
+        BOOL levels = [model hasPrefix:@"gemini-4"] || [model hasPrefix:@"gemini-3"];
         if (thinking)
 {
                 NSMutableDictionary *tc = [NSMutableDictionary dictionaryWithObject:[NSNumber numberWithBool:YES] forKey:@"includeThoughts"];
@@ -1916,6 +1922,12 @@ static int claudeLimitIn(NSString *message)
                     [tc setObject:@"high" forKey:@"thinkingLevel"];
                 [config setObject:tc forKey:@"thinkingConfig"];
             }
+        /* After empty replies in a row, think less: a reply that is all thinking and no answer is what the service gives when it thinks too long */
+        if (round->emptyRetry > 0 && levels) {
+            NSMutableDictionary *tc = [config objectForKey:@"thinkingConfig"] ? [NSMutableDictionary dictionaryWithDictionary:[config objectForKey:@"thinkingConfig"]] : [NSMutableDictionary dictionary];
+            [tc setObject:round->emptyRetry > 1 ? @"minimal" : @"low" forKey:@"thinkingLevel"];
+            [config setObject:tc forKey:@"thinkingConfig"];
+        }
         if (paramNumber(round, @"temperature"))
             [config setObject:paramNumber(round, @"temperature") forKey:@"temperature"];
         if (paramNumber(round, @"top_p"))

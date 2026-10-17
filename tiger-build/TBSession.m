@@ -1246,6 +1246,7 @@ static unsigned long contentSize(NSArray *log)
         round = [[[TBRound alloc] init] autorelease];
         round->run = [run retain];
         round->params = [TBDictionary(options, @"params") retain];
+        round->emptyRetry = emptyRetries;
         round->sink = [[[TBTextCollector alloc] initWithSink:sink spoken:spoken] autorelease];
         @try {
             [TBProviders streamRound:provider system:system log:log tools:tools round:round model:model];
@@ -1275,10 +1276,13 @@ static unsigned long contentSize(NSArray *log)
                 [self emit:@"t" text:kLimitNote];
             return;
         }
+        if (sawText || [calls count])
+            emptyRetries = 0;   /* the limit is for empty replies in a row */
         if ([calls count] == 0 && !sawText && roundIndex > 0 && emptyRetries < 3) {
             /* A reply with nothing in it right after a tool ran (Gemini does this now and then). Ending the turn here made the last tool output
                stand in as the answer; ask the model to carry on instead. */
-            NSString *why = round->finishReason && ![round->finishReason isEqualToString:@"STOP"] ? [NSString stringWithFormat:@" (%@)", round->finishReason] : @"";
+            NSString *what = round->thoughtParts ? @"only thinking, no answer" : @"nothing at all";
+            NSString *why = [NSString stringWithFormat:@" (%@%@)", what, round->finishReason && ![round->finishReason isEqualToString:@"STOP"] ? [@", finish reason " stringByAppendingString:round->finishReason] : @""];
             emptyRetries++;
             [self emit:@"s" text:[NSString stringWithFormat:@"The model sent an empty reply%@, so it is being asked to carry on...", why]];
             [log addObject:[NSDictionary dictionaryWithObjectsAndKeys:@"user", @"role",
