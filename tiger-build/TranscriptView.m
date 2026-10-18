@@ -403,6 +403,7 @@ static float tweetNeededWidth(NSDictionary *tweet)
 
 /* the emoji pass of a message's text, remembered while the text is unchanged: a layout goes over every message of the chat */
 static NSMutableDictionary *substituteCache = nil;
+static double imageCacheBytes = 0;
 static double perfEmoji, perfRich, perfLoop1; static int perfMeasureCalls;
 
 static NSString *cachedEmojiSubstitute(NSString *text)
@@ -945,8 +946,12 @@ static float transcriptScale = 0;
     picture = [[NSImage alloc] initWithContentsOfFile:path];
     if (!picture)
         return nil;
-    if ([imageCache count] >= 48)
+    /* by size as well as count: screenshots of other Macs are large, and forty-eight of them held in memory made a long chat's window use hundreds of megabytes */
+    if ([imageCache count] >= 48 || imageCacheBytes > 80e6) {
         [imageCache removeAllObjects];
+        imageCacheBytes = 0;
+    }
+    imageCacheBytes += [picture size].width * [picture size].height * 4;
     [imageCache setObject:picture forKey:path];
     [picture release];
     return picture;
