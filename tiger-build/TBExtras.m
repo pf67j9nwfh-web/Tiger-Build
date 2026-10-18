@@ -525,6 +525,13 @@ static NSDictionary *withoutSaving(NSDictionary *listed)
     return tools;
 }
 
+/* the tool's own name on the server it came from (the name offered to a model may carry a prefix) */
+- (NSString *)originalNameOf:(NSString *)name
+{
+    NSArray *route = [routes objectForKey:name];
+    return route ? [route objectAtIndex:1] : name;
+}
+
 - (BOOL)handles:(NSString *)name
 {
     return [routes objectForKey:name] != nil || [owners objectForKey:name] != nil;

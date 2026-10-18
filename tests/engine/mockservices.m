@@ -531,6 +531,15 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendJSON(fd, 400, D(D(@"max_tokens: 64000 > 8192, which is the maximum allowed", @"message"), @"error"));
         else
             sendChunked(fd, 200, sse(anthropicEvents(NO, NO)));
+    } else if ([path hasPrefix:@"/geminiopen"]) {
+        /* a reply that says how it ended and gives its counts, and then leaves the connection open */
+        NSData *event = sse(A(E(nil, D(A(D(D(A(D(@"Open and done", @"text")), @"parts"), @"content", @"STOP", @"finishReason")), @"candidates",
+            D(N(10), @"promptTokenCount", N(3), @"candidatesTokenCount"), @"usageMetadata"))));
+        sendText(fd, @"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n");
+        sendText(fd, [NSString stringWithFormat:@"%x\r\n", (unsigned)[event length]]);
+        sendAll(fd, event);
+        sendText(fd, @"\r\n");
+        sleep(6);
     } else if ([path hasPrefix:@"/gemini"]) {
         NSMutableArray *parts = [NSMutableArray arrayWithObjects:D(Y, @"thought", @"Pondering.", @"text"), D(@"Gem", @"text"), D(@"ini says hi", @"text"), nil];
         if (tools)

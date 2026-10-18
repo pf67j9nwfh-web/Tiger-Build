@@ -10,7 +10,7 @@
 #import "mbedtls/sha256.h"
 #include <time.h>
 
-static NSString *const webAgent = @"TigerBuild/2.6.1 (Tiger Build; https://github.com/pf67j9nwfh-web/Tiger-Build)";
+static NSString *const webAgent = @"TigerBuild/2.6.2 (Tiger Build; https://github.com/pf67j9nwfh-web/Tiger-Build)";
 
 
 /* keeps what a request sends, and stops it when it grows past the limit. With a file open, a good answer goes straight to the file

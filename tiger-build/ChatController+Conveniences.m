@@ -94,6 +94,25 @@ static NSString *dayKey2(void)
 
 @implementation ChatController (Conveniences)
 
+/* Shift-Command-Return: send "Please continue" (as guidance when a reply is running), keeping whatever is half typed in the message field */
+- (IBAction)continueChat:(id)sender
+{
+    NSText *editor = [input currentEditor];
+    NSString *draft = [[(editor ? [editor string] : [input stringValue]) copy] autorelease];
+    (void)sender;
+    if (!current)
+        return;
+    [input setStringValue:@"Please continue"];
+    if (editor)
+        [editor setString:@"Please continue"];
+    [self send:nil];
+    if ([draft length]) {
+        [input setStringValue:draft];
+        if ([input currentEditor])
+            [[input currentEditor] setString:draft];
+    }
+}
+
 /* ---- a new chat with a message, sent or not ---- */
 
 - (void)askInNewChat:(NSString *)text send:(BOOL)send

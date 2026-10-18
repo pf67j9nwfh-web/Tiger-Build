@@ -19,6 +19,7 @@
 /* The tools to offer. skip holds the keys the chat turned off. */
 - (NSArray *)definitionsForProvider:(NSString *)provider skip:(NSSet *)skip;
 - (BOOL)handles:(NSString *)name;
+- (NSString *)originalNameOf:(NSString *)name;
 - (NSString *)ownerOf:(NSString *)name;
 /* {output, failed, media (optional)} */
 - (NSDictionary *)call:(NSString *)name arguments:(NSDictionary *)args;

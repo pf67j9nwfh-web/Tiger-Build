@@ -56,6 +56,9 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (void)noteTurnStats:(NSDictionary *)event chat:(NSMutableDictionary *)chat;
 - (void)markTurnStart:(NSMutableDictionary *)chat;
 - (IBAction)toggleStats:(id)sender;
+- (void)buildScreenTab:(NSTabView *)tabs;
+- (IBAction)toggleFinishTime:(id)sender;
+- (IBAction)continueChat:(id)sender;
 - (NSMutableDictionary *)openMessageIn:(NSMutableDictionary *)chat;
 - (void)noteSideUsage:(EngineRequest *)request chat:(NSMutableDictionary *)chat;
 - (void)noteUsage:(NSDictionary *)event chat:(NSMutableDictionary *)chat;

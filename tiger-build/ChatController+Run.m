@@ -372,6 +372,23 @@ static NSString *newRunId(void)
         return;
     [thinkingText release];
     thinkingText = [text copy];
+    /* The strip changes with every few words the model thinks. Placing the panes and painting for each one kept the message field from getting its
+       keys; show it at most about six times a second (and at once when it is cleared). */
+    if ([thinkingText length] > 0 && CFAbsoluteTimeGetCurrent() - lastThinkingShow < 0.16) {
+        if (!thinkingShowScheduled) {
+            thinkingShowScheduled = YES;
+            [self performSelector:@selector(showThinkingLater) withObject:nil afterDelay:0.2];
+        }
+        return;
+    }
+    lastThinkingShow = CFAbsoluteTimeGetCurrent();
+    [self showThinkingText];
+}
+
+- (void)showThinkingLater
+{
+    thinkingShowScheduled = NO;
+    lastThinkingShow = CFAbsoluteTimeGetCurrent();
     [self showThinkingText];
 }
 

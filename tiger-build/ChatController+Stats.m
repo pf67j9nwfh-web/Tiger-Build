@@ -18,11 +18,20 @@
     [open setObject:[NSNumber numberWithInt:[[open objectForKey:@"statsIn"] intValue] + in] forKey:@"statsIn"];
     [open setObject:[NSNumber numberWithInt:[[open objectForKey:@"statsOut"] intValue] + out] forKey:@"statsOut"];
     [open setObject:[NSNumber numberWithDouble:CFAbsoluteTimeGetCurrent() - started] forKey:@"statsSeconds"];
+    [open setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970]] forKey:@"statsFinished"];   /* the last model call ends the reply */
 }
 
 - (void)markTurnStart:(NSMutableDictionary *)chat
 {
     [chat setObject:[NSNumber numberWithDouble:CFAbsoluteTimeGetCurrent()] forKey:@"turnStart"];
+}
+
+- (IBAction)toggleFinishTime:(id)sender
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    (void)sender;
+    [defaults setBool:![defaults boolForKey:@"TBShowFinishTime"] forKey:@"TBShowFinishTime"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"TBStatsChanged" object:nil];
 }
 
 - (IBAction)toggleStats:(id)sender

@@ -1,5 +1,7 @@
 #import "ChatController_Private.h"
 #import "TBSSHServer.h"
+#import "TBSession.h"
+#import <unistd.h>
 #import "TBHTTP.h"
 #import "TBEngine.h"
 #import "mbedtls/sha256.h"
@@ -100,6 +102,84 @@ static TBHTTP *updateHTTP = nil;
     return field;
 }
 
+/* ---- Screen: this Mac's screen, mouse and keyboard for other computers and for programs such as Claude Code ---- */
+
+/* what ppc-commander --screen says (on or off), or nil when it cannot be run */
+static NSString *runScreenSetting(NSString *flag)
+{
+    NSTask *task = [[[NSTask alloc] init] autorelease];
+    NSPipe *pipe = [NSPipe pipe];
+    NSString *text;
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:TBCommanderProgram()])
+        return nil;
+    [task setLaunchPath:TBCommanderProgram()];
+    [task setArguments:[NSArray arrayWithObjects:@"--screen", flag, nil]];
+    [task setStandardOutput:pipe];
+    [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+    [task launch];
+    text = [[[NSString alloc] initWithData:[[pipe fileHandleForReading] readDataToEndOfFile] encoding:NSUTF8StringEncoding] autorelease];
+    [task waitUntilExit];
+    return TBTrim(text);
+}
+
+/* how another computer's program reaches this Mac's Commander: Tiger Build's own SSH server (port 2222), which runs only Commander */
+- (NSString *)commanderReachWord:(NSString *)name
+{
+    char host[256];
+    NSString *address = [[[[self commanderCommand:@"status"] objectForKey:@"ip"] componentsSeparatedByString:@","] objectAtIndex:0];
+    gethostname(host, sizeof host);
+    if (![address length])
+        address = [NSString stringWithUTF8String:host];
+    (void)name;
+    return [NSString stringWithFormat:@"%@@%@", NSUserName(), TBTrim(address)];
+}
+
+- (void)copyClaudeCodeCommand:(id)sender
+{
+    NSString *target = [self commanderReachWord:nil];
+    NSString *text = [NSString stringWithFormat:@"claude mcp add --transport stdio mac-%@ -- ssh -p 2222 -i ~/.ssh/id_ed25519 %@ commander", NSUserName(), target];
+    (void)sender;
+    [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+    [[NSPasteboard generalPasteboard] setString:text forType:NSStringPboardType];
+    NSRunAlertPanel(@"Claude Code command copied", @"Run it on the computer that has Claude Code:\n\n%@\n\nThe key (-i) must be one listed under SSH Server, Allowed Keys here, and Allow Other Computers must be on (Commander menu).", @"OK", nil, nil, text);
+}
+
+- (void)copyMCPConfig:(id)sender
+{
+    NSString *target = [self commanderReachWord:nil];
+    NSString *text = [NSString stringWithFormat:@"{\n  \"mcpServers\": {\n    \"mac-%@\": {\n      \"command\": \"ssh\",\n      \"args\": [\"-p\", \"2222\", \"-i\", \"~/.ssh/id_ed25519\", \"%@\", \"commander\"]\n    }\n  }\n}\n", NSUserName(), target];
+    (void)sender;
+    [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
+    [[NSPasteboard generalPasteboard] setString:text forType:NSStringPboardType];
+    NSRunAlertPanel(@"MCP settings copied", @"Add this to the MCP settings of the application on the other computer (Claude Desktop, Cursor, and others that use an mcpServers list):\n\n%@", @"OK", nil, nil, text);
+}
+
+- (void)buildScreenTab:(NSTabView *)tabs
+{
+    NSView *tab = [self preferencesTab:@"Screen" in:tabs];
+    float y = 292;
+    [self preferencesHeading:@"Control this Mac from other computers and programs" y:y inView:tab];
+    y -= 26;
+    [self alertsCheck:@"Let other computers and programs use this Mac's screen, mouse and keyboard" key:@"screen.allow" y:y in:tab];
+    y -= 20;
+    [self preferencesNote:@"Through Commander: take_screenshot, screen_click, screen_move, screen_drag, screen_scroll, screen_type and screen_key. It works while someone is logged in at this Mac, "
+        @"and acts on whatever is on the screen. For another computer, Allow Other Computers (Commander menu) must be on as well."
+        frame:NSMakeRect(34, y - 56, 502, 70) inView:tab];
+    y -= 82;
+    [self alertsCheck:@"Use screen control without asking first" key:@"screen.noask" y:y in:tab];
+    y -= 20;
+    [self preferencesNote:@"Applies to this Mac's chats and to the chats of this Tiger Build that use another computer's Commander. Off, each use asks."
+        frame:NSMakeRect(34, y - 22, 502, 32) inView:tab];
+    y -= 48;
+    [self preferencesHeading:@"Use this Mac from Claude Code and other MCP programs" y:y inView:tab];
+    y -= 34;
+    [self preferencesButton:@"Copy Claude Code Command" frame:NSMakeRect(16, y, 216, 28) action:@selector(copyClaudeCodeCommand:) inView:tab];
+    [self preferencesButton:@"Copy MCP Settings" frame:NSMakeRect(240, y, 150, 28) action:@selector(copyMCPConfig:) inView:tab];
+    y -= 14;
+    [self preferencesNote:@"Commander speaks MCP over standard input and output, so any program that starts an MCP server over SSH can use it (port 2222, a key listed under SSH Server)."
+        frame:NSMakeRect(16, y - 36, 520, 40) inView:tab];
+}
+
 - (void)buildAlertsTab:(NSTabView *)tabs
 {
     NSView *tab = [self preferencesTab:@"Alerts" in:tabs];
@@ -145,6 +225,8 @@ static TBHTTP *updateHTTP = nil;
     [[prefsFields objectForKey:@"alerts.bounce"] setState:flagDefault(@"TBBounceOnFinish", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.always"] setState:flagDefault(@"TBSoundAlways", NO) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.updates"] setState:flagDefault(@"TBCheckUpdates", YES) ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"screen.allow"] setState:[runScreenSetting(@"status") isEqualToString:@"on"] ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"screen.noask"] setState:[defaults boolForKey:@"TBScreenNoAsk"] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"spend.chat"] setStringValue:chat > 0 ? [NSString stringWithFormat:@"%g", chat] : @""];
     [[prefsFields objectForKey:@"spend.day"] setStringValue:day > 0 ? [NSString stringWithFormat:@"%g", day] : @""];
     [[prefsFields objectForKey:@"spend.today"] setStringValue:[NSString stringWithFormat:@"Spent today, in every chat: about %@.", TBFormatCost([self spendToday])]];
@@ -163,6 +245,8 @@ static TBHTTP *updateHTTP = nil;
     [defaults setBool:[[prefsFields objectForKey:@"alerts.bounce"] state] == NSOnState forKey:@"TBBounceOnFinish"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.always"] state] == NSOnState forKey:@"TBSoundAlways"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.updates"] state] == NSOnState forKey:@"TBCheckUpdates"];
+    runScreenSetting([[prefsFields objectForKey:@"screen.allow"] state] == NSOnState ? @"on" : @"off");
+    [defaults setBool:[[prefsFields objectForKey:@"screen.noask"] state] == NSOnState forKey:@"TBScreenNoAsk"];
     if (chat > 0) [defaults setObject:[NSNumber numberWithDouble:chat] forKey:@"TBSpendChatLimit"]; else [defaults removeObjectForKey:@"TBSpendChatLimit"];
     if (day > 0) [defaults setObject:[NSNumber numberWithDouble:day] forKey:@"TBSpendDayLimit"]; else [defaults removeObjectForKey:@"TBSpendDayLimit"];
 }

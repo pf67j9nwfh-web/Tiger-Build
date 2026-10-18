@@ -426,20 +426,35 @@ static NSString *cachedEmojiSubstitute(NSString *text)
 }
 
 static BOOL statsEnabled = NO;   /* the setting, read once for each layout rather than once for each message */
+static BOOL finishEnabled = NO;  /* Show Time of Completion */
+
+/* "3:41 PM", or "Oct 17, 3:41 PM" for another day */
+static NSString *finishText(double when)
+{
+    time_t t = (time_t)when, now = time(NULL);
+    struct tm at, today;
+    char buffer[48];
+    localtime_r(&t, &at);
+    localtime_r(&now, &today);
+    strftime(buffer, sizeof buffer, at.tm_yday == today.tm_yday && at.tm_year == today.tm_year ? "%I:%M %p" : "%b %e, %I:%M %p", &at);
+    return [NSString stringWithUTF8String:buffer[0] == '0' ? buffer + 1 : buffer];
+}
 
 static NSString *statsLine(NSDictionary *message)
 {
     double seconds = [[message objectForKey:@"statsSeconds"] doubleValue];
     int in = [[message objectForKey:@"statsIn"] intValue], out = [[message objectForKey:@"statsOut"] intValue];
     NSMutableArray *parts = [NSMutableArray array];
-    if (!statsEnabled || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"] || [message objectForKey:@"tweet"])
+    if ((!statsEnabled && !finishEnabled) || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"] || [message objectForKey:@"tweet"])
         return nil;
-    if (in + out > 0) {
+    if (statsEnabled && in + out > 0) {
         [parts addObject:[NSString stringWithFormat:@"in %@", tokenCount(in)]];
         [parts addObject:[NSString stringWithFormat:@"out %@", tokenCount(out)]];
     }
-    if (seconds > 0)
+    if (statsEnabled && seconds > 0)
         [parts addObject:seconds < 60 ? [NSString stringWithFormat:@"%.1fs", seconds] : [NSString stringWithFormat:@"%dm %02ds", (int)seconds / 60, (int)seconds % 60]];
+    if (finishEnabled && [[message objectForKey:@"statsFinished"] doubleValue] > 0)
+        [parts addObject:[@"finished " stringByAppendingString:finishText([[message objectForKey:@"statsFinished"] doubleValue])]];
     return [parts count] ? [parts componentsJoinedByString:@"  -  "] : nil;
 }
 
@@ -1461,6 +1476,13 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     [self setNeedsDisplay:YES];
 }
 
+- (void)layoutIfSizeChangedWidth:(float)width visibleHeight:(float)visible
+{
+    if ([boxes count] && fabsf(MAX(width, 80) - layoutWidth) < 0.5f && fabsf(visible - visibleHeight) < 0.5f)
+        return;
+    [self layoutForWidth:width visibleHeight:visible];
+}
+
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible
 {
     float maxText;
@@ -1470,6 +1492,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 
     double perfStart = CFAbsoluteTimeGetCurrent();
     statsEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"];
+    finishEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowFinishTime"];
     perfEmoji = 0; perfRich = 0; perfMeasureCalls = 0;
     layoutWidth = width;
     visibleHeight = visible;
@@ -1661,7 +1684,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             rect.origin.x = 16;
         [box setObject:[NSValue valueWithRect:rect] forKey:@"rect"];
         if (!status) {
-            float stackY = NSMinY(rect) + 10 + [[box objectForKey:@"tweetFooterH"] floatValue];
+            float statsH = [box objectForKey:@"stats"] ? 13 : 0;   /* the tokens and time are drawn along the bottom edge, so the picture and file sit above them */
+            float stackY = NSMinY(rect) + 10 + statsH + [[box objectForKey:@"tweetFooterH"] floatValue];
             if ([box objectForKey:@"tweet"]) {
                 float headerH = [[box objectForKey:@"tweetHeaderH"] floatValue];
                 [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMaxY(rect) - 9 - headerH, NSWidth(rect) - 34, headerH - 2)] forKey:@"tweetHeaderRect"];
@@ -1675,7 +1699,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
                 stackY += imageSize.height + 8;
             }
             if ([box objectForKey:@"file"])
-                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMinY(rect) + 10, 96, 24)] forKey:@"fileRect"];
+                [box setObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) + 17, NSMinY(rect) + 10 + statsH, 96, 24)] forKey:@"fileRect"];
             if ([box objectForKey:@"video"]) {
                 NSSize videoSize = [[box objectForKey:@"videoSize"] sizeValue];
                 NSRect videoRect = NSMakeRect(NSMinX(rect) + 17, stackY, videoSize.width, videoSize.height);

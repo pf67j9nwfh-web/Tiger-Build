@@ -1141,6 +1141,8 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
     NSMutableDictionary *seen;
     NSString *looseSignature;
     NSDictionary *meta;
+    BOOL geminiFinish, geminiUsage;   /* the reply said how it ended, and gave its counts: nothing more is coming, whether or not the connection closes */
+    int idleSeconds;                  /* how long to wait for the next piece (0: the usual 180) */
 }
 - (id)initFor:(int)kind round:(TBRound *)round thinking:(BOOL)thinking;
 @end
@@ -1164,6 +1166,8 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         seen = [[NSMutableDictionary alloc] init];
         stop = @"";
         looseSignature = @"";
+        if (which == StreamGemini)
+            idleSeconds = 150;   /* a silent connection is given up after two and a half minutes (the session then tries once more) */
     }
     return self;
 }
@@ -1392,7 +1396,10 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
     if ([TBString(TBDictionary(item, @"promptFeedback"), @"blockReason") length]) {
         [round->finishReason release];
         round->finishReason = [[@"blocked:" stringByAppendingString:TBString(TBDictionary(item, @"promptFeedback"), @"blockReason")] copy];
+        geminiFinish = YES;
     }
+    if (TBDictionary(item, @"usageMetadata"))
+        geminiUsage = YES;
     for (c = 0; c < [candidates count]; c++) {
         NSDictionary *candidate = [candidates objectAtIndex:c];
         NSArray *parts = TBArray(TBDictionary(candidate, @"content"), @"parts");
@@ -1402,6 +1409,7 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         if ([TBString(candidate, @"finishReason") length]) {
             [round->finishReason release];
             round->finishReason = [TBString(candidate, @"finishReason") copy];
+            geminiFinish = YES;
         }
         for (p = 0; p < [parts count]; p++) {
             NSDictionary *part = [parts objectAtIndex:p];
@@ -1472,6 +1480,8 @@ enum { StreamOpenAI = 1, StreamResponses, StreamClaude, StreamGemini };
         if (failure)
             return YES;
     }
+    if (kind == StreamGemini && geminiFinish && geminiUsage)
+        return YES;
     return [sse done];
 }
 
@@ -1492,7 +1502,7 @@ static TBHTTP *postStream(NSString *url, id payload, NSDictionary *headers, TBRo
     while ((name = [names nextObject]))
         [http setHeader:name value:[headers objectForKey:name]];
     [http setBody:TBJSONData(payload)];
-    [http setIdleTimeout:180];
+    [http setIdleTimeout:streamer && streamer->idleSeconds > 0 ? streamer->idleSeconds : 180];
     [http setDelegate:streamer];
     [round->run attach:http];
     @try {

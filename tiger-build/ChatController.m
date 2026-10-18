@@ -1032,7 +1032,7 @@ static NSMutableArray *allControllers = nil;
         innerW = NSWidth([transcriptScroll frame]) - 20;
     if (innerH < 40)
         innerH = NSHeight([transcriptScroll frame]) - 4;
-    [transcript layoutForWidth:innerW visibleHeight:innerH];
+    [transcript layoutIfSizeChangedWidth:innerW visibleHeight:innerH];
     if (moved && [window isVisible])
         [window displayIfNeeded];
     layingOut = 0;
@@ -1105,7 +1105,7 @@ static NSMutableArray *allControllers = nil;
 static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
 {
     /* the items whose shortcut takes Option as well as Command */
-    NSSet *optionOnly = [NSSet setWithObjects:@"updateModelList:", @"biggerText:", @"checkForUpdates:", @"chooseVoice:", @"commanderAutostart:", @"commanderIP:", @"commanderRemote:", @"copyDiagnostics:", @"editInstructions:", @"editParameters:", @"exportChat:", @"forgetMCPSignIns:", @"importChat:", @"importOtherExport:", @"lockNow:", @"movePinnedDown:", @"movePinnedUp:", @"normalTextSize:", @"quickAsk:", @"showAbout:", @"showAppearance:", @"showCostReport:", @"showIntegrations:", @"showSkills:", @"showWorkspaceSettings:", @"smallerText:", @"speakLast:", @"stopSpeaking:", @"toggleAutoSpeak:", @"toggleDictation:", @"toggleDictationSend:", @"toggleStats:", @"toggleVoiceCommands:", @"uninstallTigerBuild:", nil];
+    NSSet *optionOnly = [NSSet setWithObjects:@"updateModelList:", @"biggerText:", @"checkForUpdates:", @"chooseVoice:", @"commanderAutostart:", @"commanderIP:", @"commanderRemote:", @"copyDiagnostics:", @"editInstructions:", @"editParameters:", @"exportChat:", @"forgetMCPSignIns:", @"importChat:", @"importOtherExport:", @"lockNow:", @"movePinnedDown:", @"movePinnedUp:", @"normalTextSize:", @"quickAsk:", @"showAbout:", @"showAppearance:", @"showCostReport:", @"showIntegrations:", @"showSkills:", @"showWorkspaceSettings:", @"smallerText:", @"speakLast:", @"stopSpeaking:", @"toggleAutoSpeak:", @"toggleDictation:", @"toggleDictationSend:", @"toggleStats:", @"toggleFinishTime:", @"toggleVoiceCommands:", @"uninstallTigerBuild:", nil];
     unsigned i;
     for (i = 0; i < [menu numberOfItems]; i++) {
         NSMenuItem *item = [menu itemAtIndex:i];
@@ -1320,6 +1320,9 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             [chat addItem:promptsSlot];
             [self rebuildPromptsMenu];
         }
+        item = [[[NSMenuItem alloc] initWithTitle:@"Please Continue" action:@selector(continueChat:) keyEquivalent:@"\r"] autorelease];
+        [item setKeyEquivalentModifierMask:NSCommandKeyMask | NSShiftKeyMask];
+        [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Try Last Message with Another Model..." action:@selector(tryWithAnotherModel:) keyEquivalent:@""] autorelease];
         [item setTarget:self]; [chat addItem:item];
         item = [[[NSMenuItem alloc] initWithTitle:@"Quick Ask..." action:@selector(quickAsk:) keyEquivalent:@""] autorelease];
@@ -1361,6 +1364,8 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             }
             [menu addItem:[NSMenuItem separatorItem]];
             item = [[[NSMenuItem alloc] initWithTitle:@"Show Tokens and Time" action:@selector(toggleStats:) keyEquivalent:@""] autorelease];
+            [item setTarget:self]; [menu addItem:item];
+            item = [[[NSMenuItem alloc] initWithTitle:@"Show Time of Completion" action:@selector(toggleFinishTime:) keyEquivalent:@""] autorelease];
             [item setTarget:self]; [menu addItem:item];
             [menu addItem:[NSMenuItem separatorItem]];
             titles = [NSArray arrayWithObjects:@"Bigger Text", @"Smaller Text", @"Normal Text Size", nil];
@@ -1446,7 +1451,7 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
             @"r",@"toggleDictation:",@"y",@"toggleDictationSend:",@"s",@"speakLast:",@".",@"stopSpeaking:",@"J",@"toggleAutoSpeak:",@"g",@"toggleVoiceCommands:",@"v",@"chooseVoice:",@"f",@"showFind:",@"C",@"copyLastCode:",@"t",@"editInstructions:",@"=",@"biggerText:",@"-",@"smallerText:",@"0",@"normalTextSize:",@"A",@"attachFile:",@"k",@"showAppearance:",@"P",@"attachPDFPages:",@"e",@"exportChat:",@"i",@"importChat:",@"p",@"commanderIP:",@"m",@"showIntegrations:",@"s",@"exportAllSettings:",@"o",@"importAllSettings:",
             @"b",@"showAbout:",@"Y",@"compactNow:",@",",@"showWorkspaceSettings:",
             @"D",@"copyDiagnostics:",@"U",@"checkForUpdates:",@"F",@"forgetMCPSignIns:",@"X",@"uninstallTigerBuild:",
-            @"T",@"toggleStats:",@"M",@"updateModelList:",@"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
+            @"T",@"toggleStats:",@"Z",@"toggleFinishTime:",@"M",@"updateModelList:",@"b",@"bookmarkLastMessage:",@"B",@"showBookmarkManager:",@"d",@"togglePin:",@"l",@"showSkills:",@"a",@"editParameters:",
             @"S",@"savePromptFromInput:",@"L",@"managePrompts:",@"O",@"tryWithAnotherModel:",@"j",@"quickAsk:",
             @"c",@"showCostReport:",[NSString stringWithFormat:@"%C",(unichar)NSUpArrowFunctionKey],@"movePinnedUp:",[NSString stringWithFormat:@"%C",(unichar)NSDownArrowFunctionKey],@"movePinnedDown:",@"I",@"importOtherExport:",@"x",@"lockNow:",@"u",@"commanderRemote:",nil];
         unsigned g;
@@ -2429,6 +2434,10 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return ![self anyRunActive];
     if ([item action] == @selector(deleteChat:))
         return !busy && [table selectedRow] >= 0;
+    if ([item action] == @selector(toggleFinishTime:)) {
+        [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowFinishTime"] ? NSOnState : NSOffState];
+        return YES;
+    }
     if ([item action] == @selector(toggleStats:)) {
         [item setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"] ? NSOnState : NSOffState];
         return YES;
@@ -2684,7 +2693,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.6.1";
+        version = @"2.6.2";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];

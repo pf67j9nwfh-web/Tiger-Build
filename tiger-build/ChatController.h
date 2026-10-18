@@ -54,6 +54,8 @@
     double lastLayoutSeconds;        /* what the last layout of the chat took: a long chat is paced by it */
     BOOL stopping;
     BOOL paintScheduled;
+    BOOL thinkingShowScheduled;
+    double lastThinkingShow;
     BOOL offeredSSH;
     int pulse;
     NSTimer *pulseTimer;

@@ -420,6 +420,25 @@ static int sudoCommand(NSArray *words)
     return 0;
 }
 
+/* ppc-commander --screen on|off|status: whether this Mac's screen, mouse and keyboard may be used by a program that does not say (another computer over
+   SSH, or an application such as Claude Code). Tiger Build's own chats set it per chat; this is the saved setting everything else goes by. */
+static int screenCommand(NSArray *words)
+{
+    NSString *action = [words count] ? [words objectAtIndex:0] : @"status";
+    if (![[NSArray arrayWithObjects:@"on", @"off", @"status", nil] containsObject:action]) {
+        fprintf(stderr, "usage: ppc-commander --screen on|off|status\n");
+        return 2;
+    }
+    if (![action isEqualToString:@"status"]) {
+        NSMutableDictionary *c = (NSMutableDictionary *)CMConfig();
+        [c setObject:[NSNumber numberWithBool:[action isEqualToString:@"on"]] forKey:@"screenControl"];
+        CMSaveConfig();
+        CMLoadSettings();
+    }
+    printf("%s\n", [[CMConfig() objectForKey:@"screenControl"] boolValue] ? "on" : "off");
+    return 0;
+}
+
 /* Tiger Build starts Commander for its own chats with TB_LOCAL=1. Anything else is another computer arriving over SSH, which is
    refused unless a person turned remote access on (the file remote-access in the state folder). */
 static BOOL fromAnotherComputer(void)
@@ -440,6 +459,13 @@ int main(int argc, char **argv)
         for (i = 2; i < argc; i++)
             [rest addObject:[NSString stringWithUTF8String:argv[i]]];
         return sudoCommand(rest);
+    }
+    if (argc > 1 && strcmp(argv[1], "--screen") == 0) {
+        NSMutableArray *rest = [NSMutableArray array];
+        int i;
+        for (i = 2; i < argc; i++)
+            [rest addObject:[NSString stringWithUTF8String:argv[i]]];
+        return screenCommand(rest);
     }
     if (argc > 1 && strcmp(argv[1], "--version") == 0) {
         printf("ppc-commander %s\n", [CM_VERSION UTF8String]);

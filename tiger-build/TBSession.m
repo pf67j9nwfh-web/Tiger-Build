@@ -681,6 +681,9 @@ static BOOL mentionsWord(NSString *line, NSString *word)
     NSDictionary *args;
     if ([name isEqualToString:@"git_read"] || [name isEqualToString:@"svn_read"] || [name isEqualToString:@"repo_info"])
         return YES;
+    /* Preferences, Screen: use screen control without asking (the screen tools of this Mac's Commander and of another computer's) */
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"TBScreenNoAsk"] && ([name hasPrefix:@"screen_"] || [[extras originalNameOf:name] hasPrefix:@"screen_"]))
+        return YES;
     if (![self needsApprovalForKey:key] || [alwaysAllowed containsObject:key])
         return YES;
     callId = [self scoped:[TBString(call, @"id") length] ? TBString(call, @"id") : ([TBString(call, @"call_id") length] ? TBString(call, @"call_id") : ([name length] ? name : @"call"))];
@@ -1217,7 +1220,7 @@ static unsigned long contentSize(NSArray *log)
     NSString *lastOutput = @"";
     BOOL lastFailed = NO;
     BOOL anyText = NO;
-    int emptyRetries = 0;
+    int emptyRetries = 0, stallRetries = 0;
     unsigned i;
     for (i = 0; i < [messages count]; i++) {
         NSDictionary *message = [messages objectAtIndex:i];
@@ -1251,7 +1254,16 @@ static unsigned long contentSize(NSArray *log)
         @try {
             [TBProviders streamRound:provider system:system log:log tools:tools round:round model:model];
         } @catch (NSException *exception) {
+            NSString *why = [[exception reason] lowercaseString];
             [run check];
+            /* A connection that went quiet or dropped before any of the reply came: nothing was said or done, so ask again, twice at most */
+            if ([provider isEqualToString:@"gemini"] && stallRetries < 2 && [spoken length] == 0 && [round->calls count] == 0 && round->thoughtParts == 0 && round->textParts == 0
+                && ([why rangeOfString:@"timed out"].length || [why rangeOfString:@"reset"].length || [why rangeOfString:@"closed"].length || [why rangeOfString:@"broken"].length
+                    || [why rangeOfString:@"connection"].length || [why rangeOfString:@"timeout"].length)) {
+                stallRetries++;
+                [self emit:@"s" text:[NSString stringWithFormat:@"Gemini stopped answering (%@). Asking again...", [exception reason]]];
+                continue;
+            }
             if (anyText || [lastOutput length] || [spoken length]) {
                 [self emit:@"t" text:[self stoppedEarlyOutput:lastFailed ? lastOutput : @"" reason:[exception reason]]];
                 return;

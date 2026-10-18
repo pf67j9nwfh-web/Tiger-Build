@@ -32,6 +32,8 @@
 + (void)setTextScale:(float)scale;
 - (void)setMessages:(NSArray *)newMessages;
 - (void)layoutForWidth:(float)width visibleHeight:(float)visible;
+/* Does the layout only when the size is not the one already laid out: the panes are placed again for each key typed, and laying out a chat of thousands of messages for each was what made typing crawl. */
+- (void)layoutIfSizeChangedWidth:(float)width visibleHeight:(float)visible;
 - (void)scrollToEnd;
 - (void)setActivitiesExpanded:(BOOL)expanded;
 /* Files dropped on the chat are handed to the target's attachPaths:. */

@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import "TBMCP.h"
 #import "TBEngine.h"
+#import "TBJSON.h"
 #import "expect.h"
 #include <sys/time.h>
 
@@ -104,6 +105,63 @@ int main(int argc, char **argv)
         expectThat(system("pgrep -f 'sleep 31' > /dev/null") != 0, @"and the program it was running stops with it");
         if (!gone)
             kill([task processIdentifier], SIGKILL);
+    }
+    {
+        /* ppc-commander --screen: the saved setting that a program which does not say (another computer, Claude Code) goes by */
+        NSString *home = @"/tmp/tb-screen-home";
+        NSTask *task;
+        NSPipe *out;
+        NSString *answer;
+        NSDictionary *environment = [NSDictionary dictionaryWithObjectsAndKeys:home, @"HOME", @"1", @"TB_LOCAL", @"C", @"LANG", nil];
+        NSString *words[] = {@"status", @"on", @"status", @"off"};
+        NSString *want[] = {@"off", @"on", @"on", @"off"};
+        int k;
+        [[NSFileManager defaultManager] removeFileAtPath:home handler:nil];
+        [[NSFileManager defaultManager] createDirectoryAtPath:home attributes:nil];
+        for (k = 0; k < 4; k++) {
+            task = [[[NSTask alloc] init] autorelease];
+            out = [NSPipe pipe];
+            [task setLaunchPath:program];
+            [task setArguments:[NSArray arrayWithObjects:@"--screen", words[k], nil]];
+            [task setEnvironment:environment];
+            [task setStandardOutput:out];
+            [task launch];
+            answer = TBTrim([[[NSString alloc] initWithData:[[out fileHandleForReading] readDataToEndOfFile] encoding:NSUTF8StringEncoding] autorelease]);
+            [task waitUntilExit];
+            expectThat([answer isEqualToString:want[k]], [NSString stringWithFormat:@"--screen %@ says %@", words[k], want[k]]);
+        }
+        {
+            NSString *state;
+            TBMCPClient *plain;
+            NSDictionary *saved;
+            /* on again, then a client that sets no TB_SCREEN is offered the screen tools; off, it is not */
+            task = [[[NSTask alloc] init] autorelease];
+            [task setLaunchPath:program];
+            [task setArguments:[NSArray arrayWithObjects:@"--screen", @"on", nil]];
+            [task setEnvironment:environment];
+            [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+            [task launch];
+            [task waitUntilExit];
+            plain = [TBMCPClient clientWithPath:program arguments:[NSArray array] environment:environment label:@"Commander"];
+            [plain start];
+            saved = [plain request:@"tools/list" params:[NSDictionary dictionary] timeout:10];
+            state = [TBJSONString(saved) rangeOfString:@"screen_click"].length ? @"offered" : @"hidden";
+            [plain close];
+            expectThat([state isEqualToString:@"offered"], @"with the setting on, a client that sets nothing is offered the screen tools");
+            task = [[[NSTask alloc] init] autorelease];
+            [task setLaunchPath:program];
+            [task setArguments:[NSArray arrayWithObjects:@"--screen", @"off", nil]];
+            [task setEnvironment:environment];
+            [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+            [task launch];
+            [task waitUntilExit];
+            plain = [TBMCPClient clientWithPath:program arguments:[NSArray array] environment:environment label:@"Commander"];
+            [plain start];
+            saved = [plain request:@"tools/list" params:[NSDictionary dictionary] timeout:10];
+            [plain close];
+            expectThat([TBJSONString(saved) rangeOfString:@"screen_click"].length == 0, @"with it off they are not offered");
+        }
+        [[NSFileManager defaultManager] removeFileAtPath:home handler:nil];
     }
     fprintf(stderr, "closed in %.2f s\n", now() - t0);
     [pool release];

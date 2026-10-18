@@ -638,6 +638,7 @@
         frame:NSMakeRect(34, y - 8, 502, 30) inView:tab];
 
     [self buildAlertsTab:tabs];
+    [self buildScreenTab:tabs];
 
     /* ---- SSH Server ---- */
     tab = [self preferencesTab:@"SSH Server" in:tabs];

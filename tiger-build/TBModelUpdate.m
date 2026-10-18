@@ -103,7 +103,7 @@ static NSString *listURL(NSString *provider)
     if (!url || [key length] == 0)
         return nil;
     http = [TBHTTP request:@"GET" url:url];
-    [http setHeader:@"User-Agent" value:@"TigerBuild/2.6.1"];
+    [http setHeader:@"User-Agent" value:@"TigerBuild/2.6.2"];
     if ([provider isEqualToString:@"claude"]) {
         [http setHeader:@"x-api-key" value:key];
         [http setHeader:@"anthropic-version" value:@"2023-06-01"];

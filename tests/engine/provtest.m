@@ -142,6 +142,17 @@ int main(int argc, char **argv)
     expectThat([round->calls count] == 1 && [[[round->calls objectAtIndex:0] objectForKey:@"thought_signature"] isEqualToString:@"GSIG"], @"gemini: function call with its signature");
     expectThat([[round->usage objectForKey:@"input"] intValue] == 50 && [[round->usage objectForKey:@"cached"] intValue] == 20 && [[round->usage objectForKey:@"output"] intValue] == 8, @"gemini: usage counts");
     seen = fetch(@"/seen");
+    {
+        /* Gemini says it is finished and the connection stays open: the round ends at once rather than at the idle timeout */
+        NSMutableString *held = [NSMutableString string];
+        double began = CFAbsoluteTimeGetCurrent();
+        [d setObject:[base stringByAppendingString:@"/geminiopen/%@"] forKey:@"TBBaseURL.gemini"];
+        sink = [[[Sink alloc] init] autorelease];
+        round = run(@"gemini", @"gemini-3.8-flash", tools, sink, NULL);
+        (void)held;
+        expectThat([sink->text isEqualToString:@"Open and done"] && CFAbsoluteTimeGetCurrent() - began < 3.5, @"gemini: a finished reply ends the round without waiting for the connection to close");
+        [d setObject:[base stringByAppendingString:@"/gemini/%@"] forKey:@"TBBaseURL.gemini"];
+    }
     expectThat([[[[seen lastObject] objectForKey:@"headers"] objectForKey:@"x-goog-api-key"] isEqualToString:@"gem-test"] && [[[seen lastObject] objectForKey:@"path"] hasPrefix:@"/gemini/gemini-3.8-flash"], @"gemini: key header and model in the address");
 
     /* the Responses API (a reasoning ChatGPT model) */
