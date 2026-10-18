@@ -13,7 +13,9 @@
     NSMutableArray *movieViews;
     NSMutableArray *moviePaths;
     NSMutableDictionary *imageCache;
-    NSMutableArray *textViews;
+    NSMutableArray *textViews;       /* one slot for each message: a text view while it is near the visible part, NSNull otherwise */
+    NSMutableArray *spareViews;      /* text views waiting to be used again */
+    BOOL watchingScroll;
     NSMutableDictionary *sizeCache;
     NSMutableDictionary *richCache;
     NSString *copiedKey;

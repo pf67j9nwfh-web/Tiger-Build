@@ -401,12 +401,38 @@ static float tweetNeededWidth(NSDictionary *tweet)
     return header > footer ? header : footer;
 }
 
+/* the emoji pass of a message's text, remembered while the text is unchanged: a layout goes over every message of the chat */
+static NSMutableDictionary *substituteCache = nil;
+static double perfEmoji, perfRich, perfLoop1; static int perfMeasureCalls;
+
+static NSString *cachedEmojiSubstitute(NSString *text)
+{
+    NSValue *key;
+    NSArray *hit;
+    NSString *result;
+    if ([text length] < 200)
+        return TBEmojiSubstitute(text);
+    key = [NSValue valueWithPointer:text];
+    hit = [substituteCache objectForKey:key];
+    if (hit && [[hit objectAtIndex:0] isEqualToString:text])
+        return [hit objectAtIndex:1];
+    result = TBEmojiSubstitute(text);
+    if (!substituteCache)
+        substituteCache = [[NSMutableDictionary alloc] init];
+    if ([substituteCache count] > 3000)
+        [substituteCache removeAllObjects];
+    [substituteCache setObject:[NSArray arrayWithObjects:[[text copy] autorelease], result, nil] forKey:key];
+    return result;
+}
+
+static BOOL statsEnabled = NO;   /* the setting, read once for each layout rather than once for each message */
+
 static NSString *statsLine(NSDictionary *message)
 {
     double seconds = [[message objectForKey:@"statsSeconds"] doubleValue];
     int in = [[message objectForKey:@"statsIn"] intValue], out = [[message objectForKey:@"statsOut"] intValue];
     NSMutableArray *parts = [NSMutableArray array];
-    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"] || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"] || [message objectForKey:@"tweet"])
+    if (!statsEnabled || ![[message objectForKey:@"role"] isEqualToString:@"assistant"] || [message objectForKey:@"activityKind"] || [message objectForKey:@"tweet"])
         return nil;
     if (in + out > 0) {
         [parts addObject:[NSString stringWithFormat:@"in %@", tokenCount(in)]];
@@ -856,6 +882,7 @@ static float transcriptScale = 0;
     sizeCache = [[NSMutableDictionary alloc] init];
     richCache = [[NSMutableDictionary alloc] init];
     textViews = [[NSMutableArray alloc] init];
+    spareViews = [[NSMutableArray alloc] init];
     [self registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
     [self rebuildFonts];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(textScaleChanged:) name:@"TBTextScaleChanged" object:nil];
@@ -880,6 +907,7 @@ static float transcriptScale = 0;
     [richCache release];
     [copiedKey release];
     [textViews release];
+    [spareViews release];
     [bodyAttrs release];
     [userAttrs release];
     [statusAttrs release];
@@ -1018,7 +1046,7 @@ static float transcriptScale = 0;
             boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin];
     else
         used = [text boundingRectWithSize:NSMakeSize(width, height) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
-    if ([sizeCache count] > 4000)
+    if ([sizeCache count] > MAX(4000, 3 * [messages count]))
         [sizeCache removeAllObjects];
     [sizeCache setObject:[NSArray arrayWithObjects:signature, [NSValue valueWithRect:used], [[text copy] autorelease], nil] forKey:key];
     return used;
@@ -1338,7 +1366,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
             return entry;
     } else {
         built = [self buildRich:text];
-        if ([richCache count] > 600)
+        /* every message of the chat has to fit, or a long chat rebuilt every reply's markup on each layout */
+        if ([richCache count] > MAX(600, 2 * [messages count]))
             [richCache removeAllObjects];
         entry = [NSMutableDictionary dictionaryWithObject:[[text copy] autorelease] forKey:@"source"];
         [richCache setObject:entry forKey:key];
@@ -1439,6 +1468,9 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     float contentH;
     unsigned i;
 
+    double perfStart = CFAbsoluteTimeGetCurrent();
+    statsEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"TBShowStats"];
+    perfEmoji = 0; perfRich = 0; perfMeasureCalls = 0;
     layoutWidth = width;
     visibleHeight = visible;
     if (layoutWidth < 80)
@@ -1472,7 +1504,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         BOOL typing = NO;
         if (!text)
             text = @"";
-        text = TBEmojiSubstitute(text);
+        { double q = CFAbsoluteTimeGetCurrent(); text = cachedEmojiSubstitute(text); perfEmoji += CFAbsoluteTimeGetCurrent() - q; }
         if (open && [text length] == 0
             && (!imagePath || [imagePath length] == 0)
             && (!videoPath || [videoPath length] == 0))
@@ -1494,11 +1526,11 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         }
         rich = nil;
         if (!status && !activity && !fromUser && [text length] > 0)
-            rich = [self richForMessage:message text:text width:maxText];
+            { double q = CFAbsoluteTimeGetCurrent(); rich = [self richForMessage:message text:text width:maxText]; perfRich += CFAbsoluteTimeGetCurrent() - q; }
         if (rich) {
             used = NSMakeRect(0, 0, maxText, [[rich objectForKey:@"height"] floatValue]);
         } else {
-            used = [self measureText:text attrs:attrs
+            perfMeasureCalls++, used = [self measureText:text attrs:attrs
                                width:(status ? layoutWidth - (activity ? 64 : 48) : maxText)
                               height:(activity ? 1000000 : 4000) forMessage:message];
         }
@@ -1607,6 +1639,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         }
         [boxes addObject:box];
     }
+    perfLoop1 = CFAbsoluteTimeGetCurrent() - perfStart;
     contentH = yFromTop + 8;
     if (contentH < visibleHeight)
         contentH = visibleHeight;
@@ -1706,17 +1739,27 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     /* A picture or gradient behind the chat is drawn against the visible part, so a scroll must redraw it. */
     [[[self enclosingScrollView] contentView] setCopiesOnScroll:![TBTheme hasCustomBackground]];
     [self updateTypingTimer];
-    [self placeMovies];
-    [self syncTextViews];
+    {
+        double t1 = CFAbsoluteTimeGetCurrent();
+        [self placeMovies];
+        [self syncTextViews];
+        if (getenv("TB_PERF"))
+            NSLog(@"TBPERF layout %.0f ms (loop1 %.0f: emoji %.0f rich %.0f), sync %.0f ms, %u boxes", (t1 - perfStart) * 1000, perfLoop1 * 1000, perfEmoji * 1000, perfRich * 1000, (CFAbsoluteTimeGetCurrent() - t1) * 1000, (unsigned)[boxes count]);
+    }
     [self setNeedsDisplay:YES];
 }
 
-- (NSTextView *)textViewAt:(unsigned)index
+/* A text view for each message of a chat of thousands made the window crawl (each one is a drag target that queues work on the window, and removing
+   them was worse). Only the messages near the visible part have one; the views are reused as the chat scrolls. */
+- (NSTextView *)newTextView
 {
     TBSelectText *view;
     NSTextContainer *container;
-    if (index < [textViews count])
-        return [textViews objectAtIndex:index];
+    if ([spareViews count]) {
+        NSTextView *spare = [[[spareViews lastObject] retain] autorelease];
+        [spareViews removeLastObject];
+        return spare;
+    }
     view = [[TBSelectText alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
     [view setEditable:NO];
     [view setSelectable:YES];
@@ -1732,27 +1775,62 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
     container = [view textContainer];
     [container setLineFragmentPadding:0];
     [container setWidthTracksTextView:YES];
-    [self addSubview:view];
-    [textViews addObject:view];
-    [view release];
-    return view;
+    return [view autorelease];
+}
+
+- (void)recycleTextViewAt:(unsigned)index
+{
+    NSTextView *view = [textViews objectAtIndex:index];
+    if ((id)view == [NSNull null])
+        return;
+    [view setSelectedRange:NSMakeRange(0, 0)];
+    [view removeFromSuperview];
+    if ([spareViews count] < 60)
+        [spareViews addObject:view];
+    [textViews replaceObjectAtIndex:index withObject:[NSNull null]];
+}
+
+- (void)scrolled:(NSNotification *)note
+{
+    (void)note;
+    [self syncTextViews];
 }
 
 - (void)syncTextViews
 {
     unsigned i;
+    NSRect nearby = [self visibleRect];
+    NSScrollView *scroll = [self enclosingScrollView];
+    if (!watchingScroll && scroll) {
+        NSClipView *clip = [scroll contentView];
+        [clip setPostsBoundsChangedNotifications:YES];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(scrolled:) name:NSViewBoundsDidChangeNotification object:clip];
+        watchingScroll = YES;
+    }
+    nearby = NSInsetRect(nearby, 0, -MAX(600.0f, NSHeight(nearby)));
     while ([textViews count] > [boxes count]) {
-        NSTextView *extra = [textViews lastObject];
-        [extra removeFromSuperview];
+        [self recycleTextViewAt:[textViews count] - 1];
         [textViews removeLastObject];
     }
+    while ([textViews count] < [boxes count])
+        [textViews addObject:[NSNull null]];
     for (i = 0; i < [boxes count]; i++) {
         NSDictionary *box = [boxes objectAtIndex:i];
         NSString *text = [box objectForKey:@"text"];
         NSDictionary *attrs = [box objectForKey:@"attrs"];
         NSRect textRect = [[box objectForKey:@"textRect"] rectValue];
-        NSTextView *view = [self textViewAt:i];
+        NSTextView *view;
         NSTextStorage *storage;
+        if (!NSIntersectsRect(nearby, NSInsetRect(textRect, 0, -40))) {
+            [self recycleTextViewAt:i];
+            continue;
+        }
+        view = [textViews objectAtIndex:i];
+        if ((id)view == [NSNull null]) {
+            view = [self newTextView];
+            [textViews replaceObjectAtIndex:i withObject:view];
+            [self addSubview:view];
+        }
         if (!text)
             text = @"";
         [view setHidden:[[box objectForKey:@"typing"] boolValue]];

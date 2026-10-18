@@ -2586,15 +2586,21 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
         return;
     NSRect visible;
     BOOL follow;
+    double gap;
     now = CFAbsoluteTimeGetCurrent();
     /* Laying out and painting the whole chat for every few characters kept
        the window from answering the mouse (the beach ball) on a long reply.
        While a reply streams, do it at most about eight times a second, and
        once more shortly after the last change. */
-    if (busy && now - lastPaintRequest < 0.12) {
+    /* A chat of thousands of messages takes a fifth of a second or more to lay out: space the updates so that the layout never takes more than a
+       quarter of the time, and typing and the mouse still get their turn. */
+    gap = lastLayoutSeconds * 4 > 0.12 ? lastLayoutSeconds * 4 : 0.12;
+    if (gap > 2)
+        gap = 2;
+    if (busy && now - lastPaintRequest < gap) {
         if (!paintScheduled) {
             paintScheduled = YES;
-            [self performSelector:@selector(paintLater) withObject:nil afterDelay:0.15];
+            [self performSelector:@selector(paintLater) withObject:nil afterDelay:gap + 0.03];
         }
         return;
     }
@@ -2604,11 +2610,12 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     [transcript setMessages:[chat objectForKey:@"messages"]];
     if (follow)
         [transcript scrollToEnd];
+    lastLayoutSeconds = CFAbsoluteTimeGetCurrent() - now;
     /* NSURLConnection on Tiger delivers the body only when the connection
        closes. The read stream calls us as bytes arrive, and the window will
        not redraw until this callback returns to an idle run loop, which does
        not happen while more bytes are already waiting. Paint here. */
-    if (now - lastPaint > 0.12) {
+    if (now - lastPaint > gap) {
         lastPaint = now;
         [window displayIfNeeded];
     }

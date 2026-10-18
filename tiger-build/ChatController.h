@@ -51,6 +51,7 @@
     NSString *editedText;
     double lastFrame;
     double lastPaintRequest;
+    double lastLayoutSeconds;        /* what the last layout of the chat took: a long chat is paced by it */
     BOOL stopping;
     BOOL paintScheduled;
     BOOL offeredSSH;
