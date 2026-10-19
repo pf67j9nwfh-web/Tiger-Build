@@ -275,7 +275,36 @@ Preferences → Screen → *Copy Claude Code Command* and *Copy MCP Settings* on
 "env": {"TB_SUDO_KEY": "the key Copy Key showed"}
 ```
 
-For Claude Code add `-e TB_SUDO_KEY=the-key` after `--transport stdio` and `-o SendEnv=TB_SUDO_KEY` to the `ssh` arguments. Anything that holds the key can use sudo on that Mac through Tiger Build, so keep it to programs you trust. This needs Tiger Build 2.6.3 or later installed on the old Mac (the installer changes the SSH server's settings).
+**Claude Code**, as a command (`--scope user` keeps it in `~/.claude.json` for every project):
+
+```bash
+claude mcp add --scope user --transport stdio \
+    -e TB_SUDO_KEY=6d088737fbcec5092b13a42b962b77d7 \
+    old-mac -- ssh -p 2222 -i ~/.ssh/id_ed25519 \
+    -o IdentitiesOnly=yes -o BatchMode=yes \
+    -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 \
+    -o SendEnv=TB_SUDO_KEY you@old-mac commander
+```
+
+or as the entry in a project's `.mcp.json` (or in `~/.claude.json`), where the key goes in `env`:
+
+```json
+{
+  "mcpServers": {
+    "old-mac": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": ["-p", "2222", "-i", "~/.ssh/id_ed25519",
+               "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+               "-o", "HostKeyAlgorithms=ssh-ed25519", "-o", "PubkeyAcceptedAlgorithms=ssh-ed25519",
+               "-o", "SendEnv=TB_SUDO_KEY", "you@old-mac", "commander"],
+      "env": { "TB_SUDO_KEY": "6d088737fbcec5092b13a42b962b77d7" }
+    }
+  }
+}
+```
+
+(The key shown is an example.) A project's `.mcp.json` is usually committed, so keep the key out of it: write `"env": { "TB_SUDO_KEY": "${TB_SUDO_KEY}" }` there and put `export TB_SUDO_KEY=...` in your shell's startup file, or use the `--scope user` command above. `env` reaches the server only because `-o SendEnv=TB_SUDO_KEY` is in the `ssh` arguments. Anything that holds the key can use sudo on that Mac through Tiger Build, so keep it to programs you trust. This needs Tiger Build 2.6.3 or later installed on the old Mac (the installer changes the SSH server's settings).
 
 | You see | Cause and fix |
 | --- | --- |
