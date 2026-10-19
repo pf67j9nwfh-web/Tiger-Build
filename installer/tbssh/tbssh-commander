@@ -1,6 +1,34 @@
 #!/bin/sh
-# What Tiger Build's SSH server runs for a connection: Commander, from the Tiger Build that belongs to the signed-in account
-# (/Applications, or the account's own Applications folder). Whatever command the other computer asked for is ignored.
+# What Tiger Build's SSH server runs for a connection (sshd_config ForceCommand). Whatever command the other computer asked for is in
+# SSH_ORIGINAL_COMMAND and is not run, with two exceptions that make ssh-copy-id work:
+#   - ssh-copy-id installing keys (its command writes ~/.ssh/authorized_keys): the keys it sends are added to the list this server reads instead
+#   - ssh-copy-id testing whether a key already works ("exit" or "true"): answered without starting anything
+# Anyone who can get this far has a key that is already allowed, so adding keys gives no new access. Everything else starts Commander, from the
+# Tiger Build that belongs to the signed-in account (/Applications, or the account's own Applications folder).
+LIST="$HOME/Library/Application Support/Tiger Build/ssh/authorized_keys"
+case "$SSH_ORIGINAL_COMMAND" in
+  *authorized_keys*)
+    umask 077
+    mkdir -p "$(dirname "$LIST")" || exit 1
+    touch "$LIST" || exit 1
+    n=0
+    while IFS= read -r line && [ "$n" -lt 20 ]; do
+      case "$line" in
+        ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *|sk-ssh-ed25519@openssh.com\ *|sk-ecdsa-sha2-nistp256@openssh.com\ *) ;;
+        *) continue ;;
+      esac
+      [ "${#line}" -le 800 ] || continue
+      blob=$(printf '%s' "$line" | awk '{print $2}')
+      grep -qF -- "$blob" "$LIST" 2>/dev/null && continue
+      [ -n "$(tail -c1 "$LIST" 2>/dev/null | tr -d '\n')" ] && echo >> "$LIST"
+      printf '%s\n' "$line" >> "$LIST"
+      n=$((n + 1))
+    done
+    chmod 600 "$LIST" 2>/dev/null
+    exit 0
+    ;;
+  exit|true) exit 0 ;;
+esac
 for app in "/Applications/Tiger Build.app" "$HOME/Applications/Tiger Build.app"; do
   if [ -x "$app/Contents/Resources/ppc-commander" ]; then
     exec "$app/Contents/Resources/ppc-commander"

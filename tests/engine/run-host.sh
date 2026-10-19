@@ -55,6 +55,7 @@ for t in speech outputs; do "$OUT/$t" $( [ $t = speech ] && echo $PORT || echo "
 "$OUT/chatexport" || status=1
 "$OUT/prov" $PORT || status=1
 "$OUT/commander" "$OUT/ppc-commander" || status=1
+sh ../tests/engine/sshcopyid.sh 2>&1 || status=1
 "$OUT/commanderfull" "$OUT/ppc-commander" || status=1
 "$OUT/session" $PORT 127.0.0.1 "$OUT/fakecommander" || status=1
 [ $status = 0 ] && echo "all engine tests passed" || echo "SOME ENGINE TESTS FAILED"

@@ -137,7 +137,9 @@ static NSString *runScreenSetting(NSString *flag)
 - (void)copyClaudeCodeCommand:(id)sender
 {
     NSString *target = [self commanderReachWord:nil];
-    NSString *text = [NSString stringWithFormat:@"claude mcp add --transport stdio mac-%@ -- ssh -p 2222 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 %@ commander", NSUserName(), target];
+    NSString *sudoKey = [self remoteSudoKeyIfAllowed];
+    NSString *text = [NSString stringWithFormat:@"claude mcp add --transport stdio %@mac-%@ -- ssh -p 2222 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519%@ %@ commander",
+        sudoKey ? [NSString stringWithFormat:@"-e TB_SUDO_KEY=%@ ", sudoKey] : @"", NSUserName(), sudoKey ? @" -o SendEnv=TB_SUDO_KEY" : @"", target];
     (void)sender;
     [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
     [[NSPasteboard generalPasteboard] setString:text forType:NSStringPboardType];
@@ -147,7 +149,10 @@ static NSString *runScreenSetting(NSString *flag)
 - (void)copyMCPConfig:(id)sender
 {
     NSString *target = [self commanderReachWord:nil];
-    NSString *text = [NSString stringWithFormat:@"{\n  \"mcpServers\": {\n    \"mac-%@\": {\n      \"command\": \"ssh\",\n      \"args\": [\"-p\", \"2222\", \"-i\", \"~/.ssh/id_ed25519\", \"-o\", \"IdentitiesOnly=yes\", \"-o\", \"HostKeyAlgorithms=ssh-ed25519\", \"-o\", \"PubkeyAcceptedAlgorithms=ssh-ed25519\", \"%@\", \"commander\"]\n    }\n  }\n}\n", NSUserName(), target];
+    NSString *sudoKey = [self remoteSudoKeyIfAllowed];
+    NSString *text = [NSString stringWithFormat:@"{\n  \"mcpServers\": {\n    \"mac-%@\": {\n      \"command\": \"ssh\",\n      \"args\": [\"-p\", \"2222\", \"-i\", \"~/.ssh/id_ed25519\", \"-o\", \"IdentitiesOnly=yes\", \"-o\", \"HostKeyAlgorithms=ssh-ed25519\", \"-o\", \"PubkeyAcceptedAlgorithms=ssh-ed25519\",%@ \"%@\", \"commander\"]%@\n    }\n  }\n}\n",
+        NSUserName(), sudoKey ? @" \"-o\", \"SendEnv=TB_SUDO_KEY\"," : @"", target,
+        sudoKey ? [NSString stringWithFormat:@",\n      \"env\": {\"TB_SUDO_KEY\": \"%@\"}", sudoKey] : @""];
     (void)sender;
     [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
     [[NSPasteboard generalPasteboard] setString:text forType:NSStringPboardType];

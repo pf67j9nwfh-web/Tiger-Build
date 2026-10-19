@@ -348,6 +348,12 @@ static BOOL passwordAccepted(NSString *password)
     }
 }
 
+/* the key of this Mac's remote sudo, when other computers may use it; nil otherwise (never made here) */
+- (NSString *)remoteSudoKeyIfAllowed
+{
+    return [self remoteSudoOn] ? remoteSudoKey(NO) : nil;
+}
+
 - (BOOL)remoteSudoOn
 {
     return [[NSUserDefaults standardUserDefaults] boolForKey:@"TBRemoteSudo"];
@@ -367,8 +373,8 @@ static BOOL passwordAccepted(NSString *password)
         return;
     [[NSPasteboard generalPasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
     [[NSPasteboard generalPasteboard] setString:key forType:NSStringPboardType];
-    NSRunAlertPanel(@"Key copied", @"Add a line TB_SUDO_KEY=(paste) to the Environment box in the other computer's server settings (Tool Settings, MCP Servers, Edit). "
-        @"That computer can then run sudo here, but only in a chat that has the Administrator (sudo) item ticked.", @"OK", nil, nil);
+    NSRunAlertPanel(@"Key copied", @"The key is %@\n\nAnother Tiger Build: add a line TB_SUDO_KEY=%@ to the Environment box of the server's settings (Tool Settings, MCP Servers, Edit); that chat needs its Administrator (sudo) item ticked.\n\n"
+        @"Claude Desktop, Claude Code and other MCP programs: give ssh the option -o SendEnv=TB_SUDO_KEY and put TB_SUDO_KEY=%@ in the program's environment for that server (an \"env\" entry in Claude Desktop's config, -e in claude mcp add). The Screen tab's copy buttons do this for you while remote sudo is on.", @"OK", nil, nil, key, key, key);
 }
 
 - (IBAction)setAdministratorPassword:(id)sender

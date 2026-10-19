@@ -9,7 +9,8 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
 PermitEmptyPasswords no
-AuthorizedKeysFile "%h/Library/Application Support/Tiger Build/ssh/authorized_keys"
+# the list Tiger Build keeps (Preferences, SSH Server, Allowed Keys, or ssh-copy-id to this port) and the account's ordinary one (what ssh-copy-id to Remote Login adds)
+AuthorizedKeysFile "%h/Library/Application Support/Tiger Build/ssh/authorized_keys" "%h/.ssh/authorized_keys"
 StrictModes yes
 ForceCommand /usr/local/tbssh/bin/tbssh-commander
 PermitTTY no
@@ -19,6 +20,8 @@ X11Forwarding no
 PermitTunnel no
 GatewayPorts no
 PermitUserEnvironment no
+# the one variable a client may send: the key for administrator (sudo) commands (ssh -o SendEnv=TB_SUDO_KEY)
+AcceptEnv TB_SUDO_KEY
 PermitUserRC no
 LoginGraceTime 20
 MaxAuthTries 3

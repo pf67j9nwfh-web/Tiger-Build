@@ -163,6 +163,31 @@ int main(int argc, char **argv)
         }
         [[NSFileManager defaultManager] removeFileAtPath:home handler:nil];
     }
+    {
+        /* the administrator key from the environment (what ssh's SendEnv=TB_SUDO_KEY brings for Claude Desktop and Claude Code): taken once, and gone from every command */
+        NSDictionary *with = [NSDictionary dictionaryWithObjectsAndKeys:@"1", @"TB_LOCAL", @"1", @"TB_SUDO", @"C", @"LANG", @"secretkey1234567890", @"TB_SUDO_KEY", nil];
+        NSDictionary *without = [NSDictionary dictionaryWithObjectsAndKeys:@"1", @"TB_LOCAL", @"1", @"TB_SUDO", @"C", @"LANG", nil];
+        NSString *seen = nil, *refused = nil, *refusedNone = nil;
+        int pass;
+        for (pass = 0; pass < 2; pass++) {
+            TBMCPClient *client = [TBMCPClient clientWithPath:program arguments:[NSArray array] environment:pass == 0 ? with : without label:@"Commander"];
+            id reply;
+            [client start];
+            if (pass == 0) {
+                reply = [client request:@"tools/call" params:[NSDictionary dictionaryWithObjectsAndKeys:@"start_process", @"name", [NSDictionary dictionaryWithObjectsAndKeys:@"env | grep -c TB_SUDO_KEY; echo end", @"command", nil], @"arguments", nil] timeout:15];
+                seen = TBMCPResultText(reply);
+            }
+            reply = [client request:@"tools/call" params:[NSDictionary dictionaryWithObjectsAndKeys:@"start_process", @"name", [NSDictionary dictionaryWithObjectsAndKeys:@"sudo -n true", @"command", nil], @"arguments", nil] timeout:15];
+            if (pass == 0)
+                refused = TBMCPResultText(reply);
+            else
+                refusedNone = TBMCPResultText(reply);
+            [client close];
+        }
+        expectThat([seen rangeOfString:@"\n0\n"].length > 0 || [seen rangeOfString:@"0\nend"].length > 0, @"the key from the environment is not seen by the commands Commander runs");
+        expectThat([refused rangeOfString:@"not running"].length > 0 || [refused rangeOfString:@"Tiger Build"].length > 0, @"with the key given, sudo goes on to ask Tiger Build for the password");
+        expectThat([refusedNone rangeOfString:@"no administrator key"].length > 0, @"without a key, sudo says the chat has none");
+    }
     fprintf(stderr, "closed in %.2f s\n", now() - t0);
     [pool release];
     fprintf(stderr, failures ? "%d failed\n" : "all passed\n", failures);

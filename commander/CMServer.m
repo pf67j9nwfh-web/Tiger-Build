@@ -480,6 +480,14 @@ int main(int argc, char **argv)
         CMLog(@"Other computers may not use Commander on this Mac. Turn on Commander > Allow Other Computers in Tiger Build here first.");
         return 1;
     }
+    /* A program that cannot send Tiger Build's own message (Claude Desktop, Claude Code, ...) hands over the administrator key in the environment, which
+       ssh carries from its own with SendEnv=TB_SUDO_KEY. It is taken once and removed at once, so no command a model runs here can see it. */
+    {
+        const char *given = getenv("TB_SUDO_KEY");
+        if (given && *given && strlen(given) < 200)
+            CMSetSudoKey([NSString stringWithUTF8String:given]);
+        unsetenv("TB_SUDO_KEY");
+    }
     marker = [[state stringByAppendingPathComponent:[NSString stringWithFormat:@"session-%d", (int)getpid()]] retain];
     strlcpy(markerPath, [marker fileSystemRepresentation], sizeof markerPath);
     [@"session" writeToFile:marker atomically:NO encoding:NSUTF8StringEncoding error:NULL];
