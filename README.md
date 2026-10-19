@@ -45,6 +45,7 @@ Tiger Build is licensed under the MIT License and comes with no warranty. See [`
 - [Setup](#setup)
 - [Where settings are kept](#configuration-and-setting-file-locations-and-content)
 - [Using Tiger Build](#using-tiger-build)
+- [Using Commander from Claude Desktop, Claude Code and other programs](#using-commander-from-claude-desktop-claude-code-and-other-programs)
 - [Models, tools and search](#models-tools-and-search)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
@@ -157,7 +158,7 @@ Skip this section if you don't want an ultra detailed description of this app's 
 **Tools**
 - **The Tools button** switches each tool on or off for the chat: Commander, **Administrator (sudo) for Commander** (turning it on turns Commander on, and asks for the account password once), the agent toolbox, web search, other models and every MCP server. **Ask Before Running** waits for your answer, for all tools or chosen ones. The question names the chat that asks; "Always Allow" turns it off for that tool in that chat. It is on by default for tools that act on the Mac in chats with attachments. Each call shows as a card; click for the command and output.
 - **Screen control.** The Tools menu has **Screen control (mouse and keyboard)**, off for each chat and asking before every use: after `take_screenshot` a model can click, drag, scroll, type and press keys (`screen_click`, `screen_move`, `screen_drag`, `screen_scroll`, `screen_type`, `screen_key`, `screen_info`), using the screenshot's pixel positions. Keys follow the US layout. It acts on whatever is on the screen, so watch it: a model can type into the wrong window. **From another computer or program:** Preferences, **Screen**, *Let other computers and programs use this Mac's screen, mouse and keyboard* makes the same tools (and `take_screenshot`) available to a Commander started over SSH, whatever program is on the other end; *Use screen control without asking first* removes the approval question. From a terminal: `ppc-commander --screen on|off|status`. Someone must be logged in at the Mac, and Allow Other Computers must be on for another computer.
-- **Commander from Claude Code and other MCP programs.** Commander is a plain MCP server over standard input and output, so any program that can start one over SSH can use a Mac running Tiger Build. Turn on Commander → Allow Other Computers, list the other computer's public key under Preferences → SSH Server → Allowed Keys, then on the other computer run the line that Preferences → Screen → *Copy Claude Code Command* gives (`claude mcp add --transport stdio mac-NAME -- ssh -p 2222 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 you@address commander`; the `-o` options keep an `~/.ssh/config` entry written for the same Mac's old Remote Login, which allows only `ssh-rsa`, from refusing the server's ed25519 key), or paste the entry from *Copy MCP Settings* into an `mcpServers` list. **Keys without copy and paste:** `ssh-copy-id -p 2222 -i ~/.ssh/id_ed25519.pub you@mac` adds a key through a key that is already allowed; or run `ssh-copy-id -i ~/.ssh/id_ed25519.pub you@mac` (Remote Login, account password): the server also accepts the account's ordinary `~/.ssh/authorized_keys`, for Commander only. **Administrator (sudo) from these programs:** with remote sudo on (Preferences → Commander Options) and the password saved, add `-o SendEnv=TB_SUDO_KEY` to the `ssh` arguments and `TB_SUDO_KEY=` (the key *Copy Key* shows) to the server's environment (`"env"` in Claude Desktop's config, `-e TB_SUDO_KEY=...` in `claude mcp add`). Anything that holds the key can use sudo on that Mac through Tiger Build, so keep it to programs you trust.
+- **Commander from Claude Desktop, Claude Code and other MCP programs.** Any program that can start an MCP server over SSH can use a Mac running Tiger Build: its files, shell, administrator commands and (if you allow it) screen, mouse and keyboard. Setup, the exact `ssh` commands and the config entries are in [Using Commander from Claude Desktop, Claude Code and other programs](#using-commander-from-claude-desktop-claude-code-and-other-programs).
 - **Commander Options** (Preferences): **commands to block** on top of the built-in ones (checked by the words of a command, so it stops mistakes, not a determined attempt), **a diff** in the result of every file write or edit, and, only while Allow Other Computers is on, **Open Tiger Build at login, hidden** (a normal Login Item in System Preferences, Accounts; turning Allow Other Computers off removes it).
 - **File converters through Commander.** `convert_file` runs Tiger Build's own converter (`TigerBuild --convert FILE OUTDIR` inside the app) so a model can read Word, Excel and PowerPoint files (also the old `.doc`, `.xls`, `.ppt`), OpenDocument, Pages, Keynote and Numbers files as text, and HEIC, AVIF, WebP and other pictures as an upright JPEG, on this Mac or on another Mac that has Tiger Build.
 - **Screenshots.** `take_screenshot` shows the Mac's screen (someone must be logged in); `view_image` shows a picture file. Models without vision are not offered either.
@@ -177,6 +178,8 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Model parameters.** Chat → *Model Parameters...* sets a temperature, top P and a longest answer for the chat (or for every new chat in the workspace). Only ticked values are sent. Some models refuse some of them (reasoning models often refuse temperature); the request is then repeated without that value and the chat says so.
 - **Bookmarks.** A faint star appears beside a message when the pointer is over it: click it to bookmark the message (bookmarked messages keep a yellow star), or use Chat → *Bookmark Last Message* (⌘B) or right-click → *Bookmark This Message*. Right-click → *Bookmark Note...* adds a short note to find it by. Chat → *Bookmarks* lists them and jumps to one; *Manage Bookmarks...* (⇧⌘B) is a searchable list of every bookmark in the workspace with Go To, Note and Remove. *Find in Chats* has a *Bookmarked only* box, and bookmarks (with their notes) are marked in Markdown, text and PDF exports.
 - **Tokens and time.** Chat → View → *Show Tokens and Time* (⌥⇧⌘T) shows under each reply how many tokens went in and came out (all the model calls the reply took, including subagents) and how long it took from sending to the last token. The numbers are kept with each reply, so switching it on also shows them for replies made after this version was installed. Replies from services that do not report usage show only the time.
+- **Time of completion.** Chat → View → *Show Time of Completion* (⌥⇧⌘Z) adds when each reply finished ("finished 3:41 PM", with the date for another day) to the line under it, with or without the tokens and time. Only replies made after this version was installed have the time.
+- **Please Continue.** Chat → *Please Continue* (⇧⌘Return) sends "Please continue" at once, keeping whatever is half typed in the message field; while a reply is running it goes in as guidance.
 - **Pin Chat** (Chat, ⌘D) keeps a chat at the top of the list with a ★; new chats go in below the pinned ones. Drag a pinned chat to put the pinned ones in order, or use Chat → *Move Pinned Chat Up* and *Down* (⌥⌘↑, ⌥⌘↓).
 
 **Voice** (optional, off until switched on, under Chat → Voice)
@@ -192,6 +195,96 @@ Skip this section if you don't want an ultra detailed description of this app's 
 - **Uninstall Tiger Build...** (Configuration menu) removes everything the installer put on the Mac, with or without your chats, settings and saved keys, after asking for the administrator password. Without the app: `sudo /usr/local/tbssh/bin/tiger-build-uninstall` (add `--data /Users/NAME` to remove that account's chats and settings too).
 - A red line at the top says what is wrong with the service you picked (no key, not reachable); an orange one says why Commander cannot run, with the fix. Long runs show their progress, so slow commands never look like a lost connection.
 - **Commander menu:** Start and Stop, **Allow Other Computers** (off by default: with it off, only Tiger Build on this Mac can use Commander), and this Mac's model, OS and addresses. **Configuration menu:** MCP servers and agent tools, and export/import of all settings. VoiceOver labels are set on controls and messages.
+
+## Using Commander from Claude Desktop, Claude Code and other programs
+
+Commander is an ordinary MCP server on standard input and output, so a modern computer running Claude Desktop, Claude Code, Cursor or any other MCP program can drive an old Mac running Tiger Build. The program starts it with `ssh`, through Tiger Build's own SSH server (port 2222), which lets in only the public keys you list and can run nothing but Commander. Commander itself runs only on the old Mac (PowerPC or Intel), so it is always reached this way from a modern one.
+
+**1. On the old Mac.** Commander → *Allow Other Computers* (it asks for the administrator password and starts the server on port 2222). Optional: Preferences → **Screen**, *Let other computers and programs use this Mac's screen, mouse and keyboard* (a logged-in user is needed), and *Use screen control without asking first* for Tiger Build's own approval question.
+
+**2. Get your key onto the old Mac** (no copy and paste between the computers needed). Make a key if you have none: `ssh-keygen -t ed25519`. Then any one of:
+
+```bash
+# a. through Remote Login (System Preferences, Sharing) with the account's password or an RSA key it already accepts;
+#    Tiger Build's server also reads the account's ordinary ~/.ssh/authorized_keys, for Commander only
+ssh-copy-id -i ~/.ssh/id_ed25519.pub you@old-mac
+
+# b. through Tiger Build's server, from a computer whose key it already allows
+ssh-copy-id -p 2222 -i ~/.ssh/id_ed25519.pub -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 you@old-mac
+
+# c. or paste the key under Preferences, SSH Server, Allowed Keys... on the old Mac
+```
+
+**3. Test the login by hand** (and trust the host once; compare the fingerprint with *Copy Host Fingerprint* in Preferences → SSH Server). It starts Commander and waits for input; press Control-D to leave:
+
+```bash
+ssh -p 2222 -i ~/.ssh/id_ed25519 \
+    -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 \
+    you@old-mac commander
+```
+
+The server has one host key, **ssh-ed25519**, and takes ed25519 and RSA user keys. The `-o` options matter if your `~/.ssh/config` has an entry for the same Mac written for its old Remote Login, such as `HostKeyAlgorithms ssh-rsa` and `PubkeyAcceptedAlgorithms ssh-rsa`: a `Host` entry applies to port 2222 as well, and ssh then says `no matching host key type found. Their offer: ssh-ed25519`. Options on the command line win over the file. For an RSA user key, use `-o PubkeyAcceptedAlgorithms=ssh-rsa` instead (or leave it out). A cleaner way is an entry of its own:
+
+```
+Host old-mac-commander
+  HostName 10.0.1.129
+  Port 2222
+  User you
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  HostKeyAlgorithms ssh-ed25519
+  PubkeyAcceptedAlgorithms ssh-ed25519
+```
+
+after which `ssh old-mac-commander commander` is the whole command.
+
+**4a. Claude Desktop.** Settings → Developer → Edit Config opens `~/Library/Application Support/Claude/claude_desktop_config.json`. Add the server to `mcpServers` and quit and reopen Claude with ⌘Q:
+
+```json
+{
+  "mcpServers": {
+    "old-mac": {
+      "command": "ssh",
+      "args": ["-p", "2222", "-i", "~/.ssh/id_ed25519",
+               "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+               "-o", "HostKeyAlgorithms=ssh-ed25519", "-o", "PubkeyAcceptedAlgorithms=ssh-ed25519",
+               "you@old-mac", "commander"]
+    }
+  }
+}
+```
+
+With the alias from step 3 the arguments are just `["old-mac-commander", "commander"]`. Claude cannot answer a question, so do step 3 by hand first and use a key without a passphrase (or one loaded in your SSH agent).
+
+**4b. Claude Code.**
+
+```bash
+claude mcp add --transport stdio old-mac -- ssh -p 2222 -i ~/.ssh/id_ed25519 \
+    -o IdentitiesOnly=yes -o BatchMode=yes \
+    -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 you@old-mac commander
+```
+
+Preferences → Screen → *Copy Claude Code Command* and *Copy MCP Settings* on the old Mac give these lines filled in for it.
+
+**5. Administrator (sudo) commands.** On the old Mac turn on *Let other computers run administrator (sudo) commands here* (Preferences → Commander Options) with the administrator password saved (Commander tab), then *Copy Key*; it shows the key. Tiger Build must be running there, because it holds the password. Give the program the key in its environment and tell ssh to carry it; the server accepts only this one variable, and Commander takes it once and removes it so no command can see it:
+
+```json
+"args": ["-p", "2222", "-i", "~/.ssh/id_ed25519", "-o", "IdentitiesOnly=yes",
+         "-o", "HostKeyAlgorithms=ssh-ed25519", "-o", "PubkeyAcceptedAlgorithms=ssh-ed25519",
+         "-o", "SendEnv=TB_SUDO_KEY", "you@old-mac", "commander"],
+"env": {"TB_SUDO_KEY": "the key Copy Key showed"}
+```
+
+For Claude Code add `-e TB_SUDO_KEY=the-key` after `--transport stdio` and `-o SendEnv=TB_SUDO_KEY` to the `ssh` arguments. Anything that holds the key can use sudo on that Mac through Tiger Build, so keep it to programs you trust. This needs Tiger Build 2.6.3 or later installed on the old Mac (the installer changes the SSH server's settings).
+
+| You see | Cause and fix |
+| --- | --- |
+| `no matching host key type found. Their offer: ssh-ed25519` | An `~/.ssh/config` entry limits the host key types; add `-o HostKeyAlgorithms=ssh-ed25519` (above) |
+| `Permission denied (publickey)` | The key is not in Allowed Keys yet (step 2), or ssh offered a different key: use `-i` with `-o IdentitiesOnly=yes`; for an RSA key add `-o PubkeyAcceptedAlgorithms=ssh-rsa` |
+| `Connection refused` on port 2222 | Allow Other Computers is off on the old Mac, or the Tiger Build installer's SSH server is not installed |
+| `Host key verification failed` | The old Mac's host key changed (reinstall), or you never trusted it: do step 3 by hand |
+| The tools list is empty, or screen tools are missing | Commander is stopped (Commander → Start), or the Screen setting is off on the old Mac |
+| `screen control is off` | Preferences → Screen on the old Mac, or `ppc-commander --screen on` there |
 
 ## Models, tools and search
 
@@ -210,7 +303,7 @@ the latest and greatest models available for you to use, excluding API updates t
 
 - Connections to the AI services use TLS 1.3 or 1.2 and check the server's certificate against the Mozilla list that ships in the app; there is no option to skip the check. Keys are in the Keychain and go only to the service that owns them.
 - A model cannot change Commander's blocked commands, allowed folders or shell, or edit its files.
-- **Commander is local only.** It starts as part of a chat on the same Mac and nothing listens on the network. Another computer can use it over SSH only if you turn on Commander → Allow Other Computers, which starts Tiger Build's own SSH server (port 2222, the keys you list under Preferences, SSH Server) or, if you prefer the Mac's Remote Login, needs that and the public key in the account's `~/.ssh/authorized_keys` (Tiger Build never uses a password); otherwise the program refuses to run for it.
+- **Commander is local only.** It starts as part of a chat on the same Mac and nothing listens on the network. Another computer can use it over SSH only if you turn on Commander → Allow Other Computers, which starts Tiger Build's own SSH server (port 2222; the keys you list under Preferences, SSH Server, the ones `ssh-copy-id` adds to that list through a key already allowed, and the account's ordinary `~/.ssh/authorized_keys`, which only ever get Commander there; it carries one environment variable, `TB_SUDO_KEY`, and nothing else) or, if you prefer the Mac's Remote Login, needs that and the public key in the account's `~/.ssh/authorized_keys` (Tiger Build never uses a password); otherwise the program refuses to run for it.
 - File conversion refuses XML entity definitions and oversized archives. A model can only fetch pictures from public web addresses, never from your own network.
 - **Programs on other computers** (an MCP server over SSH, such as another Mac's Commander) use a key only Tiger Build knows (`ssh/` in Application Support) and a host list you confirm by fingerprint; if that computer's key ever changes, Tiger Build refuses to connect. Tiger Build makes an ed25519 key for modern hosts and an RSA one for old hosts, which a recent macOS must be told to accept.
 - **Administrator (sudo) mode** is off. To let agents run commands as root on a Mac, open Preferences, Commander, tick *Let agents run administrator (sudo) commands*, and type the account password once. Tiger Build checks it and keeps it in that Mac's Keychain, where only Tiger Build can read it. Commander cannot open that Keychain item, so when a command contains `sudo`, it asks the running Tiger Build for the password over a socket only that account can use, and gives it to sudo through a pipe that is closed before the model's command starts. A chat can use sudo only when its Tools menu has the sudo item ticked (which turns Commander on); the Preferences setting saves the password and the setting for other uses of the program. It works only for Commander on this Mac. The model never sees it, but it runs as the same account, so with sudo on it can do anything root can. `Tiger Build.app/Contents/Resources/ppc-commander --sudo on|off|status` does the same from a terminal, and a root-owned `/etc/ppc-commander.json` containing `{"sudoMode": false}` keeps it off. Blocked commands such as `shutdown` stay blocked under sudo, the approval question marks sudo commands, and `sudo` is refused with `detach`. The login keychain must be unlocked, so stay logged in.
