@@ -30,6 +30,10 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (void)startLockWatcher;
 - (void)lockIfWantedAtStart;
 - (void)askTigerBuild:(NSPasteboard *)pboard userData:(NSString *)userData error:(NSString **)error;
+- (void)summarizeSelection:(NSPasteboard *)pboard userData:(NSString *)userData error:(NSString **)error;
+- (void)explainSelection:(NSPasteboard *)pboard userData:(NSString *)userData error:(NSString **)error;
+- (void)rewriteSelection:(NSPasteboard *)pboard userData:(NSString *)userData error:(NSString **)error;
+- (void)addSelection:(NSPasteboard *)pboard userData:(NSString *)userData error:(NSString **)error;
 - (BOOL)isLocked;
 - (void)noteActivity;
 - (void)askInNewChat:(NSString *)text send:(BOOL)send;

@@ -1163,6 +1163,14 @@ static void applyMenuShortcuts(NSMenu *menu, NSDictionary *shortcuts)
     }
     [appMenu addItem:[NSMenuItem separatorItem]];
     {
+        NSMenuItem *services = [[[NSMenuItem alloc] initWithTitle:@"Services" action:NULL keyEquivalent:@""] autorelease];
+        NSMenu *servicesMenu = [[[NSMenu alloc] initWithTitle:@"Services"] autorelease];
+        [services setSubmenu:servicesMenu];
+        [appMenu addItem:services];
+        [NSApp setServicesMenu:servicesMenu];
+        [appMenu addItem:[NSMenuItem separatorItem]];
+    }
+    {
         NSMenuItem *hide = [[[NSMenuItem alloc] initWithTitle:@"Hide Tiger Build" action:@selector(hide:) keyEquivalent:@"h"] autorelease];
         NSMenuItem *others = [[[NSMenuItem alloc] initWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"] autorelease];
         NSMenuItem *all = [[[NSMenuItem alloc] initWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""] autorelease];

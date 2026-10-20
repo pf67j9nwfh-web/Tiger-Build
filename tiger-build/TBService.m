@@ -375,6 +375,24 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             [TBRun finish:session->run];
             return textReplyWithUsage(text, session);
         }
+        if ([path isEqualToString:@"/v1/transform"]) {
+            id incoming = TBJSONParse(body, NULL);
+            NSString *mode, *system, *text;
+            TBSession *session;
+            if (![incoming isKindOfClass:[NSDictionary class]])
+                return textReply(400, @"request was not JSON\n");
+            mode = TBString(incoming, @"mode");
+            system = [mode isEqualToString:@"rewrite"]
+                ? @"You rewrite the text you are given so it reads better: clearer, tighter, correct spelling and grammar, the same meaning, the same language, the same tone and format (keep line breaks, lists and markup). "
+                  @"Reply with the rewritten text only: no preface, no quotes around it, no explanation."
+                : [mode isEqualToString:@"explain"]
+                ? @"Explain the text you are given plainly, for someone who has not seen it before: what it says or does, and any term or step that needs unpacking. Be brief and use the same language as the text. Plain text only: no Markdown symbols."
+                : @"Summarize the text you are given in a few sentences, or a short list when it has separate points. Keep the names, numbers and decisions. Use the same language as the text. Plain text only (use \"- \" for list items, no Markdown symbols). Reply with the summary only.";
+            session = [[[TBSession alloc] initWithRun:[TBRun runWithId:[NSString stringWithFormat:@"side-%p", body]] options:nil frames:nil] autorelease];
+            text = [session completeProvider:[TBProviders normalize:TBString(incoming, @"provider")] model:[TBString(incoming, @"model") length] ? TBString(incoming, @"model") : nil system:system messages:cleanedMessages(incoming, YES)];
+            [TBRun finish:session->run];
+            return textReplyWithUsage(text, session);
+        }
         if ([path isEqualToString:@"/v1/title"] || [path isEqualToString:@"/v1/summarize"] || [path isEqualToString:@"/v1/memory"] || [path isEqualToString:@"/v1/route"] || [path isEqualToString:@"/v1/skill"]) {
             id incoming = TBJSONParse(body, NULL);
             NSArray *messages;

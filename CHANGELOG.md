@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7
+- **Services in every application**: select text anywhere and choose *Services → Tiger Build →* **Summarize** or **Explain** (the answer appears in a small panel with *Copy*, and *Copy the answer automatically*), **Rewrite** (the selection is replaced in place by the improved text; if the model cannot answer, the text is left alone) or **Add to Message** (puts the selection in the open chat's message box). **Ask** is now in the same submenu. Each has a default shortcut (Control-Option-Command S, E, R, A; Snow Leopard lets you change them in System Preferences, Keyboard, Keyboard Shortcuts). They use the open chat's service and model, or the first service that has a key, and their cost counts in the spending limits.
+- Tiger Build's own application menu has a Services submenu now.
+
 ## 2.6.3
 - **Administrator (sudo) commands for Claude Desktop, Claude Code and other MCP programs**: they can hand the key over in the environment: `TB_SUDO_KEY=...` for the server in the program's settings (an `env` entry in Claude Desktop's config, `-e` in `claude mcp add`) and `-o SendEnv=TB_SUDO_KEY` on the `ssh` command. Tiger Build's SSH server accepts that one variable; Commander takes the key once and removes it from its environment, so no command a model runs can see it. Preferences, Commander, *Copy Key* now shows the key and says where it goes, and the Screen tab's copy buttons include it while remote sudo is on. Needs the new installer (the SSH server's settings change), the password saved and remote sudo ticked on that Mac, as before.
 - **ssh-copy-id works**: `ssh-copy-id -p 2222 you@mac` from a computer whose key is already allowed adds the new key to the server's list; and keys added to the account's ordinary `~/.ssh/authorized_keys` (what `ssh-copy-id you@mac` adds through Remote Login, with the account password) are accepted by the server too, for Commander only. The key you paste in Allowed Keys still works as before.
