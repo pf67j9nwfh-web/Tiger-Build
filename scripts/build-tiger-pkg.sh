@@ -14,7 +14,7 @@ mkdir -p "$DIST"
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
 NO_OPEN=1 bash "$ROOT/scripts/install-tiger.sh"
 
-COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT" -cf - quicklook/TigerBuild.qlgenerator third_party/sshfs/bin/sshfs third_party/sshfs/LICENSE | "$SSH" 'cd "$HOME/TigerBuild-build" && tar -xf -'
+COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT" -cf - quicklook/TigerBuild.qlgenerator third_party/libsmb2/bin/tbsmbd third_party/libsmb2/LICENSE third_party/sshfs/bin/sshfs third_party/sshfs/LICENSE | "$SSH" 'cd "$HOME/TigerBuild-build" && tar -xf -'
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/installer" -cf - tbssh | "$SSH" 'rm -rf "$HOME/TigerBuild-build/tbssh" && cd "$HOME/TigerBuild-build" && tar -xf -'
 
 "$SSH" bash -s << 'REMOTE'
@@ -36,6 +36,8 @@ cp "$T/sshd" "$PAYLOAD/usr/local/tbssh/sbin/sshd"
 cp "$T/sshd-session" "$T/sshd-auth" "$PAYLOAD/usr/local/tbssh/libexec/"
 cp "$T/ssh" "$T/ssh-keygen" "$T/ssh-keyscan" "$T/ssh-add" "$T/ssh-agent" "$T/scp" "$T/sftp" "$S/tbssh-service" "$S/tbssh-commander" "$S/tiger-build-uninstall" "$PAYLOAD/usr/local/tbssh/bin/"
 cp "$S/sshd_config" "$S/sshd_config_shell" "$PAYLOAD/usr/local/tbssh/etc/"
+cp "$HOME/TigerBuild-build/third_party/libsmb2/bin/tbsmbd" "$PAYLOAD/usr/local/tbssh/bin/"
+cp "$HOME/TigerBuild-build/third_party/libsmb2/LICENSE" "$PAYLOAD/usr/local/tbssh/libsmb2-LICENSE"
 cp "$HOME/TigerBuild-build/third_party/openssh/LICENSE" "$PAYLOAD/usr/local/tbssh/LICENSE"
 cp "$S/local.tigerbuild.sshd.plist" "$S/local.tigerbuild.sshd-shell.plist" "$PAYLOAD/Library/LaunchDaemons/"
 cp "$T/../../sshfs/bin/sshfs" "$PAYLOAD/usr/local/tbssh/bin/"

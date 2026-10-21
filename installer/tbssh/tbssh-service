@@ -18,13 +18,18 @@ set -x
 if [ "$(id -ru)" != 0 ]; then
   [ -z "$TBSSH_REEXEC" ] || { echo "tbssh-service could not become root" >&2; exit 1; }
   # (perl turns on taint checking when the real and effective ids differ, so the environment is replaced and the arguments checked first)
-  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = shift(@ARGV) =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = shift(@ARGV) =~ m{^(on|off|shell-on|shell-off)$} or die "usage\n"; @u = map { m{^([A-Za-z_][-A-Za-z0-9_.]{0,31})$} or die "bad user\n"; $1 } @ARGV; $< = 0; $> = 0; exec "/bin/sh", $s, $a, @u' "$0" "$@"
+  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = shift(@ARGV) =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = shift(@ARGV) =~ m{^(on|off|shell-on|shell-off|smb-on|smb-off)$} or die "usage\n"; if ($a eq "smb-on") { @ARGV == 5 or die "usage\n"; ($u) = $ARGV[0] =~ m{^([A-Za-z_][-A-Za-z0-9_.]{0,31})$} or die "bad user\n"; ($f) = $ARGV[1] =~ m{^(/[^\x00-\x1f]{0,1000})$} or die "bad folder\n"; ($n) = $ARGV[2] =~ m{^([A-Za-z0-9][-A-Za-z0-9_. ]{0,39})$} or die "bad share\n"; ($r) = $ARGV[3] =~ m{^([01])$} or die "bad mode\n"; ($p) = $ARGV[4] =~ m{^([0-9]{1,5})$} or die "bad port\n"; @u = ($u, $f, $n, $r, $p); } else { @u = map { m{^([A-Za-z_][-A-Za-z0-9_.]{0,31})$} or die "bad user\n"; $1 } @ARGV; } $< = 0; $> = 0; exec "/bin/sh", $s, $a, @u' "$0" "$@"
 fi
-for f in /usr/local/tbssh/sbin/sshd /usr/local/tbssh/libexec/sshd-session /usr/local/tbssh/libexec/sshd-auth /usr/local/tbssh/etc/sshd_config /Library/LaunchDaemons/local.tigerbuild.sshd.plist; do
-  [ -f "$f" ] || { echo "Tiger Build's SSH server is not installed (missing $f)" >&2; exit 1; }
-done
+case "$1" in
+  smb-on|smb-off) ;;
+  *)
+    for f in /usr/local/tbssh/sbin/sshd /usr/local/tbssh/libexec/sshd-session /usr/local/tbssh/libexec/sshd-auth /usr/local/tbssh/etc/sshd_config /Library/LaunchDaemons/local.tigerbuild.sshd.plist; do
+      [ -f "$f" ] || { echo "Tiger Build's SSH server is not installed (missing $f)" >&2; exit 1; }
+    done ;;
+esac
 PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
 SHELLPLIST=/Library/LaunchDaemons/local.tigerbuild.sshd-shell.plist
+SMBPLIST=/Library/LaunchDaemons/local.tigerbuild.smbd.plist
 USERS=/usr/local/tbssh/etc/shell_users.conf
 KEY=/usr/local/tbssh/etc/ssh_host_ed25519_key
 OS="$(sw_vers -productVersion 2>/dev/null)"
@@ -61,6 +66,53 @@ case "$1" in
     in_system || /bin/launchctl bsexec 1 /bin/launchctl unload -w "$PLIST"
     echo "unload finished: $?"
     ;;
+  smb-on)
+    # smb-on USER FOLDER SHARE READONLY PORT: Tiger Build's SMB file server, a launchd job that listens on the port as root and runs tbsmbd as USER
+    shift
+    SU="$1"; SF="$2"; SN="$3"; SR="$4"; SP="$5"
+    [ -x /usr/local/tbssh/bin/tbsmbd ] || { echo "the file sharing server is not installed (missing /usr/local/tbssh/bin/tbsmbd)" >&2; exit 1; }
+    id "$SU" >/dev/null 2>&1 || { echo "no account named $SU" >&2; exit 1; }
+    [ "$(id -u "$SU")" != 0 ] || { echo "root cannot share files" >&2; exit 1; }
+    [ -d "$SF" ] || { echo "$SF is not a folder" >&2; exit 1; }
+    [ "$SP" -ge 1 ] && [ "$SP" -le 65535 ] || { echo "bad port" >&2; exit 1; }
+    SH=$(/usr/bin/perl -e '@p = getpwnam($ARGV[0]); print $p[7]' "$SU")
+    UF="$SH/Library/Application Support/Tiger Build/smb/users"
+    [ -f "$UF" ] || { echo "no people are set up: $UF is missing" >&2; exit 1; }
+    esc() { printf '%s' "$1" | /usr/bin/sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+    {
+      echo '<?xml version="1.0" encoding="UTF-8"?>'
+      echo '<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+      echo '<plist version="1.0"><dict>'
+      echo '<key>Label</key><string>local.tigerbuild.smbd</string>'
+      echo '<key>UserName</key><string>'"$(esc "$SU")"'</string>'
+      echo '<key>ProgramArguments</key><array>'
+      echo '<string>/usr/local/tbssh/bin/tbsmbd</string><string>--listen-fd</string>'
+      echo '<string>--root</string><string>'"$(esc "$SF")"'</string>'
+      echo '<string>--share</string><string>'"$(esc "$SN")"'</string>'
+      echo '<string>--users</string><string>'"$(esc "$UF")"'</string>'
+      [ "$SR" = 1 ] && echo '<string>--readonly</string>'
+      echo '</array>'
+      echo '<key>Sockets</key><dict><key>Listeners</key><dict><key>SockServiceName</key><string>'"$SP"'</string><key>SockFamily</key><string>IPv4</string></dict></dict>'
+      echo '<key>inetdCompatibility</key><dict><key>Wait</key><true/></dict>'
+      echo '<key>StandardErrorPath</key><string>/var/log/tbsmbd.log</string>'
+      echo '</dict></plist>'
+    } > "$SMBPLIST.new" && chown root:wheel "$SMBPLIST.new" && chmod 644 "$SMBPLIST.new" && mv "$SMBPLIST.new" "$SMBPLIST"
+    touch /var/log/tbsmbd.log && chown "$SU" /var/log/tbsmbd.log && chmod 640 /var/log/tbsmbd.log
+    $LC unload "$SMBPLIST"
+    if in_system; then
+      $LC load -w "$SMBPLIST"
+    else
+      /bin/launchctl bsexec 1 /bin/launchctl unload "$SMBPLIST"
+      /bin/launchctl bsexec 1 /bin/launchctl load -w "$SMBPLIST"
+    fi
+    echo "load finished: $?"
+    ;;
+  smb-off)
+    $LC unload -w "$SMBPLIST"
+    in_system || /bin/launchctl bsexec 1 /bin/launchctl unload -w "$SMBPLIST"
+    rm -f "$SMBPLIST"
+    echo "unload finished: $?"
+    ;;
   shell-on)
     shift
     [ $# -gt 0 ] || { echo "shell-on needs at least one account name" >&2; exit 2; }
@@ -92,7 +144,7 @@ case "$1" in
     echo "unload finished: $?"
     ;;
   *)
-    echo "usage: tbssh-service on|off|shell-on USER...|shell-off" >&2
+    echo "usage: tbssh-service on|off|shell-on USER...|shell-off|smb-on USER FOLDER SHARE READONLY PORT|smb-off" >&2
     exit 2
     ;;
 esac

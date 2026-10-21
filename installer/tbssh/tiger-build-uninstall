@@ -38,12 +38,13 @@ n=0
 while running TigerBuild && [ $n -lt 10 ]; do sleep 1; n=$((n+1)); done
 do_ killall TigerBuild ppc-commander 2>/dev/null
 # the SSH server, if it is running
-[ -x /usr/local/tbssh/bin/tbssh-service ] && do_ /usr/local/tbssh/bin/tbssh-service off && do_ /usr/local/tbssh/bin/tbssh-service shell-off
+[ -x /usr/local/tbssh/bin/tbssh-service ] && do_ /usr/local/tbssh/bin/tbssh-service off && do_ /usr/local/tbssh/bin/tbssh-service shell-off && do_ /usr/local/tbssh/bin/tbssh-service smb-off
 PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
 do_ launchctl unload -w "$PLIST" 2>/dev/null
 SHELLPLIST=/Library/LaunchDaemons/local.tigerbuild.sshd-shell.plist
 do_ launchctl unload -w "$SHELLPLIST" 2>/dev/null
-do_ rm -f "$PLIST" "$SHELLPLIST" /var/log/tbsshd.log
+do_ launchctl unload -w /Library/LaunchDaemons/local.tigerbuild.smbd.plist 2>/dev/null
+do_ rm -f "$PLIST" "$SHELLPLIST" /Library/LaunchDaemons/local.tigerbuild.smbd.plist /var/log/tbsshd.log /var/log/tbsmbd.log
 do_ rm -rf /usr/local/tbssh
 do_ rm -rf /Library/QuickLook/TigerBuild.qlgenerator
 do_ qlmanage -r >/dev/null 2>&1

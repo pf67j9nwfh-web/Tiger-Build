@@ -26,6 +26,7 @@ static BOOL trusted(NSString *path)
 @interface TBSSHServer (Private)
 + (BOOL)listeningOnPort:(int)port;
 + (NSString *)run:(BOOL)on shell:(NSArray *)users port:(int)port;
++ (NSString *)runArguments:(NSArray *)list on:(BOOL)on port:(int)port what:(NSString *)what;
 @end
 
 @implementation TBSSHServer
@@ -86,21 +87,48 @@ static BOOL trusted(NSString *path)
 
 + (NSString *)run:(BOOL)on shell:(NSArray *)users port:(int)port
 {
-    AuthorizationRef auth = NULL;
-    const char *path = [SERVICE fileSystemRepresentation];
-    char *arguments[40];
-    unsigned n = 0, u;
-    FILE *pipe = NULL;
-    OSStatus status;
-    int i;
+    NSMutableArray *arguments = [NSMutableArray array];
     if (![self installed])
         return @"Tiger Build's SSH server is not installed. Install it with the Tiger Build installer.";
     if (users)
-        arguments[n++] = on ? "shell-on" : "shell-off";
+        [arguments addObject:on ? @"shell-on" : @"shell-off"];
     else
-        arguments[n++] = on ? "on" : "off";
-    for (u = 0; on && u < [users count] && n < 38; u++)
-        arguments[n++] = (char *)[[users objectAtIndex:u] UTF8String];
+        [arguments addObject:on ? @"on" : @"off"];
+    if (on)
+        [arguments addObjectsFromArray:users ? users : [NSArray array]];
+    return [self runArguments:arguments on:on port:port what:@"SSH server"];
+}
+
++ (NSString *)setSMBRunning:(BOOL)on user:(NSString *)user folder:(NSString *)folder share:(NSString *)share readOnly:(BOOL)readOnly port:(int)port
+{
+    if (![self smbInstalled])
+        return @"File sharing is not installed. Install it with the Tiger Build installer.";
+    if (!on)
+        return [self runArguments:[NSArray arrayWithObject:@"smb-off"] on:NO port:port what:@"file sharing"];
+    return [self runArguments:[NSArray arrayWithObjects:@"smb-on", user, folder, share, readOnly ? @"1" : @"0", [NSString stringWithFormat:@"%d", port], nil] on:YES port:port what:@"file sharing"];
+}
+
++ (BOOL)smbInstalled
+{
+    return trusted(SERVICE) && trusted(@"/usr/local/tbssh/bin/tbsmbd");
+}
+
++ (BOOL)smbListeningOnPort:(int)port
+{
+    return [self listeningOnPort:port];
+}
+
++ (NSString *)runArguments:(NSArray *)list on:(BOOL)on port:(int)port what:(NSString *)what
+{
+    AuthorizationRef auth = NULL;
+    const char *path = [SERVICE fileSystemRepresentation];
+    char *arguments[16];
+    unsigned n, u;
+    FILE *pipe = NULL;
+    OSStatus status;
+    int i;
+    for (u = 0, n = 0; u < [list count] && n < 14; u++)
+        arguments[n++] = (char *)[[list objectAtIndex:u] UTF8String];
     arguments[n] = NULL;
     if (AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment, kAuthorizationFlagDefaults, &auth) != errAuthorizationSuccess)
         return @"The administrator dialog could not be opened.";
@@ -121,7 +149,7 @@ static BOOL trusted(NSString *path)
     status = AuthorizationExecuteWithPrivileges(auth, path, kAuthorizationFlagDefaults, arguments, &pipe);
     if (status != errAuthorizationSuccess) {
         AuthorizationFree(auth, kAuthorizationFlagDefaults);
-        return @"The SSH server could not be started with administrator rights.";
+        return [NSString stringWithFormat:@"The %@ could not be started with administrator rights.", what];
     }
     /* Not waited for until the pipe closes: another process can hold it open (on Tiger a launchd that launchctl starts did), so the answer is
        what the port does, for up to ten seconds. */
@@ -143,7 +171,7 @@ static BOOL trusted(NSString *path)
     AuthorizationFree(auth, kAuthorizationFlagDefaults);
     if ([self listeningOnPort:port] == on)
         return nil;
-    return on ? @"The SSH server did not start. See /var/log/tbsshd.log and /var/log/tbssh-service.log." : @"The SSH server did not stop.";
+    return on ? [NSString stringWithFormat:@"The %@ did not start. See /var/log/tbsshd.log, /var/log/tbsmbd.log and /var/log/tbssh-service.log.", what] : [NSString stringWithFormat:@"The %@ did not stop.", what];
 }
 
 + (NSString *)uninstallWithData:(NSString *)home

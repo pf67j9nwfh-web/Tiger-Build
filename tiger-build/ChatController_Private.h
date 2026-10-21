@@ -64,6 +64,10 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (IBAction)toggleStats:(id)sender;
 - (void)buildScreenTab:(NSTabView *)tabs;
 - (void)buildShellTab:(NSTabView *)tabs;
+- (void)buildSharingTab:(NSTabView *)tabs;
+- (void)loadSharingOptions;
+- (void)saveSharingOptions;
+- (void)refreshSharingStatus;
 - (void)loadShellOptions;
 - (void)saveShellOptions;
 - (NSString *)remoteSudoKeyIfAllowed;
