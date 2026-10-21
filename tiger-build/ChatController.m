@@ -2728,7 +2728,7 @@ static BOOL launchFinished = NO;
     }
     version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if (!version || [version length] == 0)
-        version = @"2.6.3";
+        version = @"2.7";
     about = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 480)
         styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO];
     [about setReleasedWhenClosed:NO];
