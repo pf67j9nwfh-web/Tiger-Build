@@ -297,7 +297,8 @@ static NSArray *validated(id list, BOOL forceOff)
         [NSArray arrayWithObjects:@"currency", @"Currency exchange rates", [NSNumber numberWithBool:NO], nil],
         [NSArray arrayWithObjects:@"inflation", @"US inflation (CPI-U)", [NSNumber numberWithBool:NO], nil],
         [NSArray arrayWithObjects:@"web", @"Web requests (curl)", [NSNumber numberWithBool:YES], nil],
-        [NSArray arrayWithObjects:@"xposts", @"X (Twitter) posts", [NSNumber numberWithBool:NO], nil], nil];
+        [NSArray arrayWithObjects:@"xposts", @"X (Twitter) posts", [NSNumber numberWithBool:NO], nil],
+        [NSArray arrayWithObjects:@"smb", @"SMB file shares (Windows, NAS, other Macs)", [NSNumber numberWithBool:YES], nil], nil];
     for (e = 0; e < [examples count]; e++) {
         NSArray *x = [examples objectAtIndex:e];
         BOOL there = [given containsObject:[x objectAtIndex:0]];
@@ -310,7 +311,7 @@ static NSArray *validated(id list, BOOL forceOff)
         }
         if (!there && [list count] < 24)
             [list addObject:[NSDictionary dictionaryWithObjectsAndKeys:[x objectAtIndex:0], @"id", [x objectAtIndex:1], @"title", [@"builtin:" stringByAppendingString:[x objectAtIndex:0]], @"command",
-                [NSArray array], @"args", [NSDictionary dictionary], @"env", [NSNumber numberWithBool:YES], @"enabled", [x objectAtIndex:2], @"approval", nil]];
+                [NSArray array], @"args", [NSDictionary dictionary], @"env", [NSNumber numberWithBool:![[x objectAtIndex:0] isEqualToString:@"smb"]], @"enabled", [x objectAtIndex:2], @"approval", nil]];
     }
     if (!changed)
         return;

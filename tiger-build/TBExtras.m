@@ -6,6 +6,7 @@
 #import "TBSSH.h"
 #import "TBBuiltin.h"
 #import "TBWebTools.h"
+#import "TBSMB.h"
 #import "TBMCP.h"
 #import "TBMedia.h"
 #import "TBOutputs.h"
@@ -442,6 +443,25 @@ static NSDictionary *withoutSaving(NSDictionary *listed)
     return [NSDictionary dictionaryWithObject:tools forKey:@"tools"];
 }
 
+/* the SMB tools of a chat that has no Commander: nothing on this Mac to save to or send from */
+static NSDictionary *withoutLocalFiles(NSDictionary *listed)
+{
+    NSMutableArray *tools = [NSMutableArray array];
+    NSArray *given = TBArray(listed, @"tools");
+    unsigned i;
+    for (i = 0; i < [given count]; i++) {
+        NSMutableDictionary *tool = [NSMutableDictionary dictionaryWithDictionary:[given objectAtIndex:i]];
+        NSMutableDictionary *schema = [NSMutableDictionary dictionaryWithDictionary:TBDictionary(tool, @"inputSchema")];
+        NSMutableDictionary *properties = [NSMutableDictionary dictionaryWithDictionary:TBDictionary(schema, @"properties")];
+        [properties removeObjectForKey:@"output_path"];
+        [properties removeObjectForKey:@"local_path"];
+        [schema setObject:properties forKey:@"properties"];
+        [tool setObject:schema forKey:@"inputSchema"];
+        [tools addObject:tool];
+    }
+    return [NSDictionary dictionaryWithObject:tools forKey:@"tools"];
+}
+
 - (NSArray *)definitionsForProvider:(NSString *)provider skip:(NSSet *)skip
 {
     [lastProvider release];
@@ -469,6 +489,8 @@ static NSDictionary *withoutSaving(NSDictionary *listed)
                 listed = [TBBuiltin listTools:name];
                 if ([name isEqualToString:@"web"] && !commanderOn)
                     listed = withoutSaving(listed);
+                if ([name isEqualToString:@"smb"] && !commanderOn)
+                    listed = withoutLocalFiles(listed);
             } else {
                 NSDictionary *env = TBDictionary(server, @"env");
                 if ([[command lowercaseString] hasPrefix:@"http://"] || [[command lowercaseString] hasPrefix:@"https://"])
@@ -568,6 +590,8 @@ static NSDictionary *withoutSaving(NSDictionary *listed)
                         builtin = [TBString([servers objectAtIndex:i], @"command") substringFromIndex:8];
                 if (!builtin)
                     TBFail(@"The server %@ is not running.", sid);
+                if ([builtin isEqualToString:@"smb"])
+                    return result([TBSMB call:original arguments:args allowLocal:commanderOn], NO, nil);
                 if ([TBWebTools knows:builtin]) {
                     NSDictionary *made = [TBWebTools call:original arguments:args server:builtin run:run saving:commanderOn];
                     return result(TBString(made, @"output"), NO, [TBString(made, @"media") length] ? TBString(made, @"media") : nil);

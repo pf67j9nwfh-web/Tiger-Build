@@ -648,7 +648,7 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
 
 + (BOOL)knows:(NSString *)name
 {
-    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", @"web", @"xposts", nil] containsObject:name];
+    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", @"web", @"xposts", @"smb", nil] containsObject:name];
 }
 
 + (NSDictionary *)listTools:(NSString *)name
@@ -700,6 +700,21 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
                 "show=card (the default) puts a drawn copy of the post in the chat, like an embedded post, with its pictures and a Share button that copies the link, and the video if it has one; "
                 "show=media shows the pictures at full size and the video; show=all does both; show=text gives only the text, with no pictures. Use it on the post addresses that a search returns.",
                 [NSArray arrayWithObjects:@"url", @"show", nil], [NSArray arrayWithObjects:@"string", @"string", nil], [NSArray arrayWithObject:@"url"]), nil];
+    else if ([name isEqualToString:@"smb"]) {
+        NSArray *where = [NSArray arrayWithObjects:@"connection", @"url", @"path", @"user", @"password", @"domain", nil];
+        NSArray *whereTypes = [NSArray arrayWithObjects:@"string", @"string", @"string", @"string", @"string", @"string", nil];
+        NSString *how = @" The share is a saved connection (connection=NAME, from Preferences, Sharing) or smb://user@server/share (url); path is inside the share. Works with SMB 2 and 3 servers: Windows, NAS boxes, Samba and other Macs.";
+        tools = [NSArray arrayWithObjects:
+            tool(@"smb_list", [@"List a folder on an SMB share." stringByAppendingString:how], where, whereTypes, none),
+            tool(@"smb_get", [@"Read a file on an SMB share: text comes back as text (up to max_chars); with output_path (a full path on this Mac, only when Commander is on) it is saved there instead, with its size and SHA-256." stringByAppendingString:how],
+                [where arrayByAddingObjectsFromArray:[NSArray arrayWithObjects:@"max_chars", @"output_path", @"overwrite", nil]], [whereTypes arrayByAddingObjectsFromArray:[NSArray arrayWithObjects:@"number", @"string", @"boolean", nil]], none),
+            tool(@"smb_put", [@"Write a file on an SMB share from text, or from local_path on this Mac (only when Commander is on). An existing file is kept unless overwrite is true." stringByAppendingString:how],
+                [where arrayByAddingObjectsFromArray:[NSArray arrayWithObjects:@"text", @"local_path", @"overwrite", nil]], [whereTypes arrayByAddingObjectsFromArray:[NSArray arrayWithObjects:@"string", @"string", @"boolean", nil]], none),
+            tool(@"smb_mkdir", [@"Create a folder on an SMB share." stringByAppendingString:how], where, whereTypes, none),
+            tool(@"smb_delete", [@"Delete a file or an empty folder on an SMB share. This cannot be undone." stringByAppendingString:how], where, whereTypes, none),
+            tool(@"smb_rename", [@"Rename or move a file or folder inside an SMB share: path to new_path." stringByAppendingString:how],
+                [where arrayByAddingObjectsFromArray:[NSArray arrayWithObject:@"new_path"]], [whereTypes arrayByAddingObjectsFromArray:[NSArray arrayWithObject:@"string"]], none), nil];
+    }
     else if ([name isEqualToString:@"weather"])
         tools = [NSArray arrayWithObjects:
             tool(@"current_weather", @"Current conditions from wttr.in for a place (a city, postcode or 'City,Country').", [NSArray arrayWithObject:@"place"], text, [NSArray arrayWithObject:@"place"]),
