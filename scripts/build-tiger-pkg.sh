@@ -48,7 +48,10 @@ cp "$S/preflight" "$PKG/Contents/Resources/preflight"
 chmod 755 "$PKG/Contents/Resources/postflight" "$PKG/Contents/Resources/preflight" "$PAYLOAD/usr/local/tbssh/bin/"* "$PAYLOAD/usr/local/tbssh/sbin/sshd" "$PAYLOAD/usr/local/tbssh/libexec/"*
 cd "$PAYLOAD"
 pax -w . | gzip -c > "$PKG/Contents/Archive.pax.gz"
-mkbom . "$PKG/Contents/Archive.bom"
+# Tiger's mkbom cannot read the newer Mach-O load commands of the x86_64 slices and says "malformed object" for each program; it then checksums the
+# whole file, which is what the installer verifies, so the BOM is complete (checked with lsbom) and the warnings are left out of the log.
+mkbom . "$PKG/Contents/Archive.bom" 2>&1 | grep -v 'malformed object' | grep -v '^$' || true
+test -s "$PKG/Contents/Archive.bom"
 SIZE=$(du -k -s "$PAYLOAD" | awk '{print $1}')
 printf 'pmkrpkg1' > "$PKG/Contents/PkgInfo"
 cat > "$PKG/Contents/Info.plist" << PLIST
