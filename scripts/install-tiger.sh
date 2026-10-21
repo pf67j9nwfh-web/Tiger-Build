@@ -28,6 +28,10 @@ COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/third_party" -cf - 
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/commander" --exclude 'ppc-commander*' --exclude build -cf - . \
   | "$SSH" 'cd "$HOME/TigerBuild-build/commander" && tar -xf -'
 
+# the Spotlight importer's source (the Makefile finds it in ../spotlight)
+"$SSH" 'rm -rf "$HOME/TigerBuild-build/spotlight" && mkdir -p "$HOME/TigerBuild-build/spotlight"'
+COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/spotlight" -cf - . | "$SSH" 'cd "$HOME/TigerBuild-build/spotlight" && tar -xf -'
+
 echo "Building (make test, then make)..."
 "$SSH" 'cd "$HOME/TigerBuild-build/native.new" || exit 1
 if ! make test > test.log 2>&1; then grep -v "^PASS" test.log; echo "make test failed" >&2; exit 1; fi
