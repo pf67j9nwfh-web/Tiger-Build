@@ -114,8 +114,12 @@ static NSString *consentKey(NSString *provider) { return [@"TBVoiceConsent." str
         return;
     [voiceRequest release];
     voiceRequest = nil;
-    if ([request ok])
+    if ([request ok]) {
+        NSString *dump = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBVoiceDump"];   /* for testing: keeps the audio that came back */
+        if ([dump length])
+            [[request data] writeToFile:dump atomically:NO];
         sound = [[NSSound alloc] initWithData:[request data]];
+    }
     if (sound) {
         [voiceSound release];
         voiceSound = sound;

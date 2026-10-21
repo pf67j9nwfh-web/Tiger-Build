@@ -178,7 +178,7 @@ static NSData *geminiSpeech(NSString *text, NSString *voice, NSString *key, int 
         NSString *url = address(@"gemini-tts", [NSString stringWithFormat:@"https://generativelanguage.googleapis.com/v1beta/models/%@:generateContent", [models objectAtIndex:i]]);
         NSDictionary *speech = [NSDictionary dictionaryWithObject:[NSDictionary dictionaryWithObject:[NSDictionary dictionaryWithObject:[voice length] ? voice : @"Kore" forKey:@"voiceName"] forKey:@"prebuiltVoiceConfig"] forKey:@"voiceConfig"];
         NSDictionary *payload = [NSDictionary dictionaryWithObjectsAndKeys:
-            [NSArray arrayWithObject:[NSDictionary dictionaryWithObject:[NSArray arrayWithObject:[NSDictionary dictionaryWithObject:text forKey:@"text"]] forKey:@"parts"]], @"contents",
+            [NSArray arrayWithObject:[NSDictionary dictionaryWithObject:[NSArray arrayWithObject:[NSDictionary dictionaryWithObject:[@"Say naturally: " stringByAppendingString:text] forKey:@"text"]] forKey:@"parts"]], @"contents",
             [NSDictionary dictionaryWithObjectsAndKeys:[NSArray arrayWithObject:@"AUDIO"], @"responseModalities", speech, @"speechConfig", nil], @"generationConfig", nil];
         NSData *audio;
         NSString *answer;
