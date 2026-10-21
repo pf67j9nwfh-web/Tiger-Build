@@ -34,6 +34,12 @@
     NSSpeechSynthesizer *voiceSample;
     NSSpeechRecognizer *voiceRecognizer;
     NSPopUpButton *voicePopup;
+    NSPopUpButton *voiceEnginePopup;
+    NSPanel *voicePanel;
+    NSSound *voiceSound;                /* a service's voice, when one reads replies */
+    EngineRequest *voiceRequest;
+    NSString *voiceSpokenText;
+    BOOL voiceSpokenSample;
     double lastPartialSave;
     NSMutableArray *attachProblems;
     BOOL attachWorking;

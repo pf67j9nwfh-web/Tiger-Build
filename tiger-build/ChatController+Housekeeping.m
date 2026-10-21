@@ -185,6 +185,78 @@ static NSString *runScreenSetting(NSString *flag)
         frame:NSMakeRect(16, y - 36, 520, 40) inView:tab];
 }
 
+- (void)buildShellTab:(NSTabView *)tabs
+{
+    NSView *tab = [self preferencesTab:@"Shell" in:tabs];
+    float y = 292;
+    NSTextField *field;
+    [self preferencesHeading:@"A regular SSH server on this Mac (port 2223)" y:y inView:tab];
+    y -= 26;
+    [self alertsCheck:@"Allow SSH logins with a shell, sftp and scp" key:@"shell.allow" y:y in:tab];
+    y -= 22;
+    [self preferencesNote:@"Next to the Commander server (port 2222), which runs only Commander. This one gives a normal login: a terminal, sftp and scp, for the accounts named below, "
+        @"with keys only (no passwords, no root, no port forwarding). It uses the same Allowed Keys as the Commander server and the account's own ~/.ssh/authorized_keys, "
+        @"so ssh-copy-id -p 2223 works. Turning it on or off asks for the administrator password."
+        frame:NSMakeRect(34, y - 66, 502, 82) inView:tab];
+    y -= 100;
+    [self preferencesLabel:@"Accounts allowed (names, separated by spaces):" frame:NSMakeRect(16, y, 300, 18) inView:tab];
+    y -= 26;
+    field = [[[NSTextField alloc] initWithFrame:NSMakeRect(16, y, 300, 22)] autorelease];
+    [tab addSubview:field];
+    [prefsFields setObject:field forKey:@"shell.users"];
+    y -= 28;
+    [prefsFields setObject:[self preferencesLabel:@"" frame:NSMakeRect(16, y, 520, 18) inView:tab] forKey:@"shell.status"];
+    y -= 34;
+    [self preferencesButton:@"Allowed Keys..." frame:NSMakeRect(16, y, 140, 28) action:@selector(editAllowedKeys:) inView:tab];
+    [self preferencesButton:@"Copy Host Fingerprint" frame:NSMakeRect(162, y, 170, 28) action:@selector(copyHostFingerprint:) inView:tab];
+}
+
+- (NSArray *)shellUserNames
+{
+    NSMutableArray *names = [NSMutableArray array];
+    NSMutableString *raw = [NSMutableString stringWithString:[[prefsFields objectForKey:@"shell.users"] stringValue]];
+    NSArray *parts;
+    [raw replaceOccurrencesOfString:@"," withString:@" " options:0 range:NSMakeRange(0, [raw length])];
+    [raw replaceOccurrencesOfString:@"\t" withString:@" " options:0 range:NSMakeRange(0, [raw length])];
+    parts = [raw componentsSeparatedByString:@" "];
+    unsigned i;
+    for (i = 0; i < [parts count]; i++)
+        if ([[parts objectAtIndex:i] length])
+            [names addObject:[parts objectAtIndex:i]];
+    return names;
+}
+
+- (void)loadShellOptions
+{
+    NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBShellUsers"];
+    BOOL installed = [TBSSHServer shellInstalled], on = installed && [TBSSHServer shellListening];
+    [[prefsFields objectForKey:@"shell.allow"] setState:on ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"shell.allow"] setEnabled:installed];
+    [[prefsFields objectForKey:@"shell.users"] setStringValue:[saved length] ? saved : NSUserName()];
+    [[prefsFields objectForKey:@"shell.status"] setStringValue:!installed ? @"Not installed. The Tiger Build installer puts it in /usr/local/tbssh."
+        : on ? @"Running on port 2223." : @"Installed and off."];
+}
+
+- (void)saveShellOptions
+{
+    BOOL want = [[prefsFields objectForKey:@"shell.allow"] state] == NSOnState, have = [TBSSHServer shellListening];
+    NSArray *names = [self shellUserNames];
+    NSString *why, *joined = [names componentsJoinedByString:@" "], *old = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBShellUsers"];
+    if (![TBSSHServer shellInstalled])
+        return;
+    [[NSUserDefaults standardUserDefaults] setObject:joined forKey:@"TBShellUsers"];
+    /* a changed list of accounts takes a restart of the server, which is the same step as turning it on */
+    if (want == have && !(want && old && ![old isEqualToString:joined]))
+        return;
+    if (want && NSRunAlertPanel(@"Allow SSH logins to this Mac?",
+        @"Computers whose public key is in Allowed Keys (or in the account's ~/.ssh/authorized_keys) will be able to sign in as %@ and run anything that account can, with a terminal, sftp and scp. "
+        @"Turn it on only for computers you control.", @"Allow", @"Cancel", nil, [names componentsJoinedByString:@", "]) != NSAlertDefaultReturn)
+        return;
+    why = [TBSSHServer setShellRunning:want users:names];
+    if (why && ![why isEqualToString:@"cancelled"])
+        NSRunAlertPanel(want ? @"The SSH server did not start" : @"The SSH server did not stop", @"%@", @"OK", nil, nil, why);
+}
+
 - (void)buildAlertsTab:(NSTabView *)tabs
 {
     NSView *tab = [self preferencesTab:@"Alerts" in:tabs];

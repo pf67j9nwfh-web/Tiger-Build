@@ -1,6 +1,6 @@
 #!/bin/sh
-# usage: tbssh-service on|off   (run as root; Tiger Build asks for the administrator password and runs it)
-# Starts or stops Tiger Build's SSH server (port 2222). The server is a launchd job that starts a copy of sshd for each connection, and it
+# usage: tbssh-service on|off | shell-on USER... | shell-off   (run as root; Tiger Build asks for the administrator password and runs it)
+# Starts or stops Tiger Build's SSH servers: the Commander one (port 2222) and, with shell-on / shell-off, the regular one (port 2223, for the named accounts). The server is a launchd job that starts a copy of sshd for each connection, and it
 # must be loaded into the system's launchd (as root), not into the launchd of whoever is signed in, or sshd would run as that person and
 # could not read its host key. The system's Authorization dialog runs this with root's rights but the signed-in user's launchd, so it
 # first becomes root all the way (the real user id too) and, on 10.5 and later, switches into the system launchd's namespace.
@@ -18,12 +18,14 @@ set -x
 if [ "$(id -ru)" != 0 ]; then
   [ -z "$TBSSH_REEXEC" ] || { echo "tbssh-service could not become root" >&2; exit 1; }
   # (perl turns on taint checking when the real and effective ids differ, so the environment is replaced and the arguments checked first)
-  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = $ARGV[0] =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = $ARGV[1] =~ m{^(on|off)$} or die "usage\n"; $< = 0; $> = 0; exec "/bin/sh", $s, $a' "$0" "$1"
+  exec /usr/bin/perl -e '%ENV = (PATH => "/usr/bin:/bin:/usr/sbin:/sbin", TBSSH_REEXEC => "1"); ($s) = shift(@ARGV) =~ m{^(/[-A-Za-z0-9_./]+)$} or die "bad path\n"; ($a) = shift(@ARGV) =~ m{^(on|off|shell-on|shell-off)$} or die "usage\n"; @u = map { m{^([A-Za-z_][-A-Za-z0-9_.]{0,31})$} or die "bad user\n"; $1 } @ARGV; $< = 0; $> = 0; exec "/bin/sh", $s, $a, @u' "$0" "$@"
 fi
 for f in /usr/local/tbssh/sbin/sshd /usr/local/tbssh/libexec/sshd-session /usr/local/tbssh/libexec/sshd-auth /usr/local/tbssh/etc/sshd_config /Library/LaunchDaemons/local.tigerbuild.sshd.plist; do
   [ -f "$f" ] || { echo "Tiger Build's SSH server is not installed (missing $f)" >&2; exit 1; }
 done
 PLIST=/Library/LaunchDaemons/local.tigerbuild.sshd.plist
+SHELLPLIST=/Library/LaunchDaemons/local.tigerbuild.sshd-shell.plist
+USERS=/usr/local/tbssh/etc/shell_users.conf
 KEY=/usr/local/tbssh/etc/ssh_host_ed25519_key
 OS="$(sw_vers -productVersion 2>/dev/null)"
 # launchctl loads into the launchd it finds from the caller's session, which for the administrator dialog is the signed-in user's. With the real
@@ -59,8 +61,38 @@ case "$1" in
     in_system || /bin/launchctl bsexec 1 /bin/launchctl unload -w "$PLIST"
     echo "unload finished: $?"
     ;;
+  shell-on)
+    shift
+    [ $# -gt 0 ] || { echo "shell-on needs at least one account name" >&2; exit 2; }
+    for f in /usr/local/tbssh/etc/sshd_config_shell "$SHELLPLIST"; do
+      [ -f "$f" ] || { echo "the regular SSH server is not installed (missing $f)" >&2; exit 1; }
+    done
+    for u in "$@"; do
+      id "$u" >/dev/null 2>&1 || { echo "no account named $u" >&2; exit 1; }
+      [ "$u" != root ] || { echo "root cannot be allowed" >&2; exit 1; }
+    done
+    echo "AllowUsers $*" > "$USERS" && chown root:wheel "$USERS" && chmod 644 "$USERS"
+    if [ ! -f "$KEY" ]; then
+      /usr/local/tbssh/bin/ssh-keygen -q -t ed25519 -N '' -C tiger-build-host -f "$KEY" || exit 1
+    fi
+    chown root:wheel "$KEY" "$KEY.pub" && chmod 600 "$KEY" && chmod 644 "$KEY.pub"
+    touch /var/log/tbsshd.log && chown root:admin /var/log/tbsshd.log && chmod 640 /var/log/tbsshd.log
+    $LC unload "$SHELLPLIST"
+    if in_system; then
+      $LC load -w "$SHELLPLIST"
+    else
+      /bin/launchctl bsexec 1 /bin/launchctl unload "$SHELLPLIST"
+      /bin/launchctl bsexec 1 /bin/launchctl load -w "$SHELLPLIST"
+    fi
+    echo "load finished: $?"
+    ;;
+  shell-off)
+    $LC unload -w "$SHELLPLIST"
+    in_system || /bin/launchctl bsexec 1 /bin/launchctl unload -w "$SHELLPLIST"
+    echo "unload finished: $?"
+    ;;
   *)
-    echo "usage: tbssh-service on|off" >&2
+    echo "usage: tbssh-service on|off|shell-on USER...|shell-off" >&2
     exit 2
     ;;
 esac

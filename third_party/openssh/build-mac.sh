@@ -9,6 +9,9 @@ VERSION=10.6p1
 SRC="$PWD/src/openssh-$VERSION"
 SSL="$PWD/../libressl"
 D=/Developer/SDKs
+# The 64-bit programs built with the 10.5 SDK cannot pass a descriptor on 10.6 and later (the server could not give a terminal to a session: "mm_send_fd:
+# sendmsg: Invalid argument"): the SDK and those kernels lay a control message out differently. patches/darwin-fdpass.patch chooses the layout by the system it runs on.
+grep -q tb_cmsg_packed "$SRC/monitor_fdpass.c" || patch -p1 -d "$SRC" -N -s < "$PWD/patches/darwin-fdpass.patch"
 TOOLS="ssh ssh-keygen ssh-keyscan ssh-add ssh-agent scp sftp sshd sshd-session sshd-auth"
 slice() {  # name host compiler flags...
   name=$1; host=$2; cc="$3"; shift 3

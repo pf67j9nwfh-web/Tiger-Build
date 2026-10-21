@@ -316,6 +316,21 @@ or as the entry in a project's `.mcp.json` (or in `~/.claude.json`), where the k
 | The tools list is empty, or screen tools are missing | Commander is stopped (Commander → Start), or the Screen setting is off on the old Mac |
 | `screen control is off` | Preferences → Screen on the old Mac, or `ppc-commander --screen on` there |
 
+### A regular SSH login, sftp and scp (port 2223)
+
+Tiger Build's server on port 2222 runs only Commander. For an ordinary login (a terminal, `sftp`, `scp`) Preferences → **Shell** has *Allow SSH logins with a shell, sftp and scp*. It starts a second OpenSSH server on **port 2223**, for the accounts you name there (your own by default), with keys only: no passwords, no root login, no port forwarding. It is off until you tick it and give the administrator password (turn it off the same way), and it changes neither Remote Login (port 22) nor the Commander server.
+
+It accepts the same public keys as the Commander server (*Allowed Keys...*) and the account's own `~/.ssh/authorized_keys`, so a computer that is already allowed can add another key itself:
+
+```sh
+ssh-copy-id -p 2223 -i ~/.ssh/id_ed25519.pub -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 you@old-mac
+ssh  -p 2223 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 you@old-mac
+sftp -P 2223 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 you@old-mac
+scp  -P 2223 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o PubkeyAcceptedAlgorithms=ssh-ed25519 file you@old-mac:
+```
+
+A key in Allowed Keys therefore works for both servers, so list only computers you would let run anything as that account (Commander can already do that).
+
 ## Models, tools and search
 
 - **Model list.** The models of each service come with the app (`models.txt`). Configuration → *Update Model List* (⌥⇧⌘M), and Tiger Build by itself at start and every six hours, asks each service that has a key (Grok, ChatGPT, Claude, Mistral, Gemini and Muse) for its own list of models, keeps the chat models (not embedding, image, audio, preview or dated-copy models) that are not already in the list, tries each new one with a one-word question, and adds the ones that answer to that service's models, each in its place by version (a 6.1 goes just above the 6 of its own family; a new family among the versions it falls between) (kept in `model-live.plist`, so they are there offline at the next start; a model that fails is not tried again for a week). A model that comes with the app but is no longer in the service's list is tried once too; if it really fails it is hidden (the service's default model is never hidden), and it comes back by itself if the service lists it again. A service that cannot be asked is left as it was, and the dialog says why. The same command reads the local server's models (LM Studio, Ollama, OpenRouter) again; they are also read when you choose Local or save the Local LLM settings. The more powerful models tend to do a much better job of working within the confines of the old OS environments than the less powerful ones.

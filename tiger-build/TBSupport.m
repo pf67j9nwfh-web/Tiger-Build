@@ -978,3 +978,44 @@ BOOL TBSudoLocalKeyKnown(NSString *key)
     }
     return known;
 }
+
+NSData *TBBase64Decode(NSString *text)
+{
+    NSMutableData *out = [NSMutableData data];
+    unsigned i, bits = 0, count = 0, padding = 0;
+    for (i = 0; i < [text length]; i++) {
+        unichar c = [text characterAtIndex:i];
+        int v;
+        if (c == ' ' || c == '\n' || c == '\r' || c == '\t')
+            continue;
+        if (c == '=') {
+            padding++;
+            continue;
+        }
+        if (padding)
+            return nil;
+        if (c >= 'A' && c <= 'Z') v = c - 'A';
+        else if (c >= 'a' && c <= 'z') v = c - 'a' + 26;
+        else if (c >= '0' && c <= '9') v = c - '0' + 52;
+        else if (c == '+' || c == '-') v = 62;
+        else if (c == '/' || c == '_') v = 63;
+        else return nil;
+        bits = (bits << 6) | v;
+        if (++count == 4) {
+            unsigned char b[3] = {(bits >> 16) & 255, (bits >> 8) & 255, bits & 255};
+            [out appendBytes:b length:3];
+            bits = 0;
+            count = 0;
+        }
+    }
+    if (count == 1)
+        return nil;
+    if (count == 2) {
+        unsigned char b = (bits >> 4) & 255;
+        [out appendBytes:&b length:1];
+    } else if (count == 3) {
+        unsigned char b[2] = {(bits >> 10) & 255, (bits >> 2) & 255};
+        [out appendBytes:b length:2];
+    }
+    return out;
+}

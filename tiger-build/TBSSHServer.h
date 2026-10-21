@@ -6,6 +6,9 @@
 @interface TBSSHServer : NSObject
 + (BOOL)installed;                 /* the installer's files are there, owned by root */
 + (BOOL)listening;                 /* something answers on port 2222 of this Mac */
++ (BOOL)shellInstalled;            /* the regular server's files (port 2223) are there too */
++ (BOOL)shellListening;            /* something answers on port 2223 */
++ (NSString *)setShellRunning:(BOOL)on users:(NSArray *)users; /* the regular server: a shell, sftp and scp for the named accounts; same results as setRunning: */
 + (NSString *)setRunning:(BOOL)on; /* nil when done, else what went wrong (including "cancelled") */
 + (NSString *)authorizedKeysPath;
 + (NSString *)authorizedKeys;

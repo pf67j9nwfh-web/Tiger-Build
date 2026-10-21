@@ -1,0 +1,32 @@
+# Tiger Build's regular SSH server (port 2223): a shell, sftp and scp for the people named in shell_users.conf (Preferences, SSH Server).
+# Off until it is switched on there. It is a second server beside the Commander one (port 2222) and beside Remote Login (port 22), and changes neither.
+# Keys only, no passwords, no root; the keys are the ones in Tiger Build's list and the account's ordinary ~/.ssh/authorized_keys, so ssh-copy-id works.
+HostKey /usr/local/tbssh/etc/ssh_host_ed25519_key
+SshdSessionPath /usr/local/tbssh/libexec/sshd-session
+SshdAuthPath /usr/local/tbssh/libexec/sshd-auth
+# nobody can log in unless the accounts are named in the next file (an AllowUsers line is added to, not replaced)
+AllowUsers tbssh-no-such-account
+Include /usr/local/tbssh/etc/shell_users.conf
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+PermitEmptyPasswords no
+AuthorizedKeysFile "%h/Library/Application Support/Tiger Build/ssh/authorized_keys" "%h/.ssh/authorized_keys"
+StrictModes yes
+Subsystem sftp internal-sftp
+PermitTTY yes
+AllowTcpForwarding no
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+PermitUserEnvironment no
+PermitUserRC no
+LoginGraceTime 20
+MaxAuthTries 3
+MaxStartups 5:30:20
+ClientAliveInterval 30
+ClientAliveCountMax 4
+LogLevel INFO

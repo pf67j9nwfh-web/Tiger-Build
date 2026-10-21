@@ -377,6 +377,8 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
         } else if ([path isEqualToString:@"/list-openai"]) {
             /* a service's own list of models: a new chat model, an embedding model, a dated copy, a preview, and one already bundled */
             sendJSON(fd, 200, D(A(D(@"gpt-9-test", @"id"), D(@"text-embedding-9", @"id"), D(@"gpt-9-test-2025-01-01", @"id"), D(@"gpt-9-bad-preview", @"id"), D(@"gpt-4.1", @"id")), @"data"));
+        } else if ([path isEqualToString:@"/tts-mistral-voices"]) {
+            sendJSON(fd, 200, D(A(D(@"abc123", @"id", @"gb_jane_neutral", @"slug", @"Jane", @"name"), D(@"def456", @"id", @"Max", @"name")), @"items"));
         } else if ([path isEqualToString:@"/legacy/sse"]) {
             legacyStream(fd, headers);
         } else if (oauthHandle(fd, method, fullPath, headers, raw)) {
@@ -440,6 +442,34 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendBody(fd, 200, @"text/event-stream", [[NSString stringWithFormat:@"event: message\ndata: %@\n\n", message] dataUsingEncoding:NSUTF8StringEncoding], @"Mcp-Session-Id: sess-1\r\n");
         else
             sendBody(fd, 200, @"application/json", [message dataUsingEncoding:NSUTF8StringEncoding], @"Mcp-Session-Id: sess-1\r\n");
+        return;
+    }
+    if ([path hasPrefix:@"/tts-"]) {
+        /* text to speech: each service's own shape; the voice and model that were asked for come back in the reply so the test can see them */
+        NSMutableData *pcm = [NSMutableData dataWithLength:4800];
+        NSMutableData *wav = [NSMutableData dataWithBytes:"RIFF\x30\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\xbb\x00\x00\x00\x77\x01\x00\x02\x00\x10\x00data\x0c\x00\x00\x00" length:44];
+        [wav increaseLengthBy:12];
+        if ([path isEqualToString:@"/tts-openai"]) {
+            if ([[request objectForKey:@"model"] isEqualToString:@"gpt-4o-mini-tts"] && count == 1)
+                sendJSON(fd, 404, D(D(@"model not found", @"message"), @"error"));
+            else if (![[request objectForKey:@"voice"] isEqualToString:@"coral"] || ![[request objectForKey:@"response_format"] isEqualToString:@"pcm"])
+                sendJSON(fd, 400, D(D(@"bad request", @"message"), @"error"));
+            else
+                sendBody(fd, 200, @"audio/pcm", pcm, nil);
+        } else if ([path isEqualToString:@"/tts-gemini"]) {
+            sendJSON(fd, 200, D(A(D(D(A(D(D([pcm base64EncodedStringWithOptions:0], @"data", @"audio/L16;codec=pcm;rate=24000", @"mimeType"), @"inlineData")), @"parts"), @"content")), @"candidates"));
+        } else if ([path isEqualToString:@"/tts-grok"]) {
+            if (![[request objectForKey:@"voice_id"] isEqualToString:@"rex"] || ![[[request objectForKey:@"output_format"] objectForKey:@"codec"] isEqualToString:@"pcm"])
+                sendJSON(fd, 400, D(D(@"bad request", @"message"), @"error"));
+            else
+                sendBody(fd, 200, @"audio/pcm", pcm, nil);
+        } else if ([path isEqualToString:@"/tts-mistral"]) {
+            if (![[request objectForKey:@"voice_id"] isEqualToString:@"gb_jane_neutral"] || ![[request objectForKey:@"response_format"] isEqualToString:@"wav"])
+                sendJSON(fd, 400, D(D(@"bad request", @"message"), @"error"));
+            else
+                sendJSON(fd, 200, D([wav base64EncodedStringWithOptions:0], @"audio_data"));
+        } else
+            sendJSON(fd, 404, D(@"unknown", @"error"));
         return;
     }
     if ([path isEqualToString:@"/audio-openai"]) {

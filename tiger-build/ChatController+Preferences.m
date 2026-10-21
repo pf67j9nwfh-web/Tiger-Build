@@ -44,6 +44,7 @@
     [self loadSSHFields];
     [self loadCommanderOptions];
     [self loadAlertOptions];
+    [self loadShellOptions];
     [self requestSettings];
 }
 
@@ -194,6 +195,7 @@
     [self saveSSHFields];
     [self saveCommanderOptions];
     [self saveAlertOptions];
+    [self saveShellOptions];
     keys = [NSArray arrayWithObjects:
         @"xai_api_key", @"openai_api_key", @"anthropic_api_key",
         @"anthropic_workspace_id", @"mistral_api_key", @"muse_api_key",
@@ -639,6 +641,7 @@
 
     [self buildAlertsTab:tabs];
     [self buildScreenTab:tabs];
+    [self buildShellTab:tabs];
 
     /* ---- SSH Server ---- */
     tab = [self preferencesTab:@"SSH Server" in:tabs];

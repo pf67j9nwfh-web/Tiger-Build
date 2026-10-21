@@ -12,6 +12,7 @@
 
 #define SERVICE @"/usr/local/tbssh/bin/tbssh-service"
 #define PORT 2222
+#define SHELL_PORT 2223
 
 /* only a file root owns, that nobody else can change, is run with the administrator's rights */
 static BOOL trusted(NSString *path)
@@ -22,6 +23,11 @@ static BOOL trusted(NSString *path)
     return info.st_uid == 0 && !(info.st_mode & 0022);
 }
 
+@interface TBSSHServer (Private)
++ (BOOL)listeningOnPort:(int)port;
++ (NSString *)run:(BOOL)on shell:(NSArray *)users port:(int)port;
+@end
+
 @implementation TBSSHServer
 
 + (BOOL)installed
@@ -29,7 +35,15 @@ static BOOL trusted(NSString *path)
     return trusted(SERVICE) && trusted(@"/usr/local/tbssh/sbin/sshd") && trusted(@"/usr/local/tbssh/etc/sshd_config") && trusted(@"/Library/LaunchDaemons/local.tigerbuild.sshd.plist");
 }
 
-+ (BOOL)listening
++ (BOOL)shellInstalled
+{
+    return [self installed] && trusted(@"/usr/local/tbssh/etc/sshd_config_shell") && trusted(@"/Library/LaunchDaemons/local.tigerbuild.sshd-shell.plist");
+}
+
++ (BOOL)listening { return [self listeningOnPort:PORT]; }
++ (BOOL)shellListening { return [self listeningOnPort:SHELL_PORT]; }
+
++ (BOOL)listeningOnPort:(int)port
 {
     struct sockaddr_in address;
     int fd = socket(AF_INET, SOCK_STREAM, 0), flags, ok = NO;
@@ -41,7 +55,7 @@ static BOOL trusted(NSString *path)
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     memset(&address, 0, sizeof address);
     address.sin_family = AF_INET;
-    address.sin_port = htons(PORT);
+    address.sin_port = htons(port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (connect(fd, (struct sockaddr *)&address, sizeof address) == 0)
         ok = YES;
@@ -59,18 +73,35 @@ static BOOL trusted(NSString *path)
     return ok;
 }
 
-+ (NSString *)setRunning:(BOOL)on
++ (NSString *)setRunning:(BOOL)on { return [self run:on shell:nil port:PORT]; }
+
++ (NSString *)setShellRunning:(BOOL)on users:(NSArray *)users
+{
+    if (![self shellInstalled])
+        return @"The regular SSH server is not installed. Install it with the Tiger Build installer.";
+    if (on && [users count] == 0)
+        return @"Name at least one account that may sign in.";
+    return [self run:on shell:users ? users : [NSArray array] port:SHELL_PORT];
+}
+
++ (NSString *)run:(BOOL)on shell:(NSArray *)users port:(int)port
 {
     AuthorizationRef auth = NULL;
     const char *path = [SERVICE fileSystemRepresentation];
-    char *arguments[2];
+    char *arguments[40];
+    unsigned n = 0, u;
     FILE *pipe = NULL;
     OSStatus status;
     int i;
     if (![self installed])
         return @"Tiger Build's SSH server is not installed. Install it with the Tiger Build installer.";
-    arguments[0] = on ? "on" : "off";
-    arguments[1] = NULL;
+    if (users)
+        arguments[n++] = on ? "shell-on" : "shell-off";
+    else
+        arguments[n++] = on ? "on" : "off";
+    for (u = 0; on && u < [users count] && n < 38; u++)
+        arguments[n++] = (char *)[[users objectAtIndex:u] UTF8String];
+    arguments[n] = NULL;
     if (AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment, kAuthorizationFlagDefaults, &auth) != errAuthorizationSuccess)
         return @"The administrator dialog could not be opened.";
     {
@@ -103,16 +134,16 @@ static BOOL trusted(NSString *path)
         if (pipe)
             while (read(fileno(pipe), buffer, sizeof buffer) > 0)
                 ;
-        if ([self listening] == on)
+        if ([self listeningOnPort:port] == on)
             break;
         usleep(250000);
     }
     if (pipe)
         fclose(pipe);
     AuthorizationFree(auth, kAuthorizationFlagDefaults);
-    if ([self listening] == on)
+    if ([self listeningOnPort:port] == on)
         return nil;
-    return on ? @"The SSH server did not start. See /var/log/tbsshd.log." : @"The SSH server did not stop.";
+    return on ? @"The SSH server did not start. See /var/log/tbsshd.log and /var/log/tbssh-service.log." : @"The SSH server did not stop.";
 }
 
 + (NSString *)uninstallWithData:(NSString *)home

@@ -292,6 +292,18 @@ static void addRow(NSMutableArray *rows, NSString *key, NSString *title, BOOL ap
             }
             return reply(200, [NSPropertyListSerialization dataFromPropertyList:result format:NSPropertyListXMLFormat_v1_0 errorDescription:&error], @"application/x-plist");
         }
+        if ([path isEqualToString:@"/v1/speak"] || [path isEqualToString:@"/v1/voices"]) {
+            id incoming = TBJSONParse(body, NULL);
+            NSString *provider = [TBProviders normalize:TBString(incoming, @"provider")], *problem = nil;
+            int status = 200;
+            NSData *wav;
+            if (![incoming isKindOfClass:[NSDictionary class]])
+                return textReply(400, @"request was not JSON\n");
+            if ([path isEqualToString:@"/v1/voices"])
+                return textReply(200, [[TBSpeech voicesForProvider:provider] componentsJoinedByString:@"\n"]);
+            wav = [TBSpeech speak:TBString(incoming, @"text") provider:provider voice:TBString(incoming, @"voice") status:&status problem:&problem];
+            return wav ? reply(200, wav, @"audio/wav") : textReply(status, [problem stringByAppendingString:@"\n"]);
+        }
         if ([path isEqualToString:@"/v1/transcribe"]) {
             int status = 200;
             NSString *problem = nil;

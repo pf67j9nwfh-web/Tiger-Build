@@ -61,6 +61,9 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (void)markTurnStart:(NSMutableDictionary *)chat;
 - (IBAction)toggleStats:(id)sender;
 - (void)buildScreenTab:(NSTabView *)tabs;
+- (void)buildShellTab:(NSTabView *)tabs;
+- (void)loadShellOptions;
+- (void)saveShellOptions;
 - (NSString *)remoteSudoKeyIfAllowed;
 - (IBAction)toggleFinishTime:(id)sender;
 - (IBAction)continueChat:(id)sender;

@@ -104,6 +104,7 @@ NSString *TBDisplayFileName(NSString *stored);
 NSString *TBReadTextFile(NSString *path, unsigned maxBytes, BOOL *truncated);
 NSString *TBHumanSize(double bytes);
 NSString *TBBase64(NSData *data);
+NSData *TBBase64Decode(NSString *text); /* nil when it is not base64 */
 NSString *TBImageMime(NSString *path);
 
 /* The model list the relay serves at /v1/models. The relay builds it at
