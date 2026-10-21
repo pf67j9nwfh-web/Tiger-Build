@@ -5,6 +5,7 @@
 #import "TBPricing.h"
 #import "TBIntegrations.h"
 #import "TBEngine.h"
+#import "TBSpotlight.h"
 #import "TBTheme.h"
 #import "TBExtract.h"
 #import "TBOutputs.h"
@@ -1932,10 +1933,30 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     return fieldEditor;
 }
 
+/* a chat file that Spotlight opened this application with, before its chats were loaded */
+static NSString *waitingChatFile = nil;
+static BOOL launchFinished = NO;
+
 - (void)application:(NSApplication *)app openFiles:(NSArray *)filenames
 {
+    NSMutableArray *others = [NSMutableArray array];
+    unsigned i;
     (void)app;
-    [self attachPaths:filenames];
+    /* a result of Spotlight search of chats opens that chat; anything else is added to the chat */
+    for (i = 0; i < [filenames count]; i++) {
+        if ([[[filenames objectAtIndex:i] pathExtension] isEqualToString:@"tbchat"]) {
+            if (launchFinished)
+                [self openSpotlightChat:[filenames objectAtIndex:i]];
+            else {
+                [waitingChatFile release];
+                waitingChatFile = [[filenames objectAtIndex:i] copy];
+            }
+        }
+        else
+            [others addObject:[filenames objectAtIndex:i]];
+    }
+    if ([others count])
+        [self attachPaths:others];
     [app replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
 }
 
@@ -1951,6 +1972,7 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     
     [self reloadTableSelect:0 show:YES];
     [self resumeVoiceIfWanted];
+    [TBSpotlight start];
     if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
         /* What the controls and messages tell VoiceOver, for checking without it. */
         NSArray *views = [transcript subviews];
@@ -2012,6 +2034,11 @@ static void dumpMenu(NSMenu *menu, NSString *path, NSMutableDictionary *seen, in
     }
     if (launchQuestion)
         [self performSelector:@selector(askLaunchQuestion) withObject:nil afterDelay:1.0];
+    launchFinished = YES;
+    if (waitingChatFile) {
+        [self performSelector:@selector(openSpotlightChat:) withObject:waitingChatFile afterDelay:0.5];
+        waitingChatFile = nil;
+    }
 }
 
 /* A question given at launch gets a chat of its own, with the model new chats start with. It waits (up to 20 seconds) for the model

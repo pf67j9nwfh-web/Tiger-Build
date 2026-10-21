@@ -551,7 +551,20 @@
     [tab addSubview:button];
     [prefsFields setObject:button forKey:@"quickask.key"];
     y -= 20;
-    [self preferencesNote:@"Opens a small box for a one-off question that is sent in a new chat. Also in the Services menu of other applications: select text, then Services, Ask Tiger Build."
+    [self preferencesNote:@"Opens a small box for a one-off question that is sent in a new chat. Also in the Services menu of other applications: select text, then Services, Tiger Build (Ask, Add to Message, Summarize, Explain, Rewrite)."
+        frame:NSMakeRect(34, y - 28, 502, 36) inView:tab];
+    y -= 54;
+    [self preferencesHeading:@"Spotlight" y:y inView:tab];
+    y -= 26;
+    button = [[[NSButton alloc] initWithFrame:NSMakeRect(16, y, 520, 20)] autorelease];
+    [button setButtonType:NSSwitchButton];
+    [button setTitle:@"Let Spotlight search my chats"];
+    [button setFont:[NSFont systemFontOfSize:12]];
+    [tab addSubview:button];
+    [prefsFields setObject:button forKey:@"spotlight.check"];
+    y -= 20;
+    [self preferencesNote:@"Keeps one small file per chat (its title and words, not pictures or files) in Application Support, for Spotlight to index; a result opens the chat. "
+        @"Anyone who can search this Mac can find what is in them, and the lock does not hide that. Off removes the files."
         frame:NSMakeRect(34, y - 28, 502, 36) inView:tab];
 
     /* ---- Commander ---- */

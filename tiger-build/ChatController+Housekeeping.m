@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TBSSHServer.h"
+#import "TBSpotlight.h"
 #import "TBSession.h"
 #import <unistd.h>
 #import "TBHTTP.h"
@@ -298,6 +299,7 @@ static NSString *runScreenSetting(NSString *flag)
     double chat = numberOf([defaults objectForKey:@"TBSpendChatLimit"]), day = numberOf([defaults objectForKey:@"TBSpendDayLimit"]);
     [[prefsFields objectForKey:@"lock.auto"] setState:[defaults boolForKey:@"TBLockAtStart"] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"quickask.key"] setState:[defaults boolForKey:@"TBQuickAskKey"] ? NSOnState : NSOffState];
+    [[prefsFields objectForKey:@"spotlight.check"] setState:[TBSpotlight enabled] ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.sound"] setState:flagDefault(@"TBSoundOnFinish", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.bounce"] setState:flagDefault(@"TBBounceOnFinish", YES) ? NSOnState : NSOffState];
     [[prefsFields objectForKey:@"alerts.always"] setState:flagDefault(@"TBSoundAlways", NO) ? NSOnState : NSOffState];
@@ -317,6 +319,14 @@ static NSString *runScreenSetting(NSString *flag)
     [defaults setBool:[[prefsFields objectForKey:@"lock.auto"] state] == NSOnState forKey:@"TBLockAtStart"];
     [defaults setInteger:[[prefsFields objectForKey:@"lock.auto"] state] == NSOnState ? 10 : 0 forKey:@"TBLockIdleMinutes"];
     [defaults setBool:[[prefsFields objectForKey:@"quickask.key"] state] == NSOnState forKey:@"TBQuickAskKey"];
+    {
+        BOOL want = [[prefsFields objectForKey:@"spotlight.check"] state] == NSOnState;
+        if (want != [TBSpotlight enabled]) {
+            NSString *why = [TBSpotlight setEnabled:want];
+            if (why)
+                NSRunAlertPanel(@"Spotlight search of chats", @"%@", @"OK", nil, nil, why);
+        }
+    }
     [self applyQuickAskHotKey];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.sound"] state] == NSOnState forKey:@"TBSoundOnFinish"];
     [defaults setBool:[[prefsFields objectForKey:@"alerts.bounce"] state] == NSOnState forKey:@"TBBounceOnFinish"];

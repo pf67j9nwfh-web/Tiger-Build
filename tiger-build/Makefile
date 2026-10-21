@@ -36,12 +36,12 @@ LIBS32 := $(TLS)/lib/libmbedtls32.a $(WEBP)/lib/libwebp32.a $(AOM)/lib/libaom32.
 LIBS64 := $(TLS)/lib/libmbedtls64ppc.a $(WEBP)/lib/libwebp64ppc.a $(AOM)/lib/libaom64ppc.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework AudioToolbox -framework Carbon
 comma := ,
 LIBSX86 := $(TLS)/lib/libmbedtls64x86.a $(WEBP)/lib/libwebp64x86.a $(AOM)/lib/libaom64x86.a -framework Security -framework Cocoa -framework ApplicationServices -lz -framework CoreServices -framework CoreAudio -framework AudioToolbox -framework Carbon $(if $(findstring 10.6,$(SDKX86)),-Wl$(comma)-weak_framework$(comma)QTKit)
-SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Runs.m ChatController+Housekeeping.m ChatController+Memory.m ChatController+Params.m ChatController+Bookmarks.m ChatController+Skills.m ChatController+Auto.m ChatController+Pins.m ChatController+Models.m ChatController+Stats.m ChatController+Conveniences.m ChatController+Services.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBOAuth.m TBLocalTools.m TBSkills.m TBModelUpdate.m TBModelProfiles.m TBChatExport.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBSessionSub.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBWebTools.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSSHServer.m TBTheme.m TBProviderIcons.m TranscriptView.m
+SOURCES := main.m ChatController.m ChatController+Run.m ChatController+Preferences.m ChatController+History.m ChatController+Commander.m ChatController+Integrations.m ChatController+Workspaces.m ChatController+Attachments.m ChatController+ChatFile.m ChatController+Extras.m ChatController+Appearance.m ChatController+Sudo.m ChatController+Runs.m ChatController+Housekeeping.m ChatController+Memory.m ChatController+Params.m ChatController+Bookmarks.m ChatController+Skills.m ChatController+Auto.m ChatController+Pins.m ChatController+Models.m ChatController+Stats.m ChatController+Conveniences.m ChatController+Services.m ChatController+Voice.m ChatController+Dictation.m EngineRequest.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBOAuth.m TBLocalTools.m TBSkills.m TBModelUpdate.m TBModelProfiles.m TBChatExport.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBSessionSub.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBWebTools.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSSHServer.m TBSpotlight.m TBTheme.m TBProviderIcons.m TranscriptView.m
 HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h TBSupport.h TBMarkup.h TBEmoji.h TBHTTP.h TBRun.h TBEngine.h TBMCP.h TBOAuth.h TBLocalTools.h TBProviders.h TBPricing.h TBLocal.h TBSession.h TBService.h TBExtract.h TBOffice.h TBHEIC.h TBSpeech.h TBOutputs.h TBMedia.h TBWebTools.h TBBuiltin.h TBIntegrations.h TBExtras.h TBSSH.h TBTheme.h TBProviderIcons.h TranscriptView.h
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
-.PHONY: all clean test convert cmtest quicklook
+.PHONY: all clean test convert cmtest quicklook mdimporter
 
 all: $(BIN)
 
@@ -69,6 +69,7 @@ endif
 	cp $(DE265)/LICENSE $(APP)/Contents/Resources/libde265-LICENSE.txt
 	rm -rf $(APP)/Contents/Resources/ssh && mkdir -p $(APP)/Contents/Resources/ssh && cp $(SSH)/bin/ssh $(SSH)/bin/ssh-keygen $(SSH)/bin/ssh-keyscan $(APP)/Contents/Resources/ssh/ && cp $(SSH)/LICENSE $(APP)/Contents/Resources/openssh-LICENSE.txt
 	cp $(AOM)/LICENSE $(APP)/Contents/Resources/libaom-LICENSE.txt && cp $(AOM)/PATENTS $(APP)/Contents/Resources/libaom-PATENTS.txt
+	$(MAKE) mdimporter && rm -rf $(APP)/Contents/Resources/$(MDDIR) && cp -R $(MDDIR) $(APP)/Contents/Resources/$(MDDIR)
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
 convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
@@ -92,6 +93,21 @@ test: tbtests
 
 clean:
 	rm -rf $(APP) "Tiger Build.app" tbtests build
+
+# The Spotlight importer for the chat files (see ../spotlight): ppc and i386 (10.4 SDK, so Tiger loads it) and x86_64. The app copies it to ~/Library/Spotlight
+# when Spotlight search of chats is switched on.
+MDDIR := TigerBuild.mdimporter
+mdimporter: ../spotlight/TBSpotlight.c ../spotlight/Info.plist
+	rm -rf $(MDDIR) build/md && mkdir -p build/md $(MDDIR)/Contents/MacOS
+	$(CC32) $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -Os -bundle -o build/md/md32 ../spotlight/TBSpotlight.c -framework CoreFoundation -framework CoreServices
+ifneq ($(findstring x86_64,$(ARCHS64)),)
+	$(CC64) -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Os -bundle -o build/md/mdx64 ../spotlight/TBSpotlight.c -framework CoreFoundation -framework CoreServices
+	lipo -create build/md/md32 build/md/mdx64 -output $(MDDIR)/Contents/MacOS/TigerBuildMD
+else
+	cp build/md/md32 $(MDDIR)/Contents/MacOS/TigerBuildMD
+endif
+	cp ../spotlight/Info.plist $(MDDIR)/Contents/Info.plist
+	rm -rf build/md
 
 # The Quick Look generator for Leopard and Snow Leopard (HEIC, AVIF, WebP, docx, xlsx, pptx, OpenDocument), built with the converter's sources.
 # ppc and i386 (10.5 SDK, which has the QuickLook framework) and x86_64; installed in /Library/QuickLook.

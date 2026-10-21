@@ -37,6 +37,8 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (BOOL)isLocked;
 - (void)noteActivity;
 - (void)askInNewChat:(NSString *)text send:(BOOL)send;
+- (void)openSpotlightChat:(NSString *)path;
+- (void)switchWorkspace:(NSString *)name;
 - (void)downloadAndOpenUpdate:(NSDictionary *)release;
 - (NSString *)memoryRequestFragment;
 - (void)updateMemoryAfterReply:(NSMutableDictionary *)chat;

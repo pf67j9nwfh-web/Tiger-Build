@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TBSupport.h"
+#import "TBSpotlight.h"
 
 /* System-wide Services: Summarize, Explain and Rewrite the selected text, and add it to a chat's message box. Summarize and Explain
    show the answer in a small panel (Copy, and an option to copy it as soon as it arrives); Rewrite hands the new text straight back
@@ -257,6 +258,27 @@ static TBAnswerPanel *openAnswer = nil;
     have = [input stringValue];
     [input setStringValue:[have length] ? [NSString stringWithFormat:@"%@\n\n%@\n\n", have, text] : [text stringByAppendingString:@"\n\n"]];
     [window makeFirstResponder:input];
+}
+
+/* A result of Spotlight search of chats: the file names the workspace and the chat, which is shown. */
+- (void)openSpotlightChat:(NSString *)path
+{
+    NSString *workspace = nil, *ident = nil;
+    NSMutableDictionary *chat;
+    unsigned at;
+    if (![TBSpotlight readChatFile:path workspace:&workspace chatId:&ident])
+        return;
+    [window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    if (![workspace isEqualToString:[self workspaceName]])
+        [self switchWorkspace:workspace];
+    chat = [self chatWithId:ident];
+    if (!chat || ![workspace isEqualToString:[self workspaceName]]) {
+        NSRunAlertPanel(@"Chat not found", @"That chat is no longer in the workspace \"%@\", or a reply is running, so the workspace was not changed.", @"OK", nil, nil, workspace);
+        return;
+    }
+    at = (unsigned)[chats indexOfObjectIdenticalTo:chat];
+    [self reloadTableSelect:(int)at show:YES];
 }
 
 @end

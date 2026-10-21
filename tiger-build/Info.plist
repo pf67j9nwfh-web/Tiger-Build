@@ -42,6 +42,41 @@
 				<string>*</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Tiger Build chat</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>tbchat</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>local.tigerbuild.chat</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>local.tigerbuild.chat</string>
+			<key>UTTypeDescription</key>
+			<string>Tiger Build chat</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>tbchat</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.4</string>
