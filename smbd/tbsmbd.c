@@ -509,7 +509,7 @@ static int create(struct smb2_server *srvr, struct smb2_context *smb2, struct sm
                 if (isdir) {
                         if (mkdir(path, 0777) != 0) { status = errnoStatus(errno); goto fail; }
                 } else {
-                        fd = open(path, O_RDWR | O_CREAT | O_EXCL, 0666);
+                        fd = open(path, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0666);
                         if (fd < 0) { status = errnoStatus(errno); goto fail; }
                 }
                 created = 1;
@@ -519,9 +519,9 @@ static int create(struct smb2_server *srvr, struct smb2_context *smb2, struct sm
                         flags = O_RDWR | O_TRUNC;
                         truncated = 1;
                 }
-                fd = open(path, flags);
+                fd = open(path, flags | O_NOFOLLOW);
                 if (fd < 0 && (flags & O_RDWR) && !(flags & O_TRUNC) && errno == EACCES) {
-                        fd = open(path, O_RDONLY);   /* a file the account can only read: the client sees it as read only */
+                        fd = open(path, O_RDONLY | O_NOFOLLOW);   /* a file the account can only read: the client sees it as read only */
                 }
                 if (fd < 0) { status = errnoStatus(errno); goto fail; }
         }
