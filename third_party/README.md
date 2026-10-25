@@ -10,6 +10,7 @@
 | `jxldec/` | jxldec (JPEG XL decoder, plain C) with changes for the old Macs | MIT (indirectly inferred, see its README) | JPEG XL pictures |
 | `openssh/` | OpenSSH 10.6p1 | BSD, ISC | the bundled ssh client and Tiger Build's SSH server |
 | `sshfs/` | sshfs 2.2 with MacFUSE's patch, glib 2.16.6 static | GPL-2.0, LGPL-2.1 | Mounting another computer's folder over the bundled ssh (needs MacFUSE) |
+| `libsmb2/` | libsmb2 (SMB 2 and 3 client and server library) with changes for a file server and for PowerPC | LGPL-2.1 or later (static, see its README) | The SMB file shares tools and Tiger Build's file server `tbsmbd` |
 | `libressl/` | LibreSSL 4.3.3 (libcrypto, static) | ISC, OpenSSL/SSLeay | RSA, ECDSA and the old algorithms in OpenSSH |
 
 Each folder has its own `README.md` (what it is for, where the source comes from, what was changed, how it is linked and rebuilt), its licence text,

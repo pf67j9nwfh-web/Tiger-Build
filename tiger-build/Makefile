@@ -69,6 +69,7 @@ endif
 	mkdir -p $(APP)/Contents/Frameworks && lipo -create $(DE265)/lib/libde265-32.dylib $(if $(findstring ppc64,$(ARCHS64)),$(DE265)/lib/libde265-64ppc.dylib) $(if $(findstring x86_64,$(ARCHS64)),$(DE265)/lib/libde265-64x86.dylib) -output $(APP)/Contents/Frameworks/libde265.dylib
 	cp $(DE265)/LICENSE $(APP)/Contents/Resources/libde265-LICENSE.txt
 	rm -rf $(APP)/Contents/Resources/ssh && mkdir -p $(APP)/Contents/Resources/ssh && cp $(SSH)/bin/ssh $(SSH)/bin/ssh-keygen $(SSH)/bin/ssh-keyscan $(APP)/Contents/Resources/ssh/ && cp $(SSH)/LICENSE $(APP)/Contents/Resources/openssh-LICENSE.txt
+	cp $(SMB2)/LICENSE $(APP)/Contents/Resources/libsmb2-LICENSE.txt && cp $(SMB2)/COPYING $(APP)/Contents/Resources/libsmb2-COPYING.txt
 	cp $(AOM)/LICENSE $(APP)/Contents/Resources/libaom-LICENSE.txt && cp $(AOM)/PATENTS $(APP)/Contents/Resources/libaom-PATENTS.txt
 	$(MAKE) mdimporter && rm -rf $(APP)/Contents/Resources/$(MDDIR) && cp -R $(MDDIR) $(APP)/Contents/Resources/$(MDDIR)
 	printf 'APPL????' > $(APP)/Contents/PkgInfo

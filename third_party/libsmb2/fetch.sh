@@ -9,3 +9,4 @@ git -C src checkout -q $COMMIT
 rm -rf src/.git
 patch -p1 -d src -s < patches/tbsmbd.patch   # status codes, raw query-info, inherited listening socket (see the patch)
 cp src/LICENCE-LGPL-2.1.txt LICENSE
+cp src/COPYING COPYING
