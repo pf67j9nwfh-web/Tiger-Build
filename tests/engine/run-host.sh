@@ -34,7 +34,7 @@ clang -O1 -w -std=gnu99 -I$SMB/include -I$SMB/include/smb2 -I$SMB/include/apple 
 COMMON="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m"
 COMMON_NO_MCP="TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m"
 LIBS="-framework Foundation -framework Security -framework AppKit -framework ApplicationServices -framework AudioToolbox -framework QTKit $TLS/build/libmbedtls-host.a -lz"
-build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../third_party/libsmb2/include -I../third_party/libsmb2/include/smb2 -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
+build() { name=$1; shift; clang -w -fobjc-exceptions $TLSFLAGS -I. -I../cli -I../third_party/libsmb2/include -I../third_party/libsmb2/include/smb2 -I../third_party/libwebp/include -I../third_party/libaom/include -o "$OUT/$name" "$@" $LIBS; }
 build speech ../tests/engine/speechtest.m TBSpeech.m $COMMON
 build outputs ../tests/engine/outputstest.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build extras ../tests/engine/extrastest.m TBSMB.m "$OUT"/smb/*.o TBBuiltin.m TBSSH.m TBLocalTools.m TBExtras.m TBSkills.m TBOutputs.m TBMedia.m TBWebTools.m TBIntegrations.m TBExtract.m TBOffice.m TBHEIC.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
@@ -46,6 +46,7 @@ build chatexport ../tests/engine/chatexporttest.m TBChatExport.m $COMMON
 build mcptransport ../tests/engine/mcptransporttest.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
 build smbtest ../tests/engine/smbtest.m TBSMB.m "$OUT"/smb/*.o $COMMON
 build store ../tests/engine/storetest.m $COMMON
+build tb ../cli/main.m ../cli/TBCLICore.m TBSMB.m "$OUT"/smb/*.o TBSession.m TBSessionGrok.m TBSessionSub.m TBModelProfiles.m TBModelUpdate.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBSkills.m TBBuiltin.m TBMedia.m TBWebTools.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m TBService.m TBSpeech.m TBChatExport.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"
