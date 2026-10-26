@@ -30,12 +30,29 @@ static NSString *runCommander(NSString *flag)
     return [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
 }
 
+/* Whether the item exists, asked by its attributes only: the password is not opened, so the Keychain does not ask and nothing waits on its question
+   (opening Preferences used to freeze while the question from launch was still on the screen). The password is opened only at launch and when a command needs it. */
 static BOOL passwordSaved(void)
 {
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
+    SecKeychainAttribute attributes[2];
+    SecKeychainAttributeList list;
+    SecKeychainSearchRef search = NULL;
     SecKeychainItemRef item = NULL;
-    BOOL found = SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr;
+    BOOL found = NO;
+    attributes[0].tag = kSecServiceItemAttr;
+    attributes[0].length = (UInt32)strlen(service);
+    attributes[0].data = (void *)service;
+    attributes[1].tag = kSecAccountItemAttr;
+    attributes[1].length = (UInt32)strlen(account);
+    attributes[1].data = (void *)account;
+    list.count = 2;
+    list.attr = attributes;
+    if (SecKeychainSearchCreateFromAttributes(NULL, kSecGenericPasswordItemClass, &list, &search) == noErr && search) {
+        found = SecKeychainSearchCopyNext(search, &item) == noErr;
+        CFRelease(search);
+    }
     if (item)
         CFRelease(item);
     return found;
