@@ -234,6 +234,7 @@ void TBSanitizeImportedChat(NSMutableDictionary *chat);
 
 @interface ChatController (Sudo)
 - (void)startSudoBroker;
+- (void)checkSudoAtLaunch;
 - (void)refreshSudoStatus;
 - (IBAction)toggleSudoMode:(id)sender;
 - (IBAction)setAdministratorPassword:(id)sender;

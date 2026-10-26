@@ -30,24 +30,14 @@ static NSString *runCommander(NSString *flag)
     return [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
 }
 
-/* Whether a password is saved is remembered in the preferences, so opening or closing Preferences never touches the Keychain item: a new build of the
-   application is a different program to the Keychain, which asks again before it lets that build near the item, and it asked just for looking. The
-   password itself is read only when a command really needs sudo (answerCommander). The first run after an update, with nothing remembered yet, looks once. */
-static NSString *kSavedFlag = @"TBSudoPasswordSaved";
-
 static BOOL passwordSaved(void)
 {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
     SecKeychainItemRef item = NULL;
-    BOOL found;
-    if ([defaults objectForKey:kSavedFlag])
-        return [defaults boolForKey:kSavedFlag];
-    found = SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr;
+    BOOL found = SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr;
     if (item)
         CFRelease(item);
-    [defaults setBool:found forKey:kSavedFlag];
     return found;
 }
 
@@ -60,7 +50,6 @@ static void forgetPassword(void)
         SecKeychainItemDelete(item);
         CFRelease(item);
     }
-    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kSavedFlag];
 }
 
 static BOOL savePassword(NSString *password)
@@ -68,11 +57,8 @@ static BOOL savePassword(NSString *password)
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
     const char *secret = [password UTF8String];
-    BOOL saved;
     forgetPassword();
-    saved = SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) == noErr;
-    [[NSUserDefaults standardUserDefaults] setBool:saved forKey:kSavedFlag];
-    return saved;
+    return SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) == noErr;
 }
 
 /* ---- handing the password to Commander ---- */
@@ -177,6 +163,31 @@ static BOOL passwordAccepted(NSString *password)
 }
 
 @implementation ChatController (Sudo)
+
+/* At launch, with administrator mode on, the saved password is read once and let go. The Keychain asks the first time a new build of this program goes near
+   the item; asking now means the question comes at the start and is answered once, not later in the middle of a command (or when Preferences opens). */
+- (void)sudoLaunchCheck:(id)unused
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSString *reply = runCommander(@"status");
+    (void)unused;
+    if (reply && [reply hasPrefix:@"on"]) {
+        const char *service = [kSudoService UTF8String];
+        const char *account = [NSUserName() UTF8String];
+        UInt32 length = 0;
+        void *data = NULL;
+        if (SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, &length, &data, NULL) == noErr && data) {
+            memset(data, 0, length);
+            SecKeychainItemFreeContent(NULL, data);
+        }
+    }
+    [pool release];
+}
+
+- (void)checkSudoAtLaunch
+{
+    [NSThread detachNewThreadSelector:@selector(sudoLaunchCheck:) toTarget:self withObject:nil];
+}
 
 - (BOOL)administratorPasswordSaved
 {

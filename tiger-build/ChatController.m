@@ -2007,6 +2007,7 @@ static BOOL launchFinished = NO;
     [window makeFirstResponder:input];
     [window display];
     [self startSudoBroker];
+    [self checkSudoAtLaunch];
     [TBPricing start];
     [TBIntegrations installExamples];
     [self refreshCommanderStatus];
