@@ -1,5 +1,6 @@
 #import "TBCLIApp.h"
 #import "TBEngine.h"
+#import "TBSession.h"
 #import "TBJSON.h"
 #include <unistd.h>
 #include <string.h>
@@ -8,6 +9,43 @@
 #include <dirent.h>
 
 static NSString *kVersion = @"2.8";
+
+/* ---- checkpoints: the files a turn's file tools are about to change, kept for /undo ---- */
+
+static NSMutableArray *gSnaps = nil;       /* this turn's: {path, existed, data} */
+
+static void snapshotHook(NSString *name, NSArray *paths)
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    unsigned i, j;
+    (void)name;
+    @synchronized([TBCLIApp class]) {
+        if (!gSnaps)
+            gSnaps = [[NSMutableArray alloc] init];
+        for (i = 0; i < [paths count]; i++) {
+            NSString *p = [[paths objectAtIndex:i] stringByExpandingTildeInPath];
+            BOOL isDir = NO, have = NO, existed;
+            NSData *data = nil;
+            if (![p isAbsolutePath])
+                p = [[fm currentDirectoryPath] stringByAppendingPathComponent:p];
+            for (j = 0; j < [gSnaps count]; j++)
+                if ([[[gSnaps objectAtIndex:j] objectForKey:@"path"] isEqualToString:p])
+                    have = YES;
+            if (have)
+                continue;
+            existed = [fm fileExistsAtPath:p isDirectory:&isDir];
+            if (isDir)
+                continue;
+            if (existed) {
+                NSDictionary *attrs = [fm fileAttributesAtPath:p traverseLink:NO];
+                if ([[attrs objectForKey:NSFileSize] unsignedLongLongValue] > 20 * 1024 * 1024)
+                    continue;   /* too big to keep */
+                data = [NSData dataWithContentsOfFile:p];
+            }
+            [gSnaps addObject:[NSDictionary dictionaryWithObjectsAndKeys:p, @"path", [NSNumber numberWithBool:existed], @"existed", data ? data : [NSData data], @"data", nil]];
+        }
+    }
+}
 
 /* ---- what a tool does, for deciding whether to ask ---- */
 
@@ -62,6 +100,8 @@ static NSString *toolKind(NSString *name)
     text = [self configString:@"mode" default:@"ask"];
     [core setPermissionMode:text];
     [core setEvents:self];
+    undoStack = [[NSMutableArray alloc] init];
+    TBToolStartHook = snapshotHook;
     return self;
 }
 
@@ -321,6 +361,28 @@ static NSString *toolKind(NSString *name)
     return [extra length] ? [text stringByAppendingString:extra] : text;
 }
 
+/* /undo: put back the files the last turn's tools changed (not what commands did) */
+- (NSString *)undoLast
+{
+    NSArray *snaps;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    int i, restored = 0;
+    if (![undoStack count])
+        return @"Nothing to undo: no file was changed by a tool in this session.";
+    snaps = [[[undoStack lastObject] retain] autorelease];
+    [undoStack removeLastObject];
+    for (i = (int)[snaps count] - 1; i >= 0; i--) {
+        NSDictionary *s = [snaps objectAtIndex:i];
+        NSString *p = [s objectForKey:@"path"];
+        if ([[s objectForKey:@"existed"] boolValue]) {
+            if ([[s objectForKey:@"data"] writeToFile:p atomically:YES])
+                restored++;
+        } else if ([fm fileExistsAtPath:p] && [fm removeFileAtPath:p handler:nil])
+            restored++;
+    }
+    return [NSString stringWithFormat:@"Put back %d file%@ from the last reply.", restored, restored == 1 ? @"" : @"s"];
+}
+
 /* ---- Tab completion ---- */
 
 - (NSArray *)editor:(TBLineEditor *)e completionsFor:(NSString *)line cursor:(int)cursor start:(int *)start
@@ -483,6 +545,14 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
 {
     NSString *decision = [self decisionFor:event];
     NSString *name = [event objectForKey:@"name"];
+    if (![decision isEqualToString:@"deny"]) {
+        NSString *out = nil;
+        if ([self runHook:@"pre_tool" env:[NSDictionary dictionaryWithObjectsAndKeys:name, @"TB_TOOL", [event objectForKey:@"detail"] ? [event objectForKey:@"detail"] : @"", @"TB_DETAIL", nil] output:&out] != 0) {
+            [self printStyled:[NSString stringWithFormat:@"  \u2717 a hook denied %@%@", name, [out length] ? [@": " stringByAppendingString:TBTrim(out)] : @""] style:@"red"];
+            [core answer:@"deny"];
+            return;
+        }
+    }
     if (decision) {
         if ([decision isEqualToString:@"deny"])
             [self printStyled:[NSString stringWithFormat:@"  ✗ %@ is not allowed %@", name, [[core permissionMode] isEqualToString:@"plan"] ? @"in plan mode" : @"by your rules"] style:@"red"];
@@ -583,6 +653,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         return;
     }
     turnTools++;
+    [self runHook:@"post_tool" env:[NSDictionary dictionaryWithObjectsAndKeys:name, @"TB_TOOL", [event objectForKey:@"detail"] ? [event objectForKey:@"detail"] : @"", @"TB_DETAIL", [[event objectForKey:@"failed"] boolValue] ? @"1" : @"0", @"TB_FAILED", nil] output:NULL];
     {
         BOOL failed = [[event objectForKey:@"failed"] boolValue];
         NSString *output = [event objectForKey:@"output"];
@@ -695,7 +766,11 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
 
 - (void)runTurnWithText:(NSString *)text
 {
-    NSString *problem;
+    NSString *problem, *hookOut = nil;
+    if ([self runHook:@"prompt" env:[NSDictionary dictionaryWithObject:text forKey:@"TB_PROMPT"] output:&hookOut] != 0) {
+        [self printStyled:[NSString stringWithFormat:@"  A hook stopped the message%@", [hookOut length] ? [@": " stringByAppendingString:TBTrim(hookOut)] : @""] style:@"red"];
+        return;
+    }
     NSMutableString *full = [NSMutableString string];
     unsigned i;
     for (i = 0; i < [shellNotes count]; i++)
@@ -739,6 +814,15 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     }
     [self endText];
     [self clearLive];
+    @synchronized([TBCLIApp class]) {
+        if ([gSnaps count]) {
+            [undoStack addObject:gSnaps];
+            [gSnaps release];
+            gSnaps = nil;
+            if ([undoStack count] > 20)
+                [undoStack removeObjectAtIndex:0];
+        }
+    }
     {
         NSMutableDictionary *chat = [core currentChat];
         NSString *reply = [core lastReplyText:chat];
@@ -759,6 +843,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         if (turnTools)
             [line appendFormat:@" · %d tool call%@", turnTools, turnTools == 1 ? @"" : @"s"];
         [self printStyled:line style:@"gray"];
+        [self runHook:@"stop" env:[NSDictionary dictionary] output:NULL];
         if (bell)
             [term write:@"\007"];
         (void)reply;

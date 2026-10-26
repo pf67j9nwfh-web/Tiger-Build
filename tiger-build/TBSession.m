@@ -140,6 +140,8 @@ static const double kCompactAt = 0.80;
 }
 @end
 
+void (*TBToolStartHook)(NSString *name, NSArray *paths) = NULL;
+
 @implementation TBSession
 
 + (NSString *)cleanText:(NSString *)text
@@ -619,6 +621,20 @@ static NSDictionary *callArguments(NSDictionary *call)
         outText = [outText substringToIndex:100000];
     event = [NSMutableDictionary dictionaryWithObjectsAndKeys:callId, @"id", name, @"name", phase, @"phase", shown, @"detail", outText, @"output",
         [NSNumber numberWithBool:failed], @"failed", [NSNumber numberWithDouble:elapsed], @"elapsed", nil];
+    if ([phase isEqualToString:@"start"] && ([name isEqualToString:@"write_file"] || [name isEqualToString:@"edit_block"] || [name isEqualToString:@"move_file"])) {
+        NSMutableArray *paths = [NSMutableArray array];
+        NSArray *keys = [NSArray arrayWithObjects:@"path", @"file_path", @"source", @"destination", nil];
+        for (i = 0; i < [keys count]; i++) {
+            NSString *p = TBString(args, [keys objectAtIndex:i]);
+            if ([p length])
+                [paths addObject:p];
+        }
+        if ([paths count]) {
+            [event setObject:paths forKey:@"paths"];
+            if (TBToolStartHook)
+                TBToolStartHook(name, paths);   /* on the worker, before the tool runs: the tb command keeps the files for /undo */
+        }
+    }
     stats = [phase isEqualToString:@"result"] && !failed ? [TBSession changeStatsForTool:name output:outText] : nil;
     if (stats)
         [event addEntriesFromDictionary:stats];

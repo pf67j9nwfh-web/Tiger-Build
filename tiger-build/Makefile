@@ -75,7 +75,7 @@ endif
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
 # The terminal program: the engine without the window, as one universal command line tool.
-CLISRC := ../cli/main.m ../cli/TBCLICore.m ../cli/TBTerm.m ../cli/TBMarkdown.m ../cli/TBCLIApp.m ../cli/TBCLICommands.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBOAuth.m TBLocalTools.m TBSkills.m TBModelUpdate.m TBModelProfiles.m TBChatExport.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBSessionSub.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBWebTools.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSMB.m
+CLISRC := ../cli/main.m ../cli/TBCLICore.m ../cli/TBTerm.m ../cli/TBMarkdown.m ../cli/TBCLIApp.m ../cli/TBCLICommands.m ../cli/TBCLIExtras.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBOAuth.m TBLocalTools.m TBSkills.m TBModelUpdate.m TBModelProfiles.m TBChatExport.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBSessionSub.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBWebTools.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSMB.m
 tb: $(CLISRC) TBNet.c TBNet.h $(HEADERS) ../cli/TBCLICore.h ../cli/TBTerm.h ../cli/TBMarkdown.h ../cli/TBCLIApp.h
 	rm -rf build && mkdir build
 	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c

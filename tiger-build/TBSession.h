@@ -69,3 +69,5 @@ NSString *TBCommanderProgram(void);
 /* A plain reply with no tools: titles, summaries, a consulted model. */
 - (NSString *)completeProvider:(NSString *)provider model:(NSString *)model system:(NSString *)system messages:(NSArray *)messages;
 @end
+
+extern void (*TBToolStartHook)(NSString *name, NSArray *paths);   /* set by the tb command; called on the worker thread before a file tool runs */

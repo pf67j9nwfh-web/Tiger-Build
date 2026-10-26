@@ -6,6 +6,7 @@
 #import "TBRun.h"
 
 @interface TBCLICore (Private)
+- (BOOL)startCompaction:(BOOL)force;
 - (void)frame:(char)kind payload:(NSData *)payload;
 - (void)mediaLine:(NSString *)line;
 - (void)takeLease:(NSMutableDictionary *)chat;
@@ -689,8 +690,155 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     busy = YES;
     stopping = NO;
     turnStart = CFAbsoluteTimeGetCurrent();
+    if ([self startCompaction:NO])
+        return nil;
     [self beginStream];
     return nil;
+}
+
+/* ---- long chats: the older messages become a summary, as the window does at 80 percent of the model's context ---- */
+
+- (int)contextLimitForChat:(NSMutableDictionary *)chat
+{
+    int limit = [[chat objectForKey:@"contextLimit"] intValue];
+    NSDictionary *r;
+    NSString *provider, *model;
+    if (limit > 0)
+        return limit;
+    provider = [self providerForChat:chat];
+    model = [self modelForChat:chat];
+    if (![model length])
+        return 0;
+    r = [TBService handle:@"GET" path:[NSString stringWithFormat:@"/v1/context?provider=%@&model=%@", [provider stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding], [model stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]] body:nil file:nil name:nil];
+    limit = [[[[NSString alloc] initWithData:[r objectForKey:@"body"] encoding:NSUTF8StringEncoding] autorelease] intValue];
+    if (limit > 0)
+        [chat setObject:[NSNumber numberWithInt:limit] forKey:@"contextLimit"];
+    return limit;
+}
+
+- (NSString *)compact
+{
+    if (busy || !current)
+        return @"A reply is still being made.";
+    if (![self providerUsable:[self providerForChat:current]])
+        return @"This chat's service cannot be used now. /model picks another.";
+    busy = YES;
+    stopping = NO;
+    compactOnly = YES;
+    turnStart = CFAbsoluteTimeGetCurrent();
+    if (![self startCompaction:YES]) {
+        compactOnly = NO;
+        busy = NO;
+        return @"This chat is too short to compact.";
+    }
+    return nil;
+}
+
+- (BOOL)startCompaction:(BOOL)force
+{
+    NSMutableArray *messages = [current objectForKey:@"messages"], *spoken = [NSMutableArray array], *older = [NSMutableArray array];
+    NSMutableString *earlier = [NSMutableString string], *body;
+    NSDictionary *info;
+    unsigned i;
+    if (!force) {
+        int limit = [self contextLimitForChat:current], used = [self contextTokensForChat:current];
+        if (limit < 1000 || (long)used * 100 < (long)limit * 80)
+            return NO;
+    }
+    for (i = 0; i < [messages count]; i++) {
+        NSDictionary *m = [messages objectAtIndex:i];
+        if ([[m objectForKey:@"status"] boolValue] || [[m objectForKey:@"text"] length] == 0)
+            continue;
+        [spoken addObject:m];
+    }
+    if ([spoken count] < 6)
+        return NO;
+    for (i = 0; i < [spoken count] - 4; i++)
+        [older addObject:[spoken objectAtIndex:i]];
+    for (i = 0; i < [older count]; i++) {
+        NSDictionary *m = [older objectAtIndex:i];
+        NSString *piece = TBMessageContent(m);
+        if ([piece length] > 4000)
+            piece = [piece substringToIndex:4000];
+        [earlier appendFormat:@"%@: %@\n\n", [m objectForKey:@"role"], piece];
+        if ([earlier length] > 24000)
+            break;
+    }
+    body = [NSMutableString stringWithString:@"{\"messages\":[{\"role\":\"user\",\"content\":\""];
+    [body appendString:TBJSONEscape(earlier)];
+    [body appendFormat:@"\"}],\"tools\":false,\"provider\":\"%@\",\"model\":\"%@\"}", TBJSONEscape([self providerForChat:current]), TBJSONEscape([self modelForChat:current])];
+    info = [NSDictionary dictionaryWithObjectsAndKeys:body, @"body", older, @"older", current, @"chat", nil];
+    compacting = YES;
+    [events core:self status:@"Compacting the earlier messages..." error:NO];
+    [NSThread detachNewThreadSelector:@selector(compactWorker:) toTarget:self withObject:info];
+    return YES;
+}
+
+- (void)compactWorker:(NSDictionary *)info
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSDictionary *r = [TBService handle:@"POST" path:@"/v1/summarize" body:[[info objectForKey:@"body"] dataUsingEncoding:NSUTF8StringEncoding] file:nil name:nil];
+    NSString *text = [[[NSString alloc] initWithData:[r objectForKey:@"body"] encoding:NSUTF8StringEncoding] autorelease];
+    NSMutableDictionary *done = [NSMutableDictionary dictionaryWithDictionary:info];
+    [done setObject:[NSNumber numberWithBool:[[r objectForKey:@"status"] intValue] == 200] forKey:@"ok"];
+    if (text)
+        [done setObject:text forKey:@"summary"];
+    [self performSelectorOnMainThread:@selector(compactDone:) withObject:done waitUntilDone:NO];
+    [pool release];
+}
+
+- (void)compactDone:(NSDictionary *)info
+{
+    NSMutableDictionary *chat = [info objectForKey:@"chat"];
+    NSArray *older = [info objectForKey:@"older"];
+    NSMutableArray *messages = [chat objectForKey:@"messages"];
+    NSString *text = [[info objectForKey:@"summary"] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    compacting = NO;
+    if (![[info objectForKey:@"ok"] boolValue] || ![text length])
+        [events core:self status:@"Could not compact this chat, so it is sent whole." error:YES];
+    else {
+        NSMutableDictionary *summary = [NSMutableDictionary dictionaryWithObjectsAndKeys:@"assistant", @"role", [NSString stringWithFormat:@"Earlier in this chat:\n%@", text], @"text",
+            [NSNumber numberWithBool:NO], @"status", nil];
+        NSMutableArray *rebuilt = [NSMutableArray array];
+        BOOL inserted = NO;
+        unsigned i;
+        for (i = 0; i < [messages count]; i++) {
+            NSDictionary *m = [messages objectAtIndex:i];
+            if ([older indexOfObjectIdenticalTo:m] != NSNotFound) {
+                if (!inserted) {
+                    [rebuilt addObject:summary];
+                    inserted = YES;
+                }
+                if ([m objectForKey:@"attachment"]) {
+                    NSDictionary *file = [m objectForKey:@"attachment"];
+                    if ([[file objectForKey:@"tokens"] intValue] <= 3000)
+                        [rebuilt addObject:m];
+                    else {
+                        NSMutableDictionary *stub = [NSMutableDictionary dictionaryWithDictionary:file], *note = [NSMutableDictionary dictionaryWithDictionary:m];
+                        [stub setObject:[NSNumber numberWithBool:YES] forKey:@"stub"];
+                        [stub setObject:[NSNumber numberWithInt:40] forKey:@"tokens"];
+                        [note setObject:stub forKey:@"attachment"];
+                        [note removeObjectForKey:@"image"];
+                        [note setObject:[NSString stringWithFormat:@"Attached earlier: %@ (summarized to save space)", [file objectForKey:@"name"]] forKey:@"text"];
+                        [rebuilt addObject:note];
+                    }
+                }
+                continue;
+            }
+            [rebuilt addObject:m];
+        }
+        [messages setArray:rebuilt];
+        [chat removeObjectForKey:@"ctxTokens"];
+        [chat removeObjectForKey:@"ctxAt"];
+        [self save];
+        [events core:self status:@"Earlier messages summarized." error:NO];
+    }
+    if (compactOnly || stopping) {
+        compactOnly = NO;
+        [self finishStream];
+        return;
+    }
+    [self beginStream];
 }
 
 - (NSString *)resend

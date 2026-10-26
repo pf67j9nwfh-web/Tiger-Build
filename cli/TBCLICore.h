@@ -30,7 +30,7 @@
     TBLocalTurn *turn;
     NSString *runId;
     NSMutableData *frameBuffer;
-    BOOL busy, stopping;
+    BOOL busy, stopping, compacting, compactOnly;
     double turnStart;
     NSMutableDictionary *question;     /* the approval being asked, if any */
     NSMutableDictionary *overrides;    /* command line: servers on/off for this run */
@@ -86,6 +86,8 @@
 - (NSString *)sendText:(NSString *)text;               /* nil when started, else why not */
 - (NSString *)resend;                                  /* ask again for the last user message */
 - (void)stop;
+- (NSString *)compact;                                 /* summarize the older messages now; nil when started, else why not */
+- (int)contextLimitForChat:(NSMutableDictionary *)chat;
 - (void)answer:(NSString *)decision;                   /* allow, always or deny, for the question being asked */
 - (BOOL)guide:(NSString *)text;                        /* a note to the model while it works */
 - (double)turnSeconds;

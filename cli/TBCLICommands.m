@@ -7,7 +7,7 @@
 {
     return [NSArray arrayWithObjects:@"/help", @"/exit", @"/quit", @"/new", @"/clear", @"/chats", @"/resume", @"/model", @"/models", @"/tools", @"/mode", @"/cost", @"/context",
         @"/rename", @"/delete", @"/fork", @"/export", @"/copy", @"/retry", @"/workspace", @"/status", @"/verbose", @"/thinking", @"/instructions", @"/allow", @"/deny",
-        @"/doctor", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
+        @"/doctor", @"/hooks", @"/mcp", @"/undo", @"/compact", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
 }
 
 - (void)table:(NSArray *)rows
@@ -26,10 +26,11 @@
         @"  /model [spec]        show or switch model       /models [provider]  list providers and models",
         @"  /tools [name on|off] tools; /tools NAME approve on|off",
         @"  /mode ask|edits|plan|auto   how much to ask     /allow RULE, /deny RULE   standing rules, e.g. start_process(git *)",
-        @"  /cost  /context      spend and context size     /status             where things stand",
-        @"  /retry               ask again                  /copy               last reply to the clipboard",
+        @"  /cost  /context  /compact   spend, context size, summarize old messages    /status             where things stand",
+        @"  /undo                put back files the last reply changed     /retry   ask again                  /copy               last reply to the clipboard",
         @"  /export [file]       chat as Markdown           /history            the whole chat again",
         @"  /diff  /commit  /review   git helpers (the model does the work)",
+        @"  /hooks               shell commands run around prompts and tools     /mcp   MCP servers",
         @"  /workspace [name]    list or switch workspace   /instructions       project files in use",
         @"  /verbose  /thinking  /bell  toggles             /doctor             check the set-up",
         @"  /exit                leave",
@@ -306,6 +307,14 @@
             [self printLine:[NSString stringWithFormat:@"  %@ %@", [core providerUsable:p] ? [term styled:@"ok " with:@"green"] : [term styled:@"-- " with:@"gray"], [[ModelCatalog shared] titleForProvider:p]]];
         }
         [self printLine:[NSString stringWithFormat:@"  commander: %@", [core commanderProblem] ? [core commanderProblem] : @"ok"]];
+    } else if ([cmd isEqualToString:@"/hooks"]) [self hooksCommand:arg];
+    else if ([cmd isEqualToString:@"/mcp"]) [self mcpCommand:arg];
+    else if ([cmd isEqualToString:@"/undo"])
+        [self printStyled:[NSString stringWithFormat:@"  %@", [self undoLast]] style:@"gray"];
+    else if ([cmd isEqualToString:@"/compact"]) {
+        problem = [core compact];
+        if (problem) [self printStyled:[NSString stringWithFormat:@"  %@", problem] style:@"gray"];
+        else [self watchTurn];
     } else if ([cmd isEqualToString:@"/init"])
         [self runTurnWithText:@"Look around this folder and write a TIGERBUILD.md here: what the project is, how to build and test it, and the conventions to follow. Keep it short."];
     else if (![self runCustomCommand:cmd arguments:arg]) {
