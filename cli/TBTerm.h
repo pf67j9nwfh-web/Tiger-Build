@@ -30,6 +30,7 @@ typedef enum { TBColorNone, TBColor16, TBColor256, TBColorTrue } TBColorLevel;
 - (void)setColorLevel:(TBColorLevel)level;
 - (BOOL)unicode;                           /* the terminal takes UTF-8 (else drawing characters are plain ones) */
 - (void)probeUTF8;
+- (int)readByte:(int)milliseconds;
 - (int)columns;
 - (int)rows;
 - (void)enterRaw;
