@@ -25,10 +25,12 @@ BOOL TBTruthy(id value);   /* non-empty text or collection, true number, any oth
    anthropic_workspace_id, local_url. TB_<NAME> in the environment overrides, for tests. */
 @interface TBSettings : NSObject
 + (NSString *)valueForName:(NSString *)name;
++ (NSString *)keyFilePath;
 + (BOOL)setValue:(NSString *)value forName:(NSString *)name;
 + (BOOL)hasValueForName:(NSString *)name;
 + (void)clearName:(NSString *)name;
 + (NSArray *)secretNames;
++ (NSString *)keychainValueForName:(NSString *)name;
 + (NSString *)settingForProvider:(NSString *)provider;
 + (NSString *)keyForProvider:(NSString *)provider;
 + (BOOL)hasKeyForProvider:(NSString *)provider;

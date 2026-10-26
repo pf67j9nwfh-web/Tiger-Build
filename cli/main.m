@@ -3,6 +3,9 @@
 #import "TBCLICore.h"
 #import "TBCLIApp.h"
 #import "TBEngine.h"
+#include <termios.h>
+#include <sys/stat.h>
+#include <Security/Security.h>
 #include <unistd.h>
 #include <stdio.h>
 
@@ -17,7 +20,9 @@ static void usage(void)
         "      --workspace NAME  the workspace whose chats to use\n"
         "      --output-format text|json|stream-json   (with -p)\n"
         "  -y, --yes             allow every tool without asking\n"
-        "  -h, --help\n");
+        "  -h, --help\n"
+        "  tb login NAME | tb login --import | tb logout NAME | tb keys   API keys kept for use over ssh\n"
+        "  tb [options] \"prompt\"   starts the interactive session with that first message\n");
 }
 
 /* -p: events go to the output */
@@ -60,6 +65,65 @@ static void usage(void)
 - (void)coreTurnEnded:(TBCLICore *)core { CFRunLoopStop(CFRunLoopGetCurrent()); }
 @end
 
+/* tb login [name] | tb login --import | tb logout name | tb keys: the key file that stands in for the Keychain over ssh */
+static int keyCommand(NSArray *args)
+{
+    NSString *cmd = [args objectAtIndex:0], *path = [TBSettings keyFilePath];
+    NSMutableDictionary *keys = [NSMutableDictionary dictionaryWithContentsOfFile:path];
+    NSArray *names = [TBSettings secretNames];
+    NSString *name = [args count] > 1 ? [args objectAtIndex:1] : nil;
+    unsigned i;
+    if (!keys)
+        keys = [NSMutableDictionary dictionary];
+    if ([cmd isEqualToString:@"keys"]) {
+        for (i = 0; i < [names count]; i++) {
+            NSString *n = [names objectAtIndex:i];
+            if ([n hasSuffix:@"_api_key"])
+                printf("%-18s %s\n", [n UTF8String], getenv([[@"TB_" stringByAppendingString:[n uppercaseString]] UTF8String]) ? "environment" : [keys objectForKey:n] ? "key file" : [[TBSettings keychainValueForName:n] length] ? "keychain" : "-");
+        }
+        return 0;
+    }
+    if ([cmd isEqualToString:@"logout"]) {
+        if (!name) { fprintf(stderr, "usage: tb logout NAME\n"); return 2; }
+        [keys removeObjectForKey:name];
+    } else if ([name isEqualToString:@"--import"]) {
+        /* from the Keychain (run this at the Mac itself, where it can ask) */
+        for (i = 0; i < [names count]; i++) {
+            NSString *v = [TBSettings keychainValueForName:[names objectAtIndex:i]];
+            if ([v length] && [[names objectAtIndex:i] hasSuffix:@"_api_key"])
+                [keys setObject:v forKey:[names objectAtIndex:i]];
+        }
+    } else {
+        char buf[1024];
+        struct termios t, old;
+        if (!name) {
+            fprintf(stderr, "usage: tb login NAME   (one of:");
+            for (i = 0; i < [names count]; i++)
+                if ([[names objectAtIndex:i] hasSuffix:@"_api_key"])
+                    fprintf(stderr, " %s", [[names objectAtIndex:i] UTF8String]);
+            fprintf(stderr, ")\n       tb login --import   copy the keys from the Keychain\n");
+            return 2;
+        }
+        if (![names containsObject:name]) { fprintf(stderr, "tb: unknown key %s (tb login lists them)\n", [name UTF8String]); return 2; }
+        fprintf(stderr, "%s: ", [name UTF8String]);
+        tcgetattr(0, &old);
+        t = old;
+        t.c_lflag &= ~ECHO;
+        tcsetattr(0, TCSANOW, &t);
+        buf[0] = 0;
+        fgets(buf, sizeof buf, stdin);
+        tcsetattr(0, TCSANOW, &old);
+        fprintf(stderr, "\n");
+        if (!strlen(buf) || buf[0] == '\n') return 1;
+        [keys setObject:TBTrim([NSString stringWithUTF8String:buf]) forKey:name];
+    }
+    TBMakePath([path stringByDeletingLastPathComponent]);
+    if (![keys writeToFile:path atomically:YES]) { fprintf(stderr, "tb: cannot write %s\n", [path UTF8String]); return 1; }
+    chmod([path fileSystemRepresentation], 0600);
+    fprintf(stderr, "saved in %s\n", [path UTF8String]);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
@@ -71,6 +135,14 @@ int main(int argc, char **argv)
     NSMutableDictionary *chat;
     NSString *prompt, *problem = nil;
     int i;
+    if (argc > 1 && (!strcmp(argv[1], "login") || !strcmp(argv[1], "logout") || !strcmp(argv[1], "keys"))) {
+        NSMutableArray *rest = [NSMutableArray array];
+        for (i = 1; i < argc; i++)
+            [rest addObject:[NSString stringWithUTF8String:argv[i]]];
+        return keyCommand(rest);
+    }
+    if (getenv("SSH_CONNECTION"))
+        SecKeychainSetUserInteractionAllowed(FALSE);   /* nobody at the screen to click Allow */
     for (i = 1; i < argc; i++) {
         NSString *a = [NSString stringWithUTF8String:argv[i]];
         if ([a hasPrefix:@"-TB"] && i + 1 < argc) i++;   /* a preference given on the command line (NSArgumentDomain), for tests */
@@ -119,6 +191,7 @@ int main(int argc, char **argv)
         TBCLIApp *app;
         if (![[TBTerm term] isInteractive]) { fprintf(stderr, "tb: needs a terminal; use -p for scripts\n"); return 1; }
         app = [[TBCLIApp alloc] initWithCore:core];
+        app->initial = [prompt length] ? prompt : nil;
         i = [app runInteractive];
         [pool release];
         return i;

@@ -863,6 +863,10 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     [self banner];
     if ([[[[core currentChat] objectForKey:@"messages"] lastObject] objectForKey:@"role"] && [[[core currentChat] objectForKey:@"messages"] count] > 1)
         [self showChat:[core currentChat] full:NO];
+    if (initial) {
+        [self runTurnWithText:initial];
+        initial = nil;
+    }
     while (!quit) {
         [editor setPrompt:[self promptText] continuation:@"  "];
         [editor setHint:[self statusLine]];

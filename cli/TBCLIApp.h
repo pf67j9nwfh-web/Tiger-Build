@@ -33,6 +33,7 @@
     NSArray *allowRules, *denyRules;
     double lastKeepaliveCheck;
     NSString *firstLinePrefix;
+    NSString *initial;                 /* a first message given on the command line */
     BOOL firstLine;
 }
 - (id)initWithCore:(TBCLICore *)c;

@@ -173,13 +173,25 @@ static NSString *kAccount = @"keys";
     return nil;
 }
 
+/* Keys for the tb command when the Keychain cannot be asked (over ssh): a plist only its owner can read, written by `tb login`. */
++ (NSString *)keyFilePath
+{
+    const char *over = getenv("TB_KEYFILE");
+    return over ? [NSString stringWithUTF8String:over] : [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/cli/keys.plist"];
+}
+
 + (NSString *)valueForName:(NSString *)name
 {
     NSString *value = [self environmentValue:name];
     if (value)
         return TBTrim(value);
-    if ([self isSecret:name])
+    if ([self isSecret:name]) {
         value = [self keychainValueForName:name];
+        if (![value length]) {
+            id v = [[NSDictionary dictionaryWithContentsOfFile:[self keyFilePath]] objectForKey:name];
+            value = [v isKindOfClass:[NSString class]] ? v : nil;
+        }
+    }
     else
         value = [[NSUserDefaults standardUserDefaults] stringForKey:[@"TBSetting." stringByAppendingString:name]];
     return value ? TBTrim(value) : @"";
