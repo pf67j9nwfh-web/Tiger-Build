@@ -28,6 +28,10 @@ COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/third_party" -cf - 
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/commander" --exclude 'ppc-commander*' --exclude build -cf - . \
   | "$SSH" 'cd "$HOME/TigerBuild-build/commander" && tar -xf -'
 
+# the terminal program's source (the Makefile finds it in ../cli)
+"$SSH" 'rm -rf "$HOME/TigerBuild-build/cli" && mkdir -p "$HOME/TigerBuild-build/cli"'
+COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/cli" -cf - . | "$SSH" 'cd "$HOME/TigerBuild-build/cli" && tar -xf -'
+
 # the Spotlight importer's source (the Makefile finds it in ../spotlight)
 "$SSH" 'rm -rf "$HOME/TigerBuild-build/spotlight" && mkdir -p "$HOME/TigerBuild-build/spotlight"'
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/spotlight" -cf - . | "$SSH" 'cd "$HOME/TigerBuild-build/spotlight" && tar -xf -'
