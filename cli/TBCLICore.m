@@ -5,6 +5,7 @@
 #import "TBLocal.h"
 #import "TBRun.h"
 #import "TBBackground.h"
+#import "TBSession.h"
 
 @interface TBCLICore (Private)
 - (BOOL)startCompaction:(BOOL)force;
@@ -159,6 +160,7 @@ static NSString *HelloText = @"Hello. Ask me anything.";
 
 - (void)refreshCatalog
 {
+    [TBSession forgetCommanderTools];      /* a Commander that was offline a moment ago is tried again */
     NSDictionary *models = [TBService handle:@"GET" path:@"/v1/models" body:nil file:nil name:nil];
     NSDictionary *tools = [TBService handle:@"GET" path:@"/v1/tools" body:nil file:nil name:nil];
     NSDictionary *local = [TBService handle:@"GET" path:@"/v1/local-models" body:nil file:nil name:nil];

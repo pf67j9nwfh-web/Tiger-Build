@@ -54,6 +54,31 @@ static int textWidth(NSString *text)
     return w;
 }
 
+/* The drawing characters the program uses, as plain ones, for a terminal that is not UTF-8 (Mac OS Roman has the dot, dash, bullet and quotes; the rest it has not). */
+static NSString *plainGlyphs(NSString *text)
+{
+    static NSString *from[] = {@"\u276f", @"\u25cf", @"\u23bf", @"\u256d", @"\u256e", @"\u2570", @"\u256f", @"\u2500", @"\u2502", @"\u2191", @"\u2193", @"\u2717", @"\u273b", @"\u203a", @"\u2212", @"\u2265", @"\u2264"};
+    static NSString *to[] = {@">", @"*", @"`", @",", @".", @"`", @"'", @"-", @"|", @"^", @"v", @"x", @"*", @">", @"-", @">=", @"<="};
+    NSMutableString *s;
+    unsigned i, n = [text length];
+    BOOL any = NO;
+    for (i = 0; i < n && !any; i++)
+        if ([text characterAtIndex:i] > 127)
+            any = YES;
+    if (!any)
+        return text;
+    s = [NSMutableString stringWithString:text];
+    for (i = 0; i < sizeof from / sizeof from[0]; i++)
+        [s replaceOccurrencesOfString:from[i] withString:to[i] options:0 range:NSMakeRange(0, [s length])];
+    for (i = 0; i < [s length]; i++) {
+        unichar c = [s characterAtIndex:i];
+        if (c >= 0x2800 && c <= 0x28ff) {        /* the braille spinner */
+            [s replaceCharactersInRange:NSMakeRange(i, 1) withString:@"*"];
+        }
+    }
+    return s;
+}
+
 @implementation TBTerm
 
 + (TBTerm *)term
@@ -76,12 +101,20 @@ static int textWidth(NSString *text)
         level = TBColorTrue;
     else if (termname && strstr(termname, "256color"))
         level = TBColor256;
-    /* text is UTF-8 unless the locale says otherwise or TB_ASCII is set (Terminal on Tiger is UTF-8 by default) */
+    /* Text goes out as UTF-8 when the terminal takes it. The locale says so when it names UTF-8; when it names nothing (Terminal on the old systems sets no
+       LANG unless asked to) the terminal is asked in -enterRaw, because one that is set to Mac OS Roman shows UTF-8 as garbage. TB_ASCII and TB_UTF8 decide it by hand. */
+    legacy = NSMacOSRomanStringEncoding;
     unicode = !getenv("TB_ASCII");
-    if (unicode) {
-        const char *loc = lc ? lc : (ctype ? ctype : lang);
-        if (loc && *loc && strcmp(loc, "C") && strcmp(loc, "POSIX") && !strcasestr(loc, "utf"))
+    if (getenv("TB_ASCII"))
+        asciiOnly = YES;
+    else if (!getenv("TB_UTF8")) {
+        const char *loc = lc && *lc ? lc : (ctype && *ctype ? ctype : lang);
+        if (loc && *loc && strcmp(loc, "C") && strcmp(loc, "POSIX") && !strcasestr(loc, "utf")) {
             unicode = NO;
+            if (strcasestr(loc, "8859-1") || strcasestr(loc, "latin1"))
+                legacy = NSISOLatin1StringEncoding;
+        } else if (!(loc && strcasestr(loc, "utf")))
+            probeEncoding = YES;
     }
     signal(SIGWINCH, onWinch);
     return self;
@@ -122,8 +155,48 @@ static int textWidth(NSString *text)
     t.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &t);
     raw = YES;
+    if (probeEncoding) {
+        probeEncoding = NO;
+        [self probeUTF8];
+    }
     [self write:@"\033[?2004h"];   /* bracketed paste */
     [self flush];
+}
+
+/* Prints a two-byte UTF-8 character and asks where the cursor is: one column on, and the terminal reads UTF-8; two, and it does not. */
+- (void)probeUTF8
+{
+    int col = 0, c, tries = 0;
+    char reply[32];
+    int n = 0;
+    BOOL got = NO;
+    {
+        static const char ask[] = "\r\303\251\033[6n";      /* the two bytes of e-acute in UTF-8, then "where is the cursor" */
+        [out appendBytes:ask length:sizeof ask - 1];
+    }
+    [self flush];
+    while (tries++ < 40) {            /* up to about 0.8 s */
+        c = [self readByte:20];
+        if (c < 0)
+            continue;
+        if (c == 033) { n = 0; continue; }
+        if (n < (int)sizeof reply - 1)
+            reply[n++] = (char)c;
+        if (c == 'R') {
+            reply[n] = 0;
+            if (sscanf(reply, "[%*d;%dR", &col) == 1)
+                got = YES;
+            break;
+        }
+    }
+    [self write:@"\r\033[K"];
+    [self flush];
+    if (got && col == 2)
+        unicode = YES;                  /* UTF-8 */
+    else {
+        unicode = NO;
+        asciiOnly = !got;               /* no answer at all: plain ASCII is the safe choice */
+    }
 }
 
 - (void)leaveRaw
@@ -138,9 +211,13 @@ static int textWidth(NSString *text)
 
 - (void)write:(NSString *)text
 {
-    NSData *d = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:YES];
-    if (!unicode) {
-        d = [text dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:YES];
+    NSData *d;
+    if (unicode)
+        d = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:YES];
+    else {
+        d = [plainGlyphs(text) dataUsingEncoding:asciiOnly ? NSASCIIStringEncoding : legacy allowLossyConversion:YES];
+        if (!d)
+            d = [NSData data];
     }
     [out appendData:d];
     if ([out length] > 16384)
@@ -273,6 +350,13 @@ static int textWidth(NSString *text)
     if (b < 32) {
         k.type = TBKeyCtrl;
         k.ch = (unsigned)(b + 'a' - 1);
+        return k;
+    }
+    if (!unicode && b >= 0x80) {          /* a terminal that is not UTF-8 sends one byte in its own encoding */
+        unsigned char byte = (unsigned char)b;
+        NSString *one = [[[NSString alloc] initWithBytes:&byte length:1 encoding:asciiOnly ? NSISOLatin1StringEncoding : legacy] autorelease];
+        k.type = TBKeyChar;
+        k.ch = [one length] ? [one characterAtIndex:0] : '?';
         return k;
     }
     /* a UTF-8 character */

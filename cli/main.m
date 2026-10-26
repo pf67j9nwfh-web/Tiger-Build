@@ -6,6 +6,7 @@
 #import "TBIntegrations.h"
 #import "TBEngine.h"
 #include <termios.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <Security/Security.h>
 #include <unistd.h>
@@ -66,6 +67,32 @@ static void usage(void)
 - (void)core:(TBCLICore *)core usage:(NSDictionary *)event {}
 - (void)coreTurnEnded:(TBCLICore *)core { CFRunLoopStop(CFRunLoopGetCurrent()); }
 @end
+
+/* The saved keys are one Keychain item, and the first time this program reads it the system asks. Ask now, before anything else starts, so the question comes
+   at the start and nothing waits on it half way (Commander included); say what it is if the answer takes a moment. Not over ssh: nobody is there to click. */
+static volatile int keychainDone = 0;
+
+static void *keychainHint(void *unused)
+{
+    int i;
+    (void)unused;
+    for (i = 0; i < 10 && !keychainDone; i++)
+        usleep(100000);
+    if (!keychainDone)
+        fprintf(stderr, "Reading your saved keys from the Keychain: if a window asks, choose Always Allow.\n");
+    return NULL;
+}
+
+static void warmKeychain(BOOL quiet)
+{
+    pthread_t t;
+    if (getenv("SSH_CONNECTION") || getenv("TB_NO_KEYCHAIN"))
+        return;
+    if (!quiet && pthread_create(&t, NULL, keychainHint, NULL) == 0)
+        pthread_detach(t);
+    [TBSettings keychainValueForName:@"openai_api_key"];
+    keychainDone = 1;
+}
 
 /* tb login [name] | tb login --import | tb logout name | tb keys: the key file that stands in for the Keychain over ssh */
 static int keyCommand(NSArray *args)
@@ -163,6 +190,7 @@ int main(int argc, char **argv)
     }
     if (workspace)
         [core openWorkspace:workspace];
+    warmKeychain(print);
     [core refreshCatalog];
     prompt = [words componentsJoinedByString:@" "];
     if (print && ![prompt length]) {

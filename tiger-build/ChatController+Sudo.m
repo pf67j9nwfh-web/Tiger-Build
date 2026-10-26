@@ -30,14 +30,24 @@ static NSString *runCommander(NSString *flag)
     return [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
 }
 
+/* Whether a password is saved is remembered in the preferences, so opening or closing Preferences never touches the Keychain item: a new build of the
+   application is a different program to the Keychain, which asks again before it lets that build near the item, and it asked just for looking. The
+   password itself is read only when a command really needs sudo (answerCommander). The first run after an update, with nothing remembered yet, looks once. */
+static NSString *kSavedFlag = @"TBSudoPasswordSaved";
+
 static BOOL passwordSaved(void)
 {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
     SecKeychainItemRef item = NULL;
-    BOOL found = SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr;
+    BOOL found;
+    if ([defaults objectForKey:kSavedFlag])
+        return [defaults boolForKey:kSavedFlag];
+    found = SecKeychainFindGenericPassword(NULL, strlen(service), service, strlen(account), account, NULL, NULL, &item) == noErr;
     if (item)
         CFRelease(item);
+    [defaults setBool:found forKey:kSavedFlag];
     return found;
 }
 
@@ -50,6 +60,7 @@ static void forgetPassword(void)
         SecKeychainItemDelete(item);
         CFRelease(item);
     }
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kSavedFlag];
 }
 
 static BOOL savePassword(NSString *password)
@@ -57,8 +68,11 @@ static BOOL savePassword(NSString *password)
     const char *service = [kSudoService UTF8String];
     const char *account = [NSUserName() UTF8String];
     const char *secret = [password UTF8String];
+    BOOL saved;
     forgetPassword();
-    return SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) == noErr;
+    saved = SecKeychainAddGenericPassword(NULL, strlen(service), service, strlen(account), account, strlen(secret), secret, NULL) == noErr;
+    [[NSUserDefaults standardUserDefaults] setBool:saved forKey:kSavedFlag];
+    return saved;
 }
 
 /* ---- handing the password to Commander ---- */

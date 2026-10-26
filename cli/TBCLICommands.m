@@ -19,24 +19,77 @@
         [self printLine:[rows objectAtIndex:i]];
 }
 
+/* each command and what it does; laid out in two columns when the window is wide and one above the other when it is narrow, always wrapped to the width */
 - (void)help
 {
-    [self table:[NSArray arrayWithObjects:
-        @"  /new                 start a new chat           /chats [text]       list or search chats",
-        @"  /resume [id|text]    open a chat                /fork [n]           copy this chat (first n messages)",
-        @"  /rename TITLE        rename                     /delete [id]        delete a chat",
-        @"  /model [spec]        show or switch model       /models [provider]  list providers and models",
-        @"  /tools [name on|off] tools; /tools NAME approve on|off",
-        @"  /mode ask|edits|plan|auto   how much to ask     /allow RULE, /deny RULE   standing rules, e.g. start_process(git *)",
-        @"  /cost  /context  /compact   spend, context size, summarize old messages    /status             where things stand",
-        @"  /undo                put back files the last reply changed     /retry   ask again                  /copy               last reply to the clipboard",
-        @"  /export [file]       chat as Markdown           /history            the whole chat again",
-        @"  /diff  /commit  /review   git helpers (the model does the work)",
-        @"  /bg [stop ID]        background tasks the model started (it is woken when one finishes)     /wakes [N]   how many wake-ups in a row\n  /hooks               shell commands run around prompts and tools     /mcp   MCP servers",
-        @"  /workspace [name]    list or switch workspace   /instructions       project files in use",
-        @"  /verbose  /thinking  /bell  toggles             /doctor             check the set-up",
-        @"  /exit                leave",
-        @"  @path mentions a file or folder, !cmd runs a command, # note adds to TIGERBUILD.md, Shift-Tab changes the mode.", nil]];
+    static NSString *rows[][2] = {
+        {@"/new", @"start a new chat"},
+        {@"/chats [text]", @"list the chats, or search them"},
+        {@"/resume [id|text]", @"open a chat"},
+        {@"/fork [n]", @"copy this chat (its first n messages)"},
+        {@"/rename TITLE", @"rename this chat"},
+        {@"/delete [id]", @"delete a chat"},
+        {@"/model [spec]", @"show or switch the model: grok, claude:claude-sonnet-5-5, a model name"},
+        {@"/models [provider]", @"list the services and their models"},
+        {@"/tools [name on|off]", @"switch tools on or off for this chat; /tools NAME approve on|off sets whether one asks first"},
+        {@"/mode ask|edits|plan|auto", @"how much to ask before changing things (Shift-Tab cycles through them)"},
+        {@"/allow RULE  /deny RULE", @"standing rules, for example start_process(git *)"},
+        {@"/cost", @"what this chat has cost"},
+        {@"/context", @"how full the model's context is"},
+        {@"/compact", @"summarize the older messages now"},
+        {@"/status", @"where things stand"},
+        {@"/retry", @"ask for the last reply again"},
+        {@"/copy", @"copy the last reply"},
+        {@"/undo", @"put back the files the last reply changed"},
+        {@"/export [file]", @"save the chat as Markdown"},
+        {@"/history", @"show the whole chat again"},
+        {@"/diff  /commit  /review", @"git helpers: the model does the work"},
+        {@"/bg [stop ID]", @"background tasks the model started (it is woken when one finishes)"},
+        {@"/wakes [N]", @"how many times in a row a finished task may wake the chat"},
+        {@"/hooks", @"shell commands run around prompts and tools"},
+        {@"/mcp", @"MCP servers"},
+        {@"/workspace [name]", @"list or switch the workspace"},
+        {@"/instructions", @"the project files in use"},
+        {@"/verbose  /thinking  /bell", @"toggles"},
+        {@"/doctor", @"check the set-up"},
+        {@"/init", @"have the model write a TIGERBUILD.md for this folder"},
+        {@"/exit", @"leave"},
+    };
+    unsigned i, count = sizeof rows / sizeof rows[0];
+    int cols = [term columns], w = 0;
+    NSMutableString *out = [NSMutableString string];
+    NSArray *tips = [NSArray arrayWithObjects:@"@path adds a file or folder to your message.", @"!command runs a command here and tells the model.", @"# note adds a line to TIGERBUILD.md.",
+        @"Esc stops a reply; Ctrl-C twice leaves.", nil];
+    for (i = 0; i < count; i++)
+        if ((int)[rows[i][0] length] > w)
+            w = (int)[rows[i][0] length];
+    if (w > 28)
+        w = 28;
+    if (cols < 64 || w + 24 > cols - 4) {
+        for (i = 0; i < count; i++) {
+            NSArray *lines = [[term wrap:rows[i][1] width:cols - 7 indent:@""] componentsSeparatedByString:@"\n"];
+            unsigned j;
+            [out appendFormat:@"  %@\n", [term styled:rows[i][0] with:@"bold"]];
+            for (j = 0; j < [lines count]; j++)
+                if ([[lines objectAtIndex:j] length])
+                    [out appendFormat:@"     %@\n", [lines objectAtIndex:j]];
+        }
+    } else {
+        NSString *gap = [@"" stringByPaddingToLength:(unsigned)(w + 4) withString:@" " startingAtIndex:0];
+        for (i = 0; i < count; i++) {
+            NSArray *lines = [[term wrap:rows[i][1] width:cols - w - 5 indent:@""] componentsSeparatedByString:@"\n"];
+            unsigned j;
+            NSString *pad = [@"" stringByPaddingToLength:(unsigned)(w - (int)[rows[i][0] length] > 0 ? w - (int)[rows[i][0] length] : 0) withString:@" " startingAtIndex:0];
+            [out appendFormat:@"  %@%@  %@\n", [term styled:rows[i][0] with:@"bold"], pad, [lines objectAtIndex:0]];
+            for (j = 1; j < [lines count]; j++)
+                if ([[lines objectAtIndex:j] length])
+                    [out appendFormat:@"%@%@\n", gap, [lines objectAtIndex:j]];
+        }
+    }
+    [out appendString:@"\n"];
+    for (i = 0; i < [tips count]; i++)
+        [out appendFormat:@"%@\n", [term wrap:[@"  " stringByAppendingString:[tips objectAtIndex:i]] width:cols - 1 indent:@"    "]];
+    [self printLine:[out substringToIndex:[out length] - 1]];
 }
 
 - (NSMutableDictionary *)pickChat:(NSString *)arg
@@ -331,11 +384,12 @@
     else if ([cmd isEqualToString:@"/doctor"]) {
         NSArray *providers = [[ModelCatalog shared] providers];
         unsigned i;
+        [core refreshCatalog];
         for (i = 0; i < [providers count]; i++) {
             NSString *p = [[providers objectAtIndex:i] objectForKey:@"id"];
             [self printLine:[NSString stringWithFormat:@"  %@ %@", [core providerUsable:p] ? [term styled:@"ok " with:@"green"] : [term styled:@"-- " with:@"gray"], [[ModelCatalog shared] titleForProvider:p]]];
         }
-        [self printLine:[NSString stringWithFormat:@"  commander: %@", [core commanderProblem] ? [core commanderProblem] : @"ok"]];
+        [self printLine:[NSString stringWithFormat:@"  commander: %@", [[core commanderProblem] length] ? [core commanderProblem] : @"ok"]];
     } else if ([cmd isEqualToString:@"/wakes"]) {
         if ([arg length]) {
             int n = [arg intValue];

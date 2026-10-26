@@ -967,6 +967,8 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     [term enterRaw];
     [term setTitle:@"Tiger Build"];
     [self banner];
+    if ([[core commanderProblem] length])
+        [self printStyled:[NSString stringWithFormat:@"  %@ (/doctor tries again)", [core commanderProblem]] style:@"yellow"];
     if ([[[[core currentChat] objectForKey:@"messages"] lastObject] objectForKey:@"role"] && [[[core currentChat] objectForKey:@"messages"] count] > 1)
         [self showChat:[core currentChat] full:NO];
     if (initial) {
