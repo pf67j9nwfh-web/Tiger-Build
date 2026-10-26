@@ -7,6 +7,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 cd "$ROOT/tiger-build"
 OUT="${TMPDIR:-/tmp}/tb-engine-tests"
+export TB_NO_KEYCHAIN=1   # the test programs must not ask for (or read) the real Keychain
 rm -rf "$OUT"; mkdir -p "$OUT/webp" "$OUT/cfg/src/webp"
 : > "$OUT/cfg/src/webp/config.h"
 TLS=../third_party/mbedtls

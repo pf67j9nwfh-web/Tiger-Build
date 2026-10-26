@@ -129,6 +129,8 @@ static NSString *kAccount = @"keys";
 + (NSMutableDictionary *)loadSecrets
 {
     @synchronized(kService) {
+        if (!secrets && getenv("TB_NO_KEYCHAIN"))
+            secrets = [[NSMutableDictionary alloc] init];   /* the tests: keep keys in memory, never ask the Keychain */
         if (!secrets) {
             const char *service = [kService UTF8String];
             const char *account = [kAccount UTF8String];
@@ -151,6 +153,8 @@ static NSString *kAccount = @"keys";
 
 + (BOOL)saveSecrets
 {
+    if (getenv("TB_NO_KEYCHAIN"))
+        return YES;
     NSData *json = TBJSONData(secrets);
     const char *service = [kService UTF8String];
     const char *account = [kAccount UTF8String];
