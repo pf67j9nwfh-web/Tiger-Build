@@ -167,6 +167,8 @@ static inline void TBStyleAsLabel(NSTextField *field)
 - (void)startTurn;
 - (BOOL)anyRunActive;
 - (BOOL)chatHasParkedRun:(NSString *)chatId;
+- (void)showChatAtIndex:(int)index;
+- (IBAction)send:(id)sender;
 - (void)switchRunsToChat:(NSDictionary *)chat;
 - (BOOL)enterRunOfTurn:(id)turn orChat:(NSString *)chatId;
 - (void)leaveRun;

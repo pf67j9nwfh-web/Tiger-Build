@@ -517,7 +517,7 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
         else if ([text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound)
             sendChunked(fd, 200, sse(openaiChunks(NO)));
         else
-            sendChunked(fd, 200, sse(openaiChunksTool(YES, @"mcp_bg_bg_start", @"{\"command\":", @"\"sleep 2; echo finished-ok\"}")));
+            sendChunked(fd, 200, sse(openaiChunksTool(YES, @"mcp_bg_bg_start", @"{\"command\":", [NSString stringWithFormat:@"\"%s\"}", getenv("TB_MOCK_BG") ? getenv("TB_MOCK_BG") : "sleep 2; echo finished-ok"])));
     } else if ([path isEqualToString:@"/empty-openai"]) {
         /* a tool call, then an empty reply once the tool has answered, then a real answer when asked to carry on */
         NSString *text = TBJSONString(request);
