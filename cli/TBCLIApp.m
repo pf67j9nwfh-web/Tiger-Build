@@ -395,7 +395,7 @@ static NSString *toolKind(NSString *name)
     unsigned i;
     *start = wordAt;
     if (wordAt == 0 && [word hasPrefix:@"/"]) {
-        NSArray *names = [self commandNames];
+        NSArray *names = [[self commandNames] arrayByAddingObjectsFromArray:[self customCommandNames]];
         for (i = 0; i < [names count]; i++)
             if ([[names objectAtIndex:i] hasPrefix:word])
                 [out addObject:[names objectAtIndex:i]];

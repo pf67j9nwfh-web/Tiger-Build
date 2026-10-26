@@ -181,6 +181,33 @@
     }
 }
 
+- (NSArray *)customCommandNames
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSMutableArray *dirs = [NSMutableArray array], *names = [NSMutableArray array];
+    NSString *dir = [fm currentDirectoryPath];
+    unsigned i, j;
+    for (;;) {
+        [dirs addObject:[[dir stringByAppendingPathComponent:@".tigerbuild"] stringByAppendingPathComponent:@"commands"]];
+        if ([dir length] <= 1)
+            break;
+        dir = [dir stringByDeletingLastPathComponent];
+    }
+    [dirs addObject:[[self cliDir] stringByAppendingPathComponent:@"commands"]];
+    for (i = 0; i < [dirs count]; i++) {
+        NSArray *files = [fm directoryContentsAtPath:[dirs objectAtIndex:i]];
+        for (j = 0; j < [files count]; j++) {
+            NSString *f = [files objectAtIndex:j], *n;
+            if (![[f pathExtension] isEqualToString:@"md"])
+                continue;
+            n = [@"/" stringByAppendingString:[f stringByDeletingPathExtension]];
+            if (![names containsObject:n])
+                [names addObject:n];
+        }
+    }
+    return names;
+}
+
 - (BOOL)runCustomCommand:(NSString *)cmd arguments:(NSString *)arg
 {
     NSString *path = [self customCommandFile:[cmd substringFromIndex:1]], *text;

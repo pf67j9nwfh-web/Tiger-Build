@@ -62,6 +62,7 @@
 - (void)mcpCommand:(NSString *)arg;
 - (NSString *)undoLast;
 - (NSString *)cliDir;
+- (NSArray *)customCommandNames;
 - (BOOL)runCustomCommand:(NSString *)cmd arguments:(NSString *)arg;
 - (void)banner;
 - (NSString *)modelLabel:(NSDictionary *)chat;
