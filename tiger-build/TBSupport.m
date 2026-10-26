@@ -1,3 +1,6 @@
+#include <signal.h>
+#include <errno.h>
+#include <unistd.h>
 #import "TBSupport.h"
 #import "TBMarkup.h"
 #include <sys/stat.h>
@@ -1317,4 +1320,30 @@ NSString *TBResourcePath(NSString *name, NSString *ext)
             path = p;
     }
     return path;
+}
+
+NSString *TBChatLeaseNote(NSDictionary *chat)
+{
+    NSDictionary *lease = [chat objectForKey:@"lease"];
+    char host[256];
+    int pid;
+    if (![lease isKindOfClass:[NSDictionary class]])
+        return nil;
+    gethostname(host, sizeof host);
+    pid = [[lease objectForKey:@"pid"] intValue];
+    if (pid == (int)getpid() || ![[lease objectForKey:@"host"] isEqualToString:[NSString stringWithUTF8String:host]])
+        return nil;
+    if ([[NSDate date] timeIntervalSince1970] - [[lease objectForKey:@"since"] doubleValue] > 6 * 3600)
+        return nil;
+    if (pid <= 0 || (kill(pid, 0) != 0 && errno == ESRCH))
+        return nil;
+    return [NSString stringWithFormat:@"working in %@", [lease objectForKey:@"who"] ? [lease objectForKey:@"who"] : @"another program"];
+}
+
+void TBChatTakeLease(NSMutableDictionary *chat, NSString *who)
+{
+    char host[256];
+    gethostname(host, sizeof host);
+    [chat setObject:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:(int)getpid()], @"pid", [NSString stringWithUTF8String:host], @"host",
+        [NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970]], @"since", who, @"who", nil] forKey:@"lease"];
 }

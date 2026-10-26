@@ -637,33 +637,9 @@ static NSString *HelloText = @"Hello. Ask me anything.";
 
 /* ---- leases: who is working in a chat ---- */
 
-- (NSString *)liveLeaseNoteForChat:(NSDictionary *)chat
-{
-    NSDictionary *lease = [chat objectForKey:@"lease"];
-    char host[256];
-    int pid;
-    if (![lease isKindOfClass:[NSDictionary class]])
-        return nil;
-    gethostname(host, sizeof host);
-    pid = [[lease objectForKey:@"pid"] intValue];
-    if (pid == (int)getpid() && [[lease objectForKey:@"host"] isEqualToString:[NSString stringWithUTF8String:host]])
-        return nil;
-    if (![[lease objectForKey:@"host"] isEqualToString:[NSString stringWithUTF8String:host]])
-        return nil;
-    if ([[NSDate date] timeIntervalSince1970] - [[lease objectForKey:@"since"] doubleValue] > 6 * 3600)
-        return nil;
-    if (pid <= 0 || (kill(pid, 0) != 0 && errno == ESRCH))
-        return nil;
-    return [NSString stringWithFormat:@"working in %@", [lease objectForKey:@"who"] ? [lease objectForKey:@"who"] : @"another process"];
-}
+- (NSString *)liveLeaseNoteForChat:(NSDictionary *)chat { return TBChatLeaseNote(chat); }
 
-- (void)takeLease:(NSMutableDictionary *)chat
-{
-    char host[256];
-    gethostname(host, sizeof host);
-    [chat setObject:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:(int)getpid()], @"pid", [NSString stringWithUTF8String:host], @"host",
-        [NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970]], @"since", @"the terminal (tb)", @"who", nil] forKey:@"lease"];
-}
+- (void)takeLease:(NSMutableDictionary *)chat { TBChatTakeLease(chat, @"the terminal (tb)"); }
 
 /* ---- a turn ---- */
 

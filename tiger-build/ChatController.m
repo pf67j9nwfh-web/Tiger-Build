@@ -2553,6 +2553,13 @@ static BOOL launchFinished = NO;
    the swap is undone (applyBusyUI). */
 - (void)setBusy:(BOOL)flag
 {
+    if (!flag && streamingId) {
+        NSMutableDictionary *leased = [self chatWithId:streamingId];
+        if ([leased objectForKey:@"lease"]) {
+            [leased removeObjectForKey:@"lease"];
+            [self saveStore];
+        }
+    }
     busy = flag;
     if (swapped) {
         if (!flag) {
@@ -3442,7 +3449,9 @@ static BOOL launchFinished = NO;
     if ([text length] == 0)
         return;
     {
-        NSString *limit = [self spendLimitProblemForChat:current];
+        NSString *limit = [self spendLimitProblemForChat:current], *lease = TBChatLeaseNote(current);
+        if (lease)
+            limit = [NSString stringWithFormat:@"This chat is %@. Wait for it to finish, or start another chat.", lease];
         if (limit) {
             [self setRelayProblem:limit];
             NSBeep();
@@ -3506,6 +3515,8 @@ static BOOL launchFinished = NO;
     [streamingId release];
     streamingId = [[current objectForKey:@"id"] copy];
     [self markTurnStart:current];
+    TBChatTakeLease(current, @"the Tiger Build window");
+    [self saveStore];
     [self rememberLastUsed];
     [self setBusy:YES];
     /* Auto mode: the chat's model is chosen from its first message; routeArrived: carries on from there. */
