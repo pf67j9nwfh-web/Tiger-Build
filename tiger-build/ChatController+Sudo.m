@@ -186,7 +186,7 @@ static BOOL passwordAccepted(NSString *password)
 - (void)sudoLaunchCheck:(id)unused
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    NSString *reply = runCommander(@"status");
+    NSString *reply = getenv("TB_NO_KEYCHAIN") ? nil : runCommander(@"status");   /* TB_NO_KEYCHAIN: a test run, which keeps away from the Keychain */
     (void)unused;
     if (reply && [reply hasPrefix:@"on"]) {
         const char *service = [kSudoService UTF8String];
