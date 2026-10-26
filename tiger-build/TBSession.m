@@ -927,10 +927,42 @@ static BOOL mentionsWord(NSString *line, NSString *word)
 static NSMutableDictionary *toolCache = nil;      /* tools, at, offline */
 
 /* The Commander that came with the app. TBCommanderPath in the preferences replaces it, for tests. */
+/* a program file the system can run: a plain file (not a folder that merely has the execute bit) that starts like a Mach-O program */
+static BOOL runnableProgram(NSString *path)
+{
+    BOOL isDir = NO;
+    unsigned char head[4];
+    FILE *f;
+    BOOL ok = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDir] || isDir || ![[NSFileManager defaultManager] isExecutableFileAtPath:path])
+        return NO;
+    f = fopen([path fileSystemRepresentation], "rb");
+    if (!f)
+        return NO;
+    if (fread(head, 1, 4, f) == 4) {
+        unsigned long magic = ((unsigned long)head[0] << 24) | ((unsigned long)head[1] << 16) | ((unsigned long)head[2] << 8) | head[3];
+        ok = magic == 0xfeedfaceUL || magic == 0xcefaedfeUL || magic == 0xfeedfacfUL || magic == 0xcffaedfeUL || magic == 0xcafebabeUL || magic == 0xbebafecaUL;
+    }
+    fclose(f);
+    return ok;
+}
+
+/* The program beside this one (the app's Resources, or the tb command's folder); when that is not a program that runs (a tb copied somewhere on its own), the installed app's. */
 NSString *TBCommanderProgram(void)
 {
     NSString *over = [[NSUserDefaults standardUserDefaults] stringForKey:@"TBCommanderPath"];
-    return [over length] ? over : [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"ppc-commander"];
+    NSString *first = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"ppc-commander"];
+    NSArray *others = [NSArray arrayWithObjects:@"/Applications/Tiger Build.app/Contents/Resources/ppc-commander",
+        [NSHomeDirectory() stringByAppendingPathComponent:@"Applications/Tiger Build.app/Contents/Resources/ppc-commander"], nil];
+    unsigned i;
+    if ([over length])
+        return over;
+    if (runnableProgram(first))
+        return first;
+    for (i = 0; i < [others count]; i++)
+        if (runnableProgram([others objectAtIndex:i]))
+            return [others objectAtIndex:i];
+    return first;
 }
 
 @implementation TBSession (Commander)

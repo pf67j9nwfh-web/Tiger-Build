@@ -100,8 +100,8 @@ static NSString *signatureOf(NSString *folder, NSString *share, BOOL readOnly, i
 /* a small text editor for lines; returns the new text, or nil when cancelled */
 - (NSString *)editLinesTitled:(NSString *)title label:(NSString *)label text:(NSString *)text
 {
-    NSPanel *panel = [[[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 560, 320) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
-    NSScrollView *scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(16, 50, 528, 220)] autorelease];
+    NSPanel *panel = [[[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 560, 340) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
+    NSScrollView *scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(16, 50, 528, 200)] autorelease];
     NSTextView *view = [[[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 510, 220)] autorelease];
     NSButton *save = [self preferencesButton:@"Save" frame:NSMakeRect(450, 12, 94, 30) action:@selector(sshKeysOK:) inView:[panel contentView]];
     NSButton *cancel = [self preferencesButton:@"Cancel" frame:NSMakeRect(350, 12, 94, 30) action:@selector(sshKeysCancel:) inView:[panel contentView]];
