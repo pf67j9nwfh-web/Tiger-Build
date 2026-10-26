@@ -1,4 +1,4 @@
-#import <Foundation/Foundation.h>
+#import "TBCompat.h"
 #import "TBSupport.h"
 #import "TBService.h"
 

@@ -4,6 +4,14 @@
 #import "TBProviders.h"
 #import "TBLocal.h"
 #import "TBRun.h"
+
+@interface TBCLICore (Private)
+- (void)frame:(char)kind payload:(NSData *)payload;
+- (void)mediaLine:(NSString *)line;
+- (void)takeLease:(NSMutableDictionary *)chat;
+- (void)addStatus:(NSString *)text;
+- (BOOL)model:(NSString *)model allowedForProvider:(NSString *)provider;
+@end
 #include <unistd.h>
 #include <signal.h>
 

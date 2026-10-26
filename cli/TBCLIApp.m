@@ -269,12 +269,16 @@ static NSString *toolKind(NSString *name)
 
 - (NSString *)expandMentions:(NSString *)text
 {
-    NSArray *words = [text componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSMutableString *flat = [NSMutableString stringWithString:text];
+    NSArray *words;
     NSMutableString *extra = [NSMutableString string];
     NSMutableSet *done = [NSMutableSet set];
     NSFileManager *fm = [NSFileManager defaultManager];
     unsigned i;
     int total = 0;
+    [flat replaceOccurrencesOfString:@"\n" withString:@" " options:0 range:NSMakeRange(0, [flat length])];
+    [flat replaceOccurrencesOfString:@"\t" withString:@" " options:0 range:NSMakeRange(0, [flat length])];
+    words = [flat componentsSeparatedByString:@" "];
     for (i = 0; i < [words count]; i++) {
         NSString *w = [words objectAtIndex:i], *path, *full;
         BOOL isDir = NO;

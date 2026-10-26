@@ -1,4 +1,4 @@
-#import <Foundation/Foundation.h>
+#import "TBCompat.h"
 
 /* The terminal: raw input, escape sequences, colours, the width of text, and a line editor. Plain ANSI (works on Tiger's Terminal, with 16 colours,
    and on modern terminals over ssh, which get more). No terminfo. */

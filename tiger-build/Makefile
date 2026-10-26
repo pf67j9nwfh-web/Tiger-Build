@@ -42,7 +42,7 @@ HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h 
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
-.PHONY: all clean test convert cmtest quicklook mdimporter
+.PHONY: all clean test convert cmtest quicklook mdimporter tb
 
 all: $(BIN)
 
@@ -74,6 +74,21 @@ endif
 	$(MAKE) mdimporter && rm -rf $(APP)/Contents/Resources/$(MDDIR) && cp -R $(MDDIR) $(APP)/Contents/Resources/$(MDDIR)
 	printf 'APPL????' > $(APP)/Contents/PkgInfo
 
+# The terminal program: the engine without the window, as one universal command line tool.
+CLISRC := ../cli/main.m ../cli/TBCLICore.m ../cli/TBTerm.m ../cli/TBMarkdown.m ../cli/TBCLIApp.m ../cli/TBCLICommands.m TBSupport.m TBMachine.m TBMarkup.m TBEmoji.m TBJSON.m TBHTTP.m TBRun.m TBEngine.m TBMCP.m TBOAuth.m TBLocalTools.m TBSkills.m TBModelUpdate.m TBModelProfiles.m TBChatExport.m TBProviders.m TBPricing.m TBLocal.m TBSession.m TBSessionGrok.m TBSessionSub.m TBService.m TBExtract.m TBOffice.m TBHEIC.m TBSpeech.m TBOutputs.m TBMedia.m TBWebTools.m TBBuiltin.m TBIntegrations.m TBExtras.m TBSSH.m TBSMB.m
+tb: $(CLISRC) TBNet.c TBNet.h $(HEADERS) ../cli/TBCLICore.h ../cli/TBTerm.h ../cli/TBMarkdown.h ../cli/TBCLIApp.h
+	rm -rf build && mkdir build
+	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
+	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -I. -I../cli -o build/tb32 $(CLISRC) build/TBNet32.o $(LIBS32)
+ifneq ($(strip $(ARCHS64)),)
+	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -c -o build/TBNetP64.o TBNet.c && $(CC64) $(CFLAGSPPC64) -fobjc-exceptions -I. -I../cli -o build/tbP64 $(CLISRC) build/TBNetP64.o $(LIBS64))
+	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) $(CFLAGSX86) -c -o build/TBNetX64.o TBNet.c && $(CC64) $(CFLAGSX86) -fobjc-exceptions -I. -I../cli -o build/tbX64 $(CLISRC) build/TBNetX64.o $(LIBSX86))
+	lipo -create build/tb32 $$(ls build/tbP64 build/tbX64 2>/dev/null) -output tb
+else
+	cp build/tb32 tb
+endif
+	rm -rf build
+
 convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
 	mkdir -p build
 	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
@@ -94,7 +109,7 @@ test: tbtests
 	./tbtests
 
 clean:
-	rm -rf $(APP) "Tiger Build.app" tbtests build
+	rm -rf $(APP) "Tiger Build.app" tbtests build tb
 
 # The Spotlight importer for the chat files (see ../spotlight): ppc and i386 (10.4 SDK, so Tiger loads it) and x86_64. The app copies it to ~/Library/Spotlight
 # when Spotlight search of chats is switched on.
