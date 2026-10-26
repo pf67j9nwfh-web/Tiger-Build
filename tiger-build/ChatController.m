@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TBBackground.h"
+#import "TBDAV.h"
 #import "TranscriptView.h"
 #import "TBProviderIcons.h"
 #import "TBService.h"
@@ -523,6 +524,7 @@ static NSMutableArray *allControllers = nil;
     (void)note;
     [TBStore flushAll];
     [TBBackground stopAll];
+    [TBDAV unmountAll];
 }
 
 - (BOOL)toolsEnabled:(NSDictionary *)chat

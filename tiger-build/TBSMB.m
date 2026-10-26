@@ -102,6 +102,29 @@ static NSString *unescape(NSString *s)
     return nil;
 }
 
++ (NSArray *)savedShareNames
+{
+    NSMutableArray *names = [NSMutableArray array];
+    NSArray *lines = [[self savedSharesText] componentsSeparatedByString:@"\n"];
+    unsigned i;
+    for (i = 0; i < [lines count]; i++) {
+        NSString *line = TBTrim([lines objectAtIndex:i]);
+        NSRange eq = [line rangeOfString:@"="];
+        if ([line hasPrefix:@"#"] || [line length] == 0 || eq.location == NSNotFound)
+            continue;
+        if ([self savedURLNamed:TBTrim([line substringToIndex:eq.location])])
+            [names addObject:TBTrim([line substringToIndex:eq.location])];
+    }
+    return names;
+}
+
++ (NSDictionary *)savedTargetNamed:(NSString *)name
+{
+    NSString *url = [self savedURLNamed:name];
+    NSDictionary *t = url ? [self parseURL:url] : nil;
+    return [[t objectForKey:@"server"] length] && [[t objectForKey:@"share"] length] ? t : nil;
+}
+
 static NSString *joinPath(NSString *base, NSString *extra)
 {
     NSString *a = base ? base : @"", *b = extra ? extra : @"";
@@ -204,6 +227,26 @@ static NSString *sha256Hex(NSData *data)
     for (i = 0; i < sizeof digest; i++)
         [hex appendFormat:@"%02x", digest[i]];
     return hex;
+}
+
++ (void *)connectTarget:(NSDictionary *)target problem:(NSString **)problem
+{
+    struct smb2_context *smb2 = NULL;
+    @try {
+        smb2 = connectTo(target, nil);
+    } @catch (NSException *e) {
+        if (problem)
+            *problem = [e reason];
+    }
+    return smb2;
+}
+
++ (void)disconnect:(void *)context
+{
+    if (context) {
+        smb2_disconnect_share(context);
+        smb2_destroy_context(context);
+    }
 }
 
 + (NSString *)call:(NSString *)tool arguments:(NSDictionary *)args allowLocal:(BOOL)local

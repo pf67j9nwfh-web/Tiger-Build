@@ -9,6 +9,12 @@
 /* the saved shares, as the person edits them: one "name = smb://user:password@server/share" per line */
 + (NSString *)savedSharesText;
 + (void)setSavedSharesText:(NSString *)text;
+/* for the Finder mount (TBDAV): the names of the saved shares, one saved share as a target (server, share, user, password, domain), and a connected context for it
+   (a struct smb2_context *, to be freed with +disconnect:); nil and *problem when it cannot connect */
++ (NSArray *)savedShareNames;
++ (NSDictionary *)savedTargetNamed:(NSString *)name;
++ (void *)connectTarget:(NSDictionary *)target problem:(NSString **)problem;
++ (void)disconnect:(void *)context;
 /* exposed for tests */
 + (NSDictionary *)parseURL:(NSString *)url;
 @end

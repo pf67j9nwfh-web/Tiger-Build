@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBDAV.h"
 #import "TBSSHServer.h"
 #import "TBSMB.h"
 #import "TBSupport.h"
@@ -91,10 +92,11 @@ static NSString *signatureOf(NSString *folder, NSString *share, BOOL readOnly, i
     [self preferencesHeading:@"Connect to SMB shares" y:y inView:tab];
     y -= 34;
     [self preferencesButton:@"Saved Shares..." frame:NSMakeRect(16, y, 130, 28) action:@selector(editSavedShares:) inView:tab];
+    [self preferencesButton:@"Mount in Finder..." frame:NSMakeRect(152, y, 150, 28) action:@selector(showShareMounter:) inView:tab];
     y -= 14;
-    [self preferencesNote:@"Shares that chats may use through the SMB file shares tools (Tool Settings, MCP Servers: turn on \"SMB file shares\"), one per line: name = smb://user:password@server/share. "
-        @"They are kept in the Keychain, so a chat can say \"use the share office\" without being told the password."
-        frame:NSMakeRect(16, y - 40, 520, 52) inView:tab];
+    [self preferencesNote:@"Saved shares can be mounted as disks in the Finder, also from Macs that cannot speak SMB 2 or 3 themselves, and chats may use them through the SMB file shares tools "
+        @"(Tool Settings, MCP Servers: turn on \"SMB file shares\"). One per line: name = smb://user:password@server/share. They are kept in the Keychain, so a chat can say \"use the share office\" without being told the password."
+        frame:NSMakeRect(16, y - 56, 520, 68) inView:tab];
 }
 
 /* a small text editor for lines; returns the new text, or nil when cancelled */
@@ -253,6 +255,85 @@ static NSString *signatureOf(NSString *folder, NSString *share, BOOL readOnly, i
         [d setObject:signature forKey:@"TBSMBRunning"];
         [d setInteger:port forKey:@"TBSMBPortRunning"];
     }
+}
+
+/* ---- mounting a saved share in the Finder (TBDAV) ---- */
+
+- (void)showShareMounter:(id)sender
+{
+    NSPanel *panel = [prefsFields objectForKey:@"mount.panel"];
+    NSPopUpButton *popup;
+    NSArray *names = [TBSMB savedShareNames];
+    (void)sender;
+    if (![names count]) {
+        NSRunInformationalAlertPanel(@"No saved shares", @"Add one with Saved Shares..., one per line: name = smb://user:password@server/share", @"OK", nil, nil);
+        return;
+    }
+    if (!panel) {
+        NSView *content;
+        NSTextField *status;
+        panel = [[[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 480, 190) styleMask:NSTitledWindowMask | NSClosableWindowMask backing:NSBackingStoreBuffered defer:NO] autorelease];
+        content = [panel contentView];
+        [panel setTitle:@"Mount a saved share in the Finder"];
+        [panel setReleasedWhenClosed:NO];
+        [self preferencesNote:@"The share appears as a disk in the Finder. Tiger Build serves it to the Finder from this Mac, so it stays mounted only while Tiger Build is open." frame:NSMakeRect(16, 126, 448, 44) inView:content];
+        popup = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(16, 92, 300, 26) pullsDown:NO] autorelease];
+        [content addSubview:popup];
+        status = [self preferencesLabel:@"" frame:NSMakeRect(16, 64, 448, 20) inView:content];
+        [self preferencesButton:@"Mount" frame:NSMakeRect(326, 90, 70, 28) action:@selector(mountChosenShare:) inView:content];
+        [self preferencesButton:@"Eject" frame:NSMakeRect(398, 90, 70, 28) action:@selector(ejectChosenShare:) inView:content];
+        [self preferencesButton:@"Close" frame:NSMakeRect(386, 16, 80, 30) action:@selector(closeShareMounter:) inView:content];
+        [prefsFields setObject:panel forKey:@"mount.panel"];
+        [prefsFields setObject:popup forKey:@"mount.popup"];
+        [prefsFields setObject:status forKey:@"mount.status"];
+    }
+    popup = [prefsFields objectForKey:@"mount.popup"];
+    [popup removeAllItems];
+    [popup addItemsWithTitles:names];
+    [[prefsFields objectForKey:@"mount.status"] setStringValue:[[TBDAV mountedNames] count] ? [NSString stringWithFormat:@"Mounted now: %@", [[TBDAV mountedNames] componentsJoinedByString:@", "]] : @""];
+    [panel setLevel:NSFloatingWindowLevel];
+    [panel center];
+    [panel makeKeyAndOrderFront:nil];
+}
+
+- (void)closeShareMounter:(id)sender
+{
+    (void)sender;
+    [[prefsFields objectForKey:@"mount.panel"] orderOut:nil];
+}
+
+- (void)mountWorker:(NSString *)name
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSString *problem = [TBDAV mountShareInFinder:name];
+    [self performSelectorOnMainThread:@selector(mountDone:) withObject:[NSArray arrayWithObjects:name, problem ? problem : @"", nil] waitUntilDone:NO];
+    [pool release];
+}
+
+- (void)mountDone:(NSArray *)result
+{
+    NSString *problem = [result objectAtIndex:1];
+    [[prefsFields objectForKey:@"mount.status"] setStringValue:[problem length] ? problem : [NSString stringWithFormat:@"%@ is mounted: look for it on the Desktop or in the Finder's sidebar.", [result objectAtIndex:0]]];
+}
+
+- (void)mountChosenShare:(id)sender
+{
+    NSString *name = [[prefsFields objectForKey:@"mount.popup"] titleOfSelectedItem];
+    (void)sender;
+    if (![name length])
+        return;
+    [[prefsFields objectForKey:@"mount.status"] setStringValue:@"Connecting..."];
+    [NSThread detachNewThreadSelector:@selector(mountWorker:) toTarget:self withObject:name];
+}
+
+- (void)ejectChosenShare:(id)sender
+{
+    NSString *name = [[prefsFields objectForKey:@"mount.popup"] titleOfSelectedItem], *problem;
+    (void)sender;
+    if (![name length])
+        return;
+    problem = [TBDAV unmountShare:name];
+    [[prefsFields objectForKey:@"mount.status"] setStringValue:problem ? problem : [NSString stringWithFormat:@"%@ was ejected.", name]];
 }
 
 @end
