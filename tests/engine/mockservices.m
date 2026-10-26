@@ -509,6 +509,15 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
         NSString *text = TBJSONString(request), *file = [NSString stringWithUTF8String:getenv("TB_MOCK_WRITE") ? getenv("TB_MOCK_WRITE") : "/tmp/tbundo/target.txt"];
         BOOL answered = [text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound;
         sendChunked(fd, 200, sse(openaiChunksTool(!answered, @"write_file", [NSString stringWithFormat:@"{\"path\":\"%@\",", file], @"\"content\":\"NEW\\n\"}")));
+    } else if ([path isEqualToString:@"/bg-openai"]) {
+        /* starts a background task; once it has finished and the chat is woken with its result, answers */
+        NSString *text = TBJSONString(request);
+        if ([text rangeOfString:@"Background task bg"].location != NSNotFound || [text rangeOfString:@"finished-ok"].location != NSNotFound)
+            sendChunked(fd, 200, sse(openaiChunks(NO)));
+        else if ([text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound)
+            sendChunked(fd, 200, sse(openaiChunks(NO)));
+        else
+            sendChunked(fd, 200, sse(openaiChunksTool(YES, @"mcp_bg_bg_start", @"{\"command\":", @"\"sleep 2; echo finished-ok\"}")));
     } else if ([path isEqualToString:@"/empty-openai"]) {
         /* a tool call, then an empty reply once the tool has answered, then a real answer when asked to carry on */
         NSString *text = TBJSONString(request);

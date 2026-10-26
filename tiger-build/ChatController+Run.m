@@ -1,5 +1,6 @@
 #import "ChatController_Private.h"
 #import "TBJSON.h"
+#import "TBBackground.h"
 #import "TBTheme.h"
 #import "TranscriptView.h"
 #import <stdlib.h>
@@ -787,6 +788,29 @@ static NSString *newRunId(void)
 {
     [runId release];
     runId = [newRunId() retain];
+    if (streamingId)
+        [TBBackground noteRun:runId chat:streamingId];   /* a background task started in this turn finds its chat again */
+}
+
+/* ---- background tasks the model started: when one finishes, the chat carries on ---- */
+
+- (void)checkBackgroundWake:(NSTimer *)timer
+{
+    NSString *cid, *message;
+    (void)timer;
+    if (busy || !current || wakesInARow >= 10 || wakeText)
+        return;
+    cid = [[current objectForKey:@"id"] description];
+    if (![TBBackground hasFinishedForChat:cid] || TBChatLeaseNote(current))
+        return;
+    message = [[TBBackground takeFinishedMessagesForChat:cid] componentsJoinedByString:@"\n\n"];
+    if (![message length])
+        return;
+    wakesInARow++;
+    wakeText = [message retain];
+    [self send:nil];
+    [wakeText release];
+    wakeText = nil;
 }
 
 /* ---- Commander problems ---- */

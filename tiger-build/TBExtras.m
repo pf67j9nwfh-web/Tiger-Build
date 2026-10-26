@@ -489,6 +489,8 @@ static NSDictionary *withoutLocalFiles(NSDictionary *listed)
                 listed = [TBBuiltin listTools:name];
                 if ([name isEqualToString:@"web"] && !commanderOn)
                     listed = withoutSaving(listed);
+                if ([name isEqualToString:@"bg"] && !commanderOn)
+                    listed = [NSDictionary dictionaryWithObject:[NSArray array] forKey:@"tools"];   /* it runs commands on this Mac */
                 if ([name isEqualToString:@"smb"] && !commanderOn)
                     listed = withoutLocalFiles(listed);
             } else {

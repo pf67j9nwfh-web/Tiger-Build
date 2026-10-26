@@ -86,6 +86,8 @@
 - (NSString *)sendText:(NSString *)text;               /* nil when started, else why not */
 - (NSString *)resend;                                  /* ask again for the last user message */
 - (void)stop;
+- (NSString *)takeBackgroundMessage;                    /* finished background tasks as the message to send, or nil */
+- (BOOL)backgroundFinished;                            /* a background task of this chat has finished and not been told to the model */
 - (NSString *)compact;                                 /* summarize the older messages now; nil when started, else why not */
 - (int)contextLimitForChat:(NSMutableDictionary *)chat;
 - (void)answer:(NSString *)decision;                   /* allow, always or deny, for the question being asked */

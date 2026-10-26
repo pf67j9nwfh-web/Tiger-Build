@@ -67,7 +67,10 @@ typedef enum { TBColorNone, TBColor16, TBColor256, TBColorTrue } TBColorLevel;
     NSMutableString *killed;
     BOOL ascii;
     NSString *hint;
+    BOOL wake;
+    NSString *carry;
 }
+- (void)wakeUp;                            /* make readLine return an empty line now (the typed text is kept for the next call) */
 - (id)initWithTerm:(TBTerm *)t historyPath:(NSString *)path;
 - (void)setDelegate:(id<TBLineEditorDelegate>)d;
 - (void)setPrompt:(NSString *)p continuation:(NSString *)c;

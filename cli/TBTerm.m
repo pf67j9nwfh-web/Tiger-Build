@@ -724,6 +724,8 @@ static int nextIndex(NSString *s, int i)
     }
 }
 
+- (void)wakeUp { wake = YES; }
+
 - (BOOL)readLine:(NSString **)line interrupted:(BOOL *)interrupted
 {
     [buffer setString:@""];
@@ -733,6 +735,12 @@ static int nextIndex(NSString *s, int i)
     saved = nil;
     if (interrupted)
         *interrupted = NO;
+    if (carry) {
+        [buffer setString:carry];
+        cursor = (int)[buffer length];
+        [carry release];
+        carry = nil;
+    }
     [self redraw];
     for (;;) {
         TBKey k = [term readKeyWithin:80];
@@ -742,6 +750,14 @@ static int nextIndex(NSString *s, int i)
             if ([term resized])
                 [self redraw];
             [delegate editorIdle:self];
+            if (wake) {
+                wake = NO;
+                [carry release];
+                carry = [buffer copy];
+                [self finish];
+                *line = @"";
+                return YES;
+            }
             continue;
         case TBKeyResize:
             [self redraw];

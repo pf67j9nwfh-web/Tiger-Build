@@ -33,6 +33,7 @@
     NSArray *allowRules, *denyRules;
     double lastKeepaliveCheck;
     NSString *firstLinePrefix;
+    int wakesInARow;                   /* background wakes without the person typing */
     NSMutableArray *undoStack;         /* per turn, the files its tools changed (see snapshotHook) */
     NSString *initial;                 /* a first message given on the command line */
     BOOL firstLine;
@@ -57,6 +58,7 @@
 
 @interface TBCLIApp (Private)
 - (void)watchTurn;
+- (BOOL)wakeForBackground;
 - (int)runHook:(NSString *)event env:(NSDictionary *)extra output:(NSString **)output;
 - (void)hooksCommand:(NSString *)arg;
 - (void)mcpCommand:(NSString *)arg;

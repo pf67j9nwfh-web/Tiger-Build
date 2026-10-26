@@ -4,6 +4,7 @@
 #import "TBProviders.h"
 #import "TBLocal.h"
 #import "TBRun.h"
+#import "TBBackground.h"
 
 @interface TBCLICore (Private)
 - (BOOL)startCompaction:(BOOL)force;
@@ -716,6 +717,18 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     return limit;
 }
 
+/* the messages for the current chat's background tasks that have finished (nil when none) */
+- (NSString *)takeBackgroundMessage
+{
+    NSArray *m = current ? [TBBackground takeFinishedMessagesForChat:[[current objectForKey:@"id"] description]] : nil;
+    return [m count] ? [m componentsJoinedByString:@"\n\n"] : nil;
+}
+
+- (BOOL)backgroundFinished
+{
+    return current && !busy && [TBBackground hasFinishedForChat:[[current objectForKey:@"id"] description]];
+}
+
 - (NSString *)compact
 {
     if (busy || !current)
@@ -877,6 +890,7 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     [runId release];
     runId = [[NSString stringWithFormat:@"tb%08x%08x", (unsigned)CFAbsoluteTimeGetCurrent(), (unsigned)arc4random()] retain];
     [frameBuffer setLength:0];
+    [TBBackground noteRun:runId chat:[[current objectForKey:@"id"] description]];
     payload = [self requestBodyForChat:current];
     if (getenv("TB_DEBUG_BODY"))
         fprintf(stderr, "REQUEST %s\n", [[[[NSString alloc] initWithData:payload encoding:NSUTF8StringEncoding] autorelease] UTF8String]);

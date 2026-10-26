@@ -1,5 +1,6 @@
 #import "TBCLIApp.h"
 #import "TBEngine.h"
+#import "TBBackground.h"
 
 @implementation TBCLIApp (Commands)
 
@@ -7,7 +8,7 @@
 {
     return [NSArray arrayWithObjects:@"/help", @"/exit", @"/quit", @"/new", @"/clear", @"/chats", @"/resume", @"/model", @"/models", @"/tools", @"/mode", @"/cost", @"/context",
         @"/rename", @"/delete", @"/fork", @"/export", @"/copy", @"/retry", @"/workspace", @"/status", @"/verbose", @"/thinking", @"/instructions", @"/allow", @"/deny",
-        @"/doctor", @"/hooks", @"/mcp", @"/undo", @"/compact", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
+        @"/doctor", @"/bg", @"/hooks", @"/mcp", @"/undo", @"/compact", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
 }
 
 - (void)table:(NSArray *)rows
@@ -30,7 +31,7 @@
         @"  /undo                put back files the last reply changed     /retry   ask again                  /copy               last reply to the clipboard",
         @"  /export [file]       chat as Markdown           /history            the whole chat again",
         @"  /diff  /commit  /review   git helpers (the model does the work)",
-        @"  /hooks               shell commands run around prompts and tools     /mcp   MCP servers",
+        @"  /bg [stop ID]        background tasks the model started (it is woken when one finishes)\n  /hooks               shell commands run around prompts and tools     /mcp   MCP servers",
         @"  /workspace [name]    list or switch workspace   /instructions       project files in use",
         @"  /verbose  /thinking  /bell  toggles             /doctor             check the set-up",
         @"  /exit                leave",
@@ -334,6 +335,12 @@
             [self printLine:[NSString stringWithFormat:@"  %@ %@", [core providerUsable:p] ? [term styled:@"ok " with:@"green"] : [term styled:@"-- " with:@"gray"], [[ModelCatalog shared] titleForProvider:p]]];
         }
         [self printLine:[NSString stringWithFormat:@"  commander: %@", [core commanderProblem] ? [core commanderProblem] : @"ok"]];
+    } else if ([cmd isEqualToString:@"/bg"]) {
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if ([[p objectAtIndex:0] isEqualToString:@"stop"] && [p count] > 1)
+            [self printStyled:[TBBackground stop:[p objectAtIndex:1]] ? @"  stopped" : @"  not running" style:@"gray"];
+        else
+            [self printLine:[@"  " stringByAppendingString:[[[TBBackground list] componentsSeparatedByString:@"\n"] componentsJoinedByString:@"\n  "]]];
     } else if ([cmd isEqualToString:@"/hooks"]) [self hooksCommand:arg];
     else if ([cmd isEqualToString:@"/mcp"]) [self mcpCommand:arg];
     else if ([cmd isEqualToString:@"/undo"])

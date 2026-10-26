@@ -1,4 +1,5 @@
 #import "ChatController_Private.h"
+#import "TBBackground.h"
 #import "TranscriptView.h"
 #import "TBProviderIcons.h"
 #import "TBService.h"
@@ -521,6 +522,7 @@ static NSMutableArray *allControllers = nil;
 {
     (void)note;
     [TBStore flushAll];
+    [TBBackground stopAll];
 }
 
 - (BOOL)toolsEnabled:(NSDictionary *)chat
@@ -1974,6 +1976,7 @@ static BOOL launchFinished = NO;
     [self resumeVoiceIfWanted];
     [TBSpotlight start];
     [TBStore startWatching];   /* chats changed by the terminal program appear here */
+    [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(checkBackgroundWake:) userInfo:nil repeats:YES];
     if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
         /* What the controls and messages tell VoiceOver, for checking without it. */
         NSArray *views = [transcript subviews];
@@ -3428,10 +3431,14 @@ static BOOL launchFinished = NO;
         return;
     }
     editor = [input currentEditor];
-    if (editor)
+    if (wakeText)
+        text = wakeText;
+    else if (editor)
         text = [[editor string] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     else
         text = [[input stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!wakeText)
+        wakesInARow = 0;
     if (busy) {
         /* A model is working: what is typed now is guidance for it. */
         if ([text length] == 0 || ![self guidanceAvailable]) {
@@ -3478,11 +3485,13 @@ static BOOL launchFinished = NO;
     }
     [self stopSpeaking:nil];
     [self forgetEdit];
-    [input setStringValue:@""];
-    if (editor)
-        [editor setString:@""];
-    inputHeight = TB_FIELD_MIN;
-    [self layoutPanes];
+    if (!wakeText) {   /* what the person is typing stays when a background task wakes the chat */
+        [input setStringValue:@""];
+        if (editor)
+            [editor setString:@""];
+        inputHeight = TB_FIELD_MIN;
+        [self layoutPanes];
+    }
     userMessage = [NSMutableDictionary dictionary];
     [userMessage setObject:@"user" forKey:@"role"];
     [userMessage setObject:text forKey:@"text"];

@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import "TBCLICore.h"
 #import "TBCLIApp.h"
+#import "TBBackground.h"
 #import "TBEngine.h"
 #include <termios.h>
 #include <sys/stat.h>
@@ -201,8 +202,23 @@ int main(int argc, char **argv)
     [core setEvents:printer];
     problem = [core sendText:prompt];
     if (problem) { fprintf(stderr, "tb: %s\n", [problem UTF8String]); return 1; }
-    while ([core busy])
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+    {
+        NSString *chatId = [[chat objectForKey:@"id"] description];
+        int wakes = 0;
+        for (;;) {
+            while ([core busy])
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+            /* background tasks the model started: wait for them and let it carry on, as the window does */
+            if (wakes >= 10 || ![TBBackground hasPendingForChat:chatId])
+                break;
+            while (![TBBackground hasFinishedForChat:chatId])
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+            wakes++;
+            problem = [core sendText:[core takeBackgroundMessage]];
+            if (problem) { fprintf(stderr, "tb: %s\n", [problem UTF8String]); break; }
+        }
+        [TBBackground stopAll];
+    }
     if (printer->json && !printer->stream)
         printf("{\"type\":\"result\",\"result\":\"%s\",\"chat\":\"%s\"}\n", [TBJSONEscape(printer->reply) UTF8String], [[chat objectForKey:@"id"] UTF8String]);
     else if (!printer->json)

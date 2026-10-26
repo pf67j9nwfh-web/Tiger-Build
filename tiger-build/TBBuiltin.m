@@ -1,4 +1,5 @@
 #import "TBBuiltin.h"
+#import "TBBackground.h"
 #import "TBWebTools.h"
 #import "TBEngine.h"
 #import "TBJSON.h"
@@ -648,7 +649,7 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
 
 + (BOOL)knows:(NSString *)name
 {
-    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", @"web", @"xposts", @"smb", nil] containsObject:name];
+    return [[NSArray arrayWithObjects:@"calc", @"notes", @"sysinfo", @"weather", @"currency", @"inflation", @"web", @"xposts", @"smb", @"bg", nil] containsObject:name];
 }
 
 + (NSDictionary *)listTools:(NSString *)name
@@ -715,6 +716,14 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
             tool(@"smb_rename", [@"Rename or move a file or folder inside an SMB share: path to new_path." stringByAppendingString:how],
                 [where arrayByAddingObjectsFromArray:[NSArray arrayWithObject:@"new_path"]], [whereTypes arrayByAddingObjectsFromArray:[NSArray arrayWithObject:@"string"]], none), nil];
     }
+    else if ([name isEqualToString:@"bg"])
+        tools = [NSArray arrayWithObjects:
+            tool(@"bg_start", @"Run a shell command in the background and return at once with its task number. When it finishes you are woken automatically with its exit status and the end of its output, so do not poll or wait: carry on with other work or end your reply saying what you are waiting for. "
+                "Use it for builds, downloads, tests and other slow commands. It runs on this Mac and ends if Tiger Build is closed.",
+                [NSArray arrayWithObjects:@"command", @"label", @"directory", nil], [NSArray arrayWithObjects:@"string", @"string", @"string", nil], [NSArray arrayWithObject:@"command"]),
+            tool(@"bg_status", @"The state of a background task and the last lines of its output (lines defaults to 40).", [NSArray arrayWithObjects:@"id", @"lines", nil], [NSArray arrayWithObjects:@"string", @"number", nil], [NSArray arrayWithObject:@"id"]),
+            tool(@"bg_list", @"All background tasks and their state.", none, none, none),
+            tool(@"bg_stop", @"Stop a running background task.", [NSArray arrayWithObject:@"id"], text, [NSArray arrayWithObject:@"id"]), nil];
     else if ([name isEqualToString:@"weather"])
         tools = [NSArray arrayWithObjects:
             tool(@"current_weather", @"Current conditions from wttr.in for a place (a city, postcode or 'City,Country').", [NSArray arrayWithObject:@"place"], text, [NSArray arrayWithObject:@"place"]),
@@ -785,6 +794,17 @@ static NSString *inflationAdjust(NSDictionary *args, TBRun *run)
             saveNotes(notes);
             return [NSString stringWithFormat:@"Deleted '%@'.", title];
         }
+    } else if ([server isEqualToString:@"bg"]) {
+        if ([name isEqualToString:@"bg_start"]) {
+            NSString *ident = [TBBackground start:TBString(args, @"command") label:TBString(args, @"label") directory:TBString(args, @"directory") run:[run runId]];
+            return [NSString stringWithFormat:@"Started %@ in the background. You will be woken when it finishes.", ident];
+        }
+        if ([name isEqualToString:@"bg_status"])
+            return [TBBackground describe:TBString(args, @"id") tail:TBValue(args, @"lines") ? (int)[[args objectForKey:@"lines"] intValue] : 40];
+        if ([name isEqualToString:@"bg_list"])
+            return [TBBackground list];
+        if ([name isEqualToString:@"bg_stop"])
+            return [TBBackground stop:TBString(args, @"id")] ? @"Stopped." : @"That task is not running.";
     } else if ([server isEqualToString:@"sysinfo"]) {
         if ([name isEqualToString:@"host_info"]) {
             char host[256];

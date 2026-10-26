@@ -45,6 +45,8 @@
     BOOL attachWorking;
     NSTextField *thinkingField;
     NSString *runId;
+    NSString *wakeText;          /* a background task finished: this is sent as the next message instead of what is typed */
+    int wakesInARow;
     NSMutableDictionary *workspaceSettings;
     NSArray *toolCatalog;
     NSString *commanderProblem;

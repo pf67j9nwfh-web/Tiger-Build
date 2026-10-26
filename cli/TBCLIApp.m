@@ -1,6 +1,7 @@
 #import "TBCLIApp.h"
 #import "TBEngine.h"
 #import "TBSession.h"
+#import "TBBackground.h"
 #import "TBJSON.h"
 #include <unistd.h>
 #include <string.h>
@@ -438,7 +439,26 @@ static NSString *toolKind(NSString *name)
             [editor redraw];
         }
     }
+    if ([core backgroundFinished] && wakesInARow < 10)
+        [editor wakeUp];
     [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+}
+
+/* a background task of this chat has finished: tell the model, as the next message */
+- (BOOL)wakeForBackground
+{
+    NSString *message = [core backgroundFinished] ? [core takeBackgroundMessage] : nil;
+    if (!message)
+        return NO;
+    if (wakesInARow >= 10) {
+        [shellNotes addObject:message];
+        [self printStyled:@"  A background task finished; the model is told with your next message (it was woken 10 times without you)." style:@"gray"];
+        return NO;
+    }
+    wakesInARow++;
+    [self printStyled:@"  \u00b7 a background task finished: waking the model" style:@"gray"];
+    [self runTurnWithText:message];
+    return YES;
 }
 
 - (void)editorBackTab:(TBLineEditor *)e
@@ -953,6 +973,8 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         initial = nil;
     }
     while (!quit) {
+        if ([self wakeForBackground])
+            continue;
         [editor setPrompt:[self promptText] continuation:@"  "];
         [editor setHint:[self statusLine]];
         if (![editor readLine:&line interrupted:&interrupted])
@@ -968,6 +990,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         line = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([line length] == 0)
             continue;
+        wakesInARow = 0;
         [editor addHistory:line];
         if ([line hasPrefix:@"/"] && ![line hasPrefix:@"//"]) {
             if ([self runCommand:line])
@@ -987,6 +1010,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     [term write:@"\r\n"];
     [term leaveRaw];
     [core save];
+    [TBBackground stopAll];
     return 0;
 }
 
