@@ -3,6 +3,7 @@
 #import "TBCLICore.h"
 #import "TBCLIApp.h"
 #import "TBBackground.h"
+#import "TBIntegrations.h"
 #import "TBEngine.h"
 #include <termios.h>
 #include <sys/stat.h>
@@ -209,7 +210,7 @@ int main(int argc, char **argv)
             while ([core busy])
                 [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
             /* background tasks the model started: wait for them and let it carry on, as the window does */
-            if (wakes >= 10 || ![TBBackground hasPendingForChat:chatId])
+            if (wakes >= [TBIntegrations backgroundWakeLimit] || ![TBBackground hasPendingForChat:chatId])
                 break;
             while (![TBBackground hasFinishedForChat:chatId])
                 [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];

@@ -1,6 +1,7 @@
 #import "TBCLIApp.h"
 #import "TBEngine.h"
 #import "TBBackground.h"
+#import "TBIntegrations.h"
 
 @implementation TBCLIApp (Commands)
 
@@ -8,7 +9,7 @@
 {
     return [NSArray arrayWithObjects:@"/help", @"/exit", @"/quit", @"/new", @"/clear", @"/chats", @"/resume", @"/model", @"/models", @"/tools", @"/mode", @"/cost", @"/context",
         @"/rename", @"/delete", @"/fork", @"/export", @"/copy", @"/retry", @"/workspace", @"/status", @"/verbose", @"/thinking", @"/instructions", @"/allow", @"/deny",
-        @"/doctor", @"/bg", @"/hooks", @"/mcp", @"/undo", @"/compact", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
+        @"/doctor", @"/wakes", @"/bg", @"/hooks", @"/mcp", @"/undo", @"/compact", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
 }
 
 - (void)table:(NSArray *)rows
@@ -31,7 +32,7 @@
         @"  /undo                put back files the last reply changed     /retry   ask again                  /copy               last reply to the clipboard",
         @"  /export [file]       chat as Markdown           /history            the whole chat again",
         @"  /diff  /commit  /review   git helpers (the model does the work)",
-        @"  /bg [stop ID]        background tasks the model started (it is woken when one finishes)\n  /hooks               shell commands run around prompts and tools     /mcp   MCP servers",
+        @"  /bg [stop ID]        background tasks the model started (it is woken when one finishes)     /wakes [N]   how many wake-ups in a row\n  /hooks               shell commands run around prompts and tools     /mcp   MCP servers",
         @"  /workspace [name]    list or switch workspace   /instructions       project files in use",
         @"  /verbose  /thinking  /bell  toggles             /doctor             check the set-up",
         @"  /exit                leave",
@@ -335,6 +336,15 @@
             [self printLine:[NSString stringWithFormat:@"  %@ %@", [core providerUsable:p] ? [term styled:@"ok " with:@"green"] : [term styled:@"-- " with:@"gray"], [[ModelCatalog shared] titleForProvider:p]]];
         }
         [self printLine:[NSString stringWithFormat:@"  commander: %@", [core commanderProblem] ? [core commanderProblem] : @"ok"]];
+    } else if ([cmd isEqualToString:@"/wakes"]) {
+        if ([arg length]) {
+            int n = [arg intValue];
+            if (n < 0 || n > 100 || (n == 0 && ![arg isEqualToString:@"0"])) { [self printStyled:@"  0 to 100" style:@"red"]; return YES; }
+            /* the setting lives in the application's preferences, so the window sees it too */
+            CFPreferencesSetAppValue(CFSTR("TBTool.bg_wake_limit"), (CFNumberRef)[NSNumber numberWithInt:n], CFSTR("local.tigerbuild.TigerBuild"));
+            CFPreferencesAppSynchronize(CFSTR("local.tigerbuild.TigerBuild"));
+        }
+        [self printStyled:[NSString stringWithFormat:@"  a finished background task wakes a chat up to %d times in a row without you writing%@", [TBIntegrations backgroundWakeLimit], [TBIntegrations backgroundWakeLimit] ? @"" : @" (never)"] style:@"gray"];
     } else if ([cmd isEqualToString:@"/bg"]) {
         NSArray *p = [arg componentsSeparatedByString:@" "];
         if ([[p objectAtIndex:0] isEqualToString:@"stop"] && [p count] > 1)

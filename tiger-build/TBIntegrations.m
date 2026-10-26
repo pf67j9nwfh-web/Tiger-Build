@@ -130,6 +130,12 @@ static NSArray *validated(id list, BOOL forceOff)
     return [p length] ? p : @"choose";
 }
 
+/* how many times in a row a finished background task may wake a chat without the person typing: 10 unless changed (0 = never, up to 100) */
++ (int)backgroundWakeLimit
+{
+    return [self subagentNumber:@"bg_wake_limit" fallback:10 low:0 high:100];
+}
+
 + (NSDictionary *)publicConfig
 {
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
@@ -137,6 +143,7 @@ static NSArray *validated(id list, BOOL forceOff)
     for (i = 0; i < [flagNames() count]; i++)
         [out setObject:[NSNumber numberWithBool:[TBSettings flag:[flagNames() objectAtIndex:i]]] forKey:[flagNames() objectAtIndex:i]];
     [out setObject:[NSNumber numberWithInt:[self steps]] forKey:@"max_tool_steps"];
+    [out setObject:[NSNumber numberWithInt:[self backgroundWakeLimit]] forKey:@"bg_wake_limit"];
     [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"download_max_mb" fallback:50 low:1 high:2000]] forKey:@"download_max_mb"];
     [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_tasks" fallback:8 low:1 high:16]] forKey:@"subagents_tasks"];
     [out setObject:[NSNumber numberWithInt:[self subagentNumber:@"subagents_max" fallback:MIN(4, TBCPUCount()) low:1 high:8]] forKey:@"subagents_max"];
@@ -176,6 +183,13 @@ static NSArray *validated(id list, BOOL forceOff)
     }
     if (steps)
         [[NSUserDefaults standardUserDefaults] setInteger:[steps intValue] forKey:@"TBTool.max_tool_steps"];
+    {
+        id wakes = TBValue(incoming, @"bg_wake_limit");
+        if (wakes && (![wakes isKindOfClass:[NSNumber class]] || [wakes intValue] < 0 || [wakes intValue] > 100))
+            TBFail(@"Automatic wake-ups in a row must be a whole number from 0 to 100.");
+        if (wakes)
+            [[NSUserDefaults standardUserDefaults] setInteger:[wakes intValue] forKey:@"TBTool.bg_wake_limit"];
+    }
     {
         id megabytes = TBValue(incoming, @"download_max_mb");
         if (megabytes && (![megabytes isKindOfClass:[NSNumber class]] || [megabytes intValue] < 1 || [megabytes intValue] > 2000))

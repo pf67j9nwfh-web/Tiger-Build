@@ -1,6 +1,7 @@
 #import "ChatController_Private.h"
 #import "TBJSON.h"
 #import "TBBackground.h"
+#import "TBIntegrations.h"
 #import "TBTheme.h"
 #import "TranscriptView.h"
 #import <stdlib.h>
@@ -796,21 +797,49 @@ static NSString *newRunId(void)
 
 - (void)checkBackgroundWake:(NSTimer *)timer
 {
-    NSString *cid, *message;
+    NSArray *ids;
+    unsigned i;
     (void)timer;
-    if (busy || !current || wakesInARow >= 10 || wakeText)
+    if (wakeText)
         return;
-    cid = [[current objectForKey:@"id"] description];
-    if (![TBBackground hasFinishedForChat:cid] || TBChatLeaseNote(current))
-        return;
-    message = [[TBBackground takeFinishedMessagesForChat:cid] componentsJoinedByString:@"\n\n"];
-    if (![message length])
-        return;
-    wakesInARow++;
-    wakeText = [message retain];
-    [self send:nil];
-    [wakeText release];
-    wakeText = nil;
+    ids = [TBBackground chatsWithFinished];
+    for (i = 0; i < [ids count]; i++) {
+        NSString *cid = [ids objectAtIndex:i], *message;
+        NSMutableDictionary *chat = [self chatWithId:cid], *shown;
+        BOOL onScreen;
+        int count, limit = [TBIntegrations backgroundWakeLimit];
+        if (!chat)
+            continue;
+        onScreen = chat == current;
+        if (onScreen ? busy : [self chatHasParkedRun:cid])
+            continue;                               /* it is still replying: its turn comes after */
+        if (TBChatLeaseNote(chat))
+            continue;
+        count = [[wakeCounts objectForKey:cid] intValue];
+        if (count >= limit) {
+            if (![wakeNoted containsObject:cid]) {
+                [wakeNoted addObject:cid];
+                [self addStatus:limit == 0 ? @"A background task finished. Automatic wake-ups are off (Tool Settings), so the model is told with your next message."
+                    : [NSString stringWithFormat:@"A background task finished, but the model was woken %d times without you writing. It is told with your next message.", limit] toChat:chat];
+            }
+            continue;
+        }
+        message = [[TBBackground takeFinishedMessagesForChat:cid] componentsJoinedByString:@"\n\n"];
+        if (![message length])
+            continue;
+        if (!wakeCounts) wakeCounts = [[NSMutableDictionary alloc] init];
+        [wakeCounts setObject:[NSNumber numberWithInt:count + 1] forKey:cid];
+        wakeText = [message retain];
+        shown = current;
+        if (!onScreen)
+            [self showChatAtIndex:(int)[chats indexOfObjectIdenticalTo:chat]];   /* a reply in another chat is parked by showChatAtIndex: when the view returns */
+        [self send:nil];
+        if (!onScreen && shown)
+            [self showChatAtIndex:(int)[chats indexOfObjectIdenticalTo:shown]];
+        [wakeText release];
+        wakeText = nil;
+        return;                                     /* one chat per tick */
+    }
 }
 
 /* ---- Commander problems ---- */

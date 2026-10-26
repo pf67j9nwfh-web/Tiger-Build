@@ -1976,6 +1976,7 @@ static BOOL launchFinished = NO;
     [self resumeVoiceIfWanted];
     [TBSpotlight start];
     [TBStore startWatching];   /* chats changed by the terminal program appear here */
+    wakeNoted = [[NSMutableSet alloc] init];
     [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(checkBackgroundWake:) userInfo:nil repeats:YES];
     if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
         /* What the controls and messages tell VoiceOver, for checking without it. */
@@ -3437,8 +3438,13 @@ static BOOL launchFinished = NO;
         text = [[editor string] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     else
         text = [[input stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (!wakeText)
-        wakesInARow = 0;
+    if (!wakeText) {
+        NSString *cid = [current objectForKey:@"id"];
+        if (cid) {
+            [wakeCounts removeObjectForKey:cid];
+            [wakeNoted removeObject:cid];
+        }
+    }
     if (busy) {
         /* A model is working: what is typed now is guidance for it. */
         if ([text length] == 0 || ![self guidanceAvailable]) {

@@ -13,6 +13,7 @@
 + (void)noteRun:(NSString *)runId chat:(NSString *)chat;
 /* Tasks of that chat that have finished since the last call, each as the message to send: "Background task bg3 (...) finished...". */
 + (NSArray *)takeFinishedMessagesForChat:(NSString *)chat;
++ (NSArray *)chatsWithFinished;                                 /* the chats that have a finished task nobody has been told about */
 + (BOOL)hasFinishedForChat:(NSString *)chat;                   /* finished and not yet reported */
 + (BOOL)hasPendingForChat:(NSString *)chat;                    /* running or finished and not yet reported */
 @end

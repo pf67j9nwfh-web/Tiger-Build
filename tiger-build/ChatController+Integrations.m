@@ -147,7 +147,11 @@
         [self integrationLabel:@"Most tool steps in one reply" frame:NSMakeRect(16,y+2,200,18) view:tab];
         NSTextField *steps=[[[NSTextField alloc] initWithFrame:NSMakeRect(220,y,60,22)] autorelease];
         [steps setToolTip:@"A reply may use this many tool steps (1 to 1000; 0 means no limit, which can run up cost) before Tiger Build stops it and says so. Say continue to go on."];
-        [tab addSubview:steps];[fields setObject:steps forKey:@"max_tool_steps"];y-=30;
+        [tab addSubview:steps];[fields setObject:steps forKey:@"max_tool_steps"];
+        [self integrationLabel:@"Wake-ups in a row" frame:NSMakeRect(300,y+2,170,18) view:tab];
+        NSTextField *wakes=[[[NSTextField alloc] initWithFrame:NSMakeRect(474,y,60,22)] autorelease];
+        [wakes setToolTip:@"0 to 100. When a background task (the Background tasks tool) finishes, the chat is woken to carry on. After this many wake-ups in a row without you writing, it waits for your next message. 10 unless you change it; 0 never wakes a chat."];
+        [tab addSubview:wakes];[fields setObject:wakes forKey:@"bg_wake_limit"];y-=30;
         [self integrationLabel:@"Each chat can switch these on or off from the Tools button, and choose which ones must ask first. "
             @"The switches here apply to all your chats." frame:NSMakeRect(16,y-20,524,44) view:tab];
         tab=[self integrationTab:@"Subagents" in:tabs];
@@ -252,6 +256,7 @@
     [[fields objectForKey:@"subagents_max"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"subagents_max"] intValue]?[[data objectForKey:@"subagents_max"] intValue]:4]];
     [self fillSubagentPolicyPopup:[data objectForKey:@"subagents_policy"]];
     [[fields objectForKey:@"download_max_mb"] setStringValue:[NSString stringWithFormat:@"%d",[[data objectForKey:@"download_max_mb"] intValue]?[[data objectForKey:@"download_max_mb"] intValue]:50]];
+    [[fields objectForKey:@"bg_wake_limit"] setStringValue:[NSString stringWithFormat:@"%d",[data objectForKey:@"bg_wake_limit"]?[[data objectForKey:@"bg_wake_limit"] intValue]:10]];
     [[fields objectForKey:@"max_tool_steps"] setStringValue:[NSString stringWithFormat:@"%d",[data objectForKey:@"max_tool_steps"]?[[data objectForKey:@"max_tool_steps"] intValue]:40]];
     [[fields objectForKey:@"table"] reloadData];
     [[fields objectForKey:@"search_api_key"] setStringValue:@""];[[fields objectForKey:@"clear_search_key"] setState:NSOffState];
@@ -504,6 +509,8 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
     [data setObject:[[fields objectForKey:@"search_provider"] indexOfSelectedItem]==1?@"tavily":@"brave" forKey:@"search_provider"];
     {int mb=[[[fields objectForKey:@"download_max_mb"] stringValue] intValue];if(mb<1)mb=50;if(mb>2000)mb=2000;
         [data setObject:[NSNumber numberWithInt:mb] forKey:@"download_max_mb"];}
+    {NSString *wt=[[fields objectForKey:@"bg_wake_limit"] stringValue];int w=[wt length]?[wt intValue]:10;if(w<0)w=10;if(w>100)w=100;
+        [data setObject:[NSNumber numberWithInt:w] forKey:@"bg_wake_limit"];}
     {NSString *text=[[fields objectForKey:@"max_tool_steps"] stringValue];int steps=[text length]?[text intValue]:40;if(steps<0)steps=40;if(steps>1000)steps=1000;
         [data setObject:[NSNumber numberWithInt:steps] forKey:@"max_tool_steps"];}
     {int tasks=[[[fields objectForKey:@"subagents_tasks"] stringValue] intValue];int cap=[[[fields objectForKey:@"subagents_max"] stringValue] intValue];

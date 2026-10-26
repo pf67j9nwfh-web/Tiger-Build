@@ -46,7 +46,8 @@
     NSTextField *thinkingField;
     NSString *runId;
     NSString *wakeText;          /* a background task finished: this is sent as the next message instead of what is typed */
-    int wakesInARow;
+    NSMutableDictionary *wakeCounts;   /* chat id -> wake-ups by background tasks since the person last wrote there */
+    NSMutableSet *wakeNoted;
     NSMutableDictionary *workspaceSettings;
     NSArray *toolCatalog;
     NSString *commanderProblem;

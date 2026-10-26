@@ -192,6 +192,23 @@ static NSString *stateText(NSString *ident, NSMutableDictionary *t, int lines)
     return out;
 }
 
++ (NSArray *)chatsWithFinished
+{
+    NSMutableArray *ids = [NSMutableArray array];
+    @synchronized(self) {
+        NSEnumerator *e = [tasks objectEnumerator];
+        NSMutableDictionary *t;
+        while ((t = [e nextObject])) {
+            NSString *chat;
+            refresh(t);
+            chat = [runChats objectForKey:[t objectForKey:@"run"]];
+            if (chat && [t objectForKey:@"ended"] && ![[t objectForKey:@"reported"] boolValue] && ![ids containsObject:chat])
+                [ids addObject:chat];
+        }
+    }
+    return ids;
+}
+
 + (BOOL)hasFinishedForChat:(NSString *)chat
 {
     @synchronized(self) {

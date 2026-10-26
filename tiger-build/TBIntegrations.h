@@ -4,6 +4,7 @@
    Servers (which can hold tokens) live in the Keychain; the rest in the preferences. */
 @interface TBIntegrations : NSObject
 + (NSArray *)servers;                     /* [{id, title, command, args, env, enabled, approval}] */
++ (int)backgroundWakeLimit;            /* automatic wake-ups of a chat in a row by finished background tasks (10; 0 = never) */
 + (unsigned long)downloadLimit;         /* the most a download may bring back, in bytes (50 MB unless changed in the settings) */
 + (NSDictionary *)publicConfig;           /* what the settings window shows; the keys themselves are never sent */
 + (void)update:(NSDictionary *)incoming;  /* from the settings window; empty keys stay unless clear_* is set. Raises TBError. */

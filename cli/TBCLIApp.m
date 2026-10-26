@@ -2,6 +2,7 @@
 #import "TBEngine.h"
 #import "TBSession.h"
 #import "TBBackground.h"
+#import "TBIntegrations.h"
 #import "TBJSON.h"
 #include <unistd.h>
 #include <string.h>
@@ -439,7 +440,7 @@ static NSString *toolKind(NSString *name)
             [editor redraw];
         }
     }
-    if ([core backgroundFinished] && wakesInARow < 10)
+    if ([core backgroundFinished] && wakesInARow < [TBIntegrations backgroundWakeLimit])
         [editor wakeUp];
     [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
 }
@@ -450,9 +451,9 @@ static NSString *toolKind(NSString *name)
     NSString *message = [core backgroundFinished] ? [core takeBackgroundMessage] : nil;
     if (!message)
         return NO;
-    if (wakesInARow >= 10) {
+    if (wakesInARow >= [TBIntegrations backgroundWakeLimit]) {
         [shellNotes addObject:message];
-        [self printStyled:@"  A background task finished; the model is told with your next message (it was woken 10 times without you)." style:@"gray"];
+        [self printStyled:@"  A background task finished; the model is told with your next message (/wakes sets how often it is woken without you)." style:@"gray"];
         return NO;
     }
     wakesInARow++;
