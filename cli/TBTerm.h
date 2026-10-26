@@ -51,8 +51,6 @@ typedef enum { TBColorNone, TBColor16, TBColor256, TBColorTrue } TBColorLevel;
 /* candidates for the word before the cursor; *start is where the word begins in the line. nil for none. */
 - (NSArray *)editor:(TBLineEditor *)editor completionsFor:(NSString *)line cursor:(int)cursor start:(int *)start;
 - (void)editorIdle:(TBLineEditor *)editor;
-@optional
-- (void)editorBackTab:(TBLineEditor *)editor;
 @end
 
 @interface TBLineEditor : NSObject {

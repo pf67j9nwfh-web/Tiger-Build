@@ -842,7 +842,7 @@ static int nextIndex(NSString *s, int i)
             break;
         case TBKeyBackTab:
             if (delegate && [(NSObject *)delegate respondsToSelector:@selector(editorBackTab:)])
-                [(id)delegate editorBackTab:self];
+                [(id)delegate performSelector:@selector(editorBackTab:) withObject:self];
             break;
         case TBKeyTab:
             if (delegate && [(NSObject *)delegate respondsToSelector:@selector(editor:completionsFor:cursor:start:)])
