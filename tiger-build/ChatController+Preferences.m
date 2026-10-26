@@ -7,6 +7,40 @@
 
 #define TB_LOCAL_EXAMPLE @"http://127.0.0.1:1234/v1"
 
+/* The list of pages down the left of Preferences. Eleven tabs did not fit in a window that also fits an 800 x 600 screen, so the tab strip is hidden and this list chooses the page. */
+@interface TBPrefsNav : NSObject
+{
+    NSTabView *tabs;
+}
+- (id)initWithTabs:(NSTabView *)t;
+@end
+
+@implementation TBPrefsNav
+- (id)initWithTabs:(NSTabView *)t
+{
+    self = [super init];
+    tabs = t;
+    return self;
+}
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)view
+{
+    (void)view;
+    return (NSInteger)[[tabs tabViewItems] count];
+}
+- (id)tableView:(NSTableView *)view objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row
+{
+    (void)view;
+    (void)column;
+    return [[[tabs tabViewItems] objectAtIndex:(unsigned)row] label];
+}
+- (void)tableViewSelectionDidChange:(NSNotification *)note
+{
+    int row = (int)[[note object] selectedRow];
+    if (row >= 0 && row < (int)[[tabs tabViewItems] count])
+        [tabs selectTabViewItemAtIndex:row];
+}
+@end
+
 @interface ChatController (PreferencesPrivate)
 - (void)loadSSHFields;
 - (void)saveSSHFields;
@@ -420,7 +454,7 @@
     NSArray *keys;
     unsigned i;
     float y;
-    prefsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 690, 470)
+    prefsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 762, 410)
                                                styleMask:NSTitledWindowMask | NSClosableWindowMask
                                                  backing:NSBackingStoreBuffered
                                                    defer:NO];
@@ -428,8 +462,8 @@
     [prefsWindow setReleasedWhenClosed:NO];
     [prefsWindow center];
     view = [prefsWindow contentView];
-    tabs = [[[NSTabView alloc] initWithFrame:NSMakeRect(12, 56, 666, 404)] autorelease];
-    [tabs setFont:[NSFont systemFontOfSize:12]];
+    tabs = [[[NSTabView alloc] initWithFrame:NSMakeRect(150, 60, 600, 340)] autorelease];
+    [tabs setTabViewType:NSNoTabsNoBorder];      /* the list at the left chooses the page */
     [view addSubview:tabs];
 
     /* ---- API keys ---- */
@@ -677,12 +711,35 @@
         @"On the other computer add the server as ssh:you@this-Mac:2222; its Trust Host step shows the fingerprint to compare with the one here."
         frame:NSMakeRect(16, y - 40, 520, 56) inView:tab];
 
+    {
+        NSScrollView *scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(12, 60, 130, 340)] autorelease];
+        NSTableView *list = [[[NSTableView alloc] initWithFrame:NSMakeRect(0, 0, 112, 340)] autorelease];
+        NSTableColumn *column = [[[NSTableColumn alloc] initWithIdentifier:@"page"] autorelease];
+        TBPrefsNav *nav = [[[TBPrefsNav alloc] initWithTabs:tabs] autorelease];
+        [column setWidth:112];
+        [[column dataCell] setFont:[NSFont systemFontOfSize:12]];
+        [column setEditable:NO];
+        [list addTableColumn:column];
+        [list setHeaderView:nil];
+        [list setRowHeight:22];
+        [list setAllowsEmptySelection:NO];
+        [list setDataSource:nav];
+        [list setDelegate:nav];
+        [scroll setDocumentView:list];
+        [scroll setHasVerticalScroller:NO];
+        [scroll setBorderType:NSBezelBorder];
+        [view addSubview:scroll];
+        [prefsFields setObject:nav forKey:@"nav"];
+        [prefsFields setObject:list forKey:@"navList"];
+        [list reloadData];
+        [list selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
+    }
     note = [self preferencesLabel:@"" frame:NSMakeRect(16, 22, 376, 18) inView:view];
     [prefsFields setObject:note forKey:@"status"];
-    button = [self preferencesButton:@"Save" frame:NSMakeRect(486, 16, 94, 30)
+    button = [self preferencesButton:@"Save" frame:NSMakeRect(558, 16, 94, 30)
                               action:@selector(savePreferences:) inView:view];
     [button setKeyEquivalent:@"\r"];
-    button = [self preferencesButton:@"Cancel" frame:NSMakeRect(584, 16, 94, 30)
+    button = [self preferencesButton:@"Cancel" frame:NSMakeRect(656, 16, 94, 30)
                               action:@selector(cancelPreferences:) inView:view];
     [button setKeyEquivalent:@"\033"];
 }

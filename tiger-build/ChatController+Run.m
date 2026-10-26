@@ -249,6 +249,7 @@ static NSString *newRunId(void)
     [menu addItem:slot];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:[self toolsItem:@"Tool Settings..." action:@selector(showIntegrations:) key:nil state:NO]];
+    [menu addItem:[self toolsItem:@"Preferences..." action:@selector(showPreferences:) key:nil state:NO]];
     [menu addItem:[self toolsItem:@"Workspace Directory Restriction..." action:@selector(showWorkspaceSettings:) key:nil state:NO]];
     [toolsPopup selectItemAtIndex:0];
     [self applyPopupTheme:toolsPopup];
