@@ -1973,6 +1973,7 @@ static BOOL launchFinished = NO;
     [self reloadTableSelect:0 show:YES];
     [self resumeVoiceIfWanted];
     [TBSpotlight start];
+    [TBStore startWatching];   /* chats changed by the terminal program appear here */
     if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--list-accessibility"]) {
         /* What the controls and messages tell VoiceOver, for checking without it. */
         NSArray *views = [transcript subviews];

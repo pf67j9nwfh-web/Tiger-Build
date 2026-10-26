@@ -64,6 +64,9 @@ extern NSString *TBStoreChangedNotification;
     NSMutableDictionary *settings;
     int next;
     BOOL dirty;
+    NSMutableDictionary *baseline;   /* chat number -> {fingerprint, revision} as last read or written */
+    NSString *settingsPrint;
+    NSString *stamp;                 /* the file as last read or written, to see another process's change */
 }
 - (id)initWithPath:(NSString *)file;
 + (TBStore *)storeAtPath:(NSString *)path;
@@ -77,6 +80,11 @@ extern NSString *TBStoreChangedNotification;
 - (int)takeNextId;
 - (void)markDirty;
 - (void)flush;
+/* Another process (the terminal program, or the window) may be using the same file. This takes in what it changed since the last look, keeping the chat
+   objects this one holds; YES when something changed (post TBStoreChangedNotification). The save merges the same way, under a lock. */
+- (BOOL)reloadExternal;
+/* The windows look for such changes every two seconds. */
++ (void)startWatching;
 @end
 
 /* Rough token count for a chat, used for the context readout and to decide

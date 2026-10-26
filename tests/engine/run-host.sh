@@ -45,6 +45,7 @@ build localtools ../tests/engine/localtoolstest.m TBLocalTools.m TBSkills.m TBMo
 build chatexport ../tests/engine/chatexporttest.m TBChatExport.m $COMMON
 build mcptransport ../tests/engine/mcptransporttest.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
 build smbtest ../tests/engine/smbtest.m TBSMB.m "$OUT"/smb/*.o $COMMON
+build store ../tests/engine/storetest.m $COMMON
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"
@@ -65,6 +66,7 @@ SMBD=$!
 trap 'kill $MOCK $SMBD 2>/dev/null' EXIT
 sleep 1
 "$OUT/smbtest" 8446 "$OUT/share" || status=1
+rm -rf "$OUT/storedir"; "$OUT/store" "$OUT/storedir" || status=1
 "$OUT/extras" $PORT || status=1
 "$OUT/mcptransport" $PORT || status=1
 "$OUT/formats" ../tests/engine/fixtures || status=1

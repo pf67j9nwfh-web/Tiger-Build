@@ -1,5 +1,9 @@
 #import "TBSupport.h"
 #import "TBMarkup.h"
+#include <sys/stat.h>
+#include <sys/file.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 NSString *TBJSONEscape(NSString *value)
 {
@@ -634,6 +638,78 @@ void TBRollingBackup(NSString *path)
 NSString *TBStoreChangedNotification = @"TBStoreChanged";
 static NSMutableDictionary *openStores = nil;
 
+/* ---- sharing the file between processes (the window and the terminal program) ----
+   Every chat carries a revision ("rev"). A process remembers, for each chat, what it last read or wrote (a fingerprint and the revision), so at a
+   save it can tell which chats it changed itself, and under a lock on the file it merges: the chats it changed are written, the others are taken
+   from the file if another process changed them, chats made elsewhere are added, chats deleted here are dropped from the file. When two processes
+   changed the same chat, the file's version is kept as a second chat ("... (other copy)") so nothing is lost. */
+
+static unsigned long long fnv(unsigned long long h, const void *bytes, size_t n)
+{
+    const unsigned char *b = bytes;
+    size_t i;
+    for (i = 0; i < n; i++)
+        h = (h ^ b[i]) * 1099511628211ULL;
+    return h;
+}
+
+static unsigned long long fnvString(unsigned long long h, NSString *s)
+{
+    const char *u = [s UTF8String];
+    return u ? fnv(h, u, strlen(u)) : h;
+}
+
+/* what a chat is, apart from its revision: its settings, how many messages, their sizes, and the last two in full */
+static unsigned long long chatPrint(NSDictionary *chat)
+{
+    unsigned long long h = 14695981039346656037ULL;
+    NSArray *keys = [[chat allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    NSArray *messages = [chat objectForKey:@"messages"];
+    unsigned i, count = [messages isKindOfClass:[NSArray class]] ? [messages count] : 0;
+    for (i = 0; i < [keys count]; i++) {
+        NSString *key = [keys objectAtIndex:i];
+        if ([key isEqualToString:@"messages"] || [key isEqualToString:@"rev"])
+            continue;
+        h = fnvString(h, key);
+        h = fnvString(h, [[chat objectForKey:key] description]);
+    }
+    h = fnv(h, &count, sizeof count);
+    for (i = 0; i < count; i++) {
+        NSDictionary *m = [messages objectAtIndex:i];
+        unsigned long len = [[m objectForKey:@"text"] length], n = [m count];
+        h = fnv(h, &len, sizeof len);
+        h = fnv(h, &n, sizeof n);
+        if (i + 2 >= count)
+            h = fnvString(h, [m description]);
+    }
+    return h;
+}
+
+static NSString *fileStamp(NSString *path)
+{
+    struct stat st;
+    if (stat([path fileSystemRepresentation], &st) != 0)
+        return @"none";
+    return [NSString stringWithFormat:@"%llu-%ld.%ld-%lld", (unsigned long long)st.st_ino, (long)st.st_mtimespec.tv_sec, (long)st.st_mtimespec.tv_nsec, (long long)st.st_size];
+}
+
+static NSMutableDictionary *readRoot(NSString *path)
+{
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    NSString *error = nil;
+    id root;
+    if (!data)
+        return nil;
+    root = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListMutableContainers format:NULL errorDescription:&error];
+    if (error)
+        [error release];
+    return [root isKindOfClass:[NSMutableDictionary class]] ? root : nil;
+}
+
+@interface TBStore (Private)
+- (int)takeNextIdLocked;
+@end
+
 @implementation TBStore
 
 + (TBStore *)storeAtPath:(NSString *)path
@@ -668,11 +744,42 @@ static NSMutableDictionary *openStores = nil;
         [store flush];
 }
 
+/* every couple of seconds, look for changes another process made to a file this one has open (the window does; the terminal program asks when it needs to) */
++ (void)startWatching
+{
+    static NSTimer *timer = nil;
+    if (!timer)
+        timer = [[NSTimer scheduledTimerWithTimeInterval:2 target:self selector:@selector(watchTick:) userInfo:nil repeats:YES] retain];
+}
+
++ (void)watchTick:(NSTimer *)timer
+{
+    NSEnumerator *all = [[openStores allValues] objectEnumerator];
+    TBStore *store;
+    (void)timer;
+    while ((store = [all nextObject]))
+        if ([store reloadExternal])
+            [[NSNotificationCenter defaultCenter] postNotificationName:TBStoreChangedNotification object:store userInfo:nil];
+}
+
+- (void)rebaseline
+{
+    unsigned i;
+    [baseline release];
+    baseline = [[NSMutableDictionary alloc] init];
+    for (i = 0; i < [chats count]; i++) {
+        NSDictionary *chat = [chats objectAtIndex:i];
+        NSString *ident = [chat objectForKey:@"id"];
+        if (ident)
+            [baseline setObject:[NSArray arrayWithObjects:[NSNumber numberWithUnsignedLongLong:chatPrint(chat)], [chat objectForKey:@"rev"] ? [chat objectForKey:@"rev"] : [NSNumber numberWithInt:0], nil] forKey:ident];
+    }
+    [settingsPrint release];
+    settingsPrint = [[settings description] copy];
+}
+
 - (id)initWithPath:(NSString *)file
 {
-    NSData *data;
-    NSString *error = nil;
-    id root;
+    NSMutableDictionary *root;
     NSArray *saved;
     unsigned i;
     int highest = 0;
@@ -682,30 +789,24 @@ static NSMutableDictionary *openStores = nil;
     path = [file copy];
     chats = [[NSMutableArray alloc] init];
     settings = [[NSMutableDictionary alloc] init];
-    data = [NSData dataWithContentsOfFile:path];
-    if (data) {
-        root = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListMutableContainers
-            format:NULL errorDescription:&error];
-        if (error)
-            [error release];
-        if ([root isKindOfClass:[NSDictionary class]]) {
-            saved = [root objectForKey:@"chats"];
-            if ([saved isKindOfClass:[NSArray class]]) {
-                for (i = 0; i < [saved count]; i++) {
-                    NSArray *list = [[saved objectAtIndex:i] objectForKey:@"messages"];
-                    unsigned j;
-                    for (j = 0; j < [list count]; j++) {
-                        /* A reply that was still streaming when the app quit. */
-                        [[list objectAtIndex:j] removeObjectForKey:@"pendingMedia"];
-                        [[list objectAtIndex:j] removeObjectForKey:@"open"];
-                    }
-                    [chats addObject:[saved objectAtIndex:i]];
+    root = readRoot(path);
+    if (root) {
+        saved = [root objectForKey:@"chats"];
+        if ([saved isKindOfClass:[NSArray class]]) {
+            for (i = 0; i < [saved count]; i++) {
+                NSArray *list = [[saved objectAtIndex:i] objectForKey:@"messages"];
+                unsigned j;
+                for (j = 0; j < [list count]; j++) {
+                    /* A reply that was still streaming when the app quit. */
+                    [[list objectAtIndex:j] removeObjectForKey:@"pendingMedia"];
+                    [[list objectAtIndex:j] removeObjectForKey:@"open"];
                 }
+                [chats addObject:[saved objectAtIndex:i]];
             }
-            highest = [[root objectForKey:@"next"] intValue];
-            if ([[root objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
-                [settings addEntriesFromDictionary:[root objectForKey:@"settings"]];
         }
+        highest = [[root objectForKey:@"next"] intValue];
+        if ([[root objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
+            [settings addEntriesFromDictionary:[root objectForKey:@"settings"]];
     }
     /* The saved value is the next number to hand out. Without one, go by the
        highest chat number there is. */
@@ -718,6 +819,8 @@ static NSMutableDictionary *openStores = nil;
         highest++;
     }
     next = highest;
+    [self rebaseline];
+    stamp = [fileStamp(path) copy];
     return self;
 }
 
@@ -727,6 +830,9 @@ static NSMutableDictionary *openStores = nil;
     [path release];
     [chats release];
     [settings release];
+    [baseline release];
+    [settingsPrint release];
+    [stamp release];
     [super dealloc];
 }
 
@@ -735,11 +841,166 @@ static NSMutableDictionary *openStores = nil;
 - (NSMutableDictionary *)settings { return settings; }
 - (int)next { return next; }
 
+/* the lock on the file, held while it is read and written */
+- (int)lockFile
+{
+    int fd;
+    [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
+    fd = open([[path stringByAppendingString:@".lock"] fileSystemRepresentation], O_RDWR | O_CREAT, 0600);
+    if (fd >= 0)
+        flock(fd, LOCK_EX);
+    return fd;
+}
+
+- (void)unlockFile:(int)fd
+{
+    if (fd >= 0) {
+        flock(fd, LOCK_UN);
+        close(fd);
+    }
+}
+
+/* Chat numbers are handed out from a file of their own, so two processes never give the same number to different chats. */
 - (int)takeNextId
 {
-    int value = next;
-    next++;
+    NSString *counter = [path stringByAppendingString:@".next"];
+    int fd = [self lockFile], value = next;
+    NSString *text = [NSString stringWithContentsOfFile:counter encoding:NSUTF8StringEncoding error:NULL];
+    NSMutableDictionary *root = readRoot(path);
+    if ([text intValue] > value)
+        value = [text intValue];
+    if ([[root objectForKey:@"next"] intValue] > value)
+        value = [[root objectForKey:@"next"] intValue];
+    [[NSString stringWithFormat:@"%d\n", value + 1] writeToFile:counter atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    [self unlockFile:fd];
+    next = value + 1;
     return value;
+}
+
+- (BOOL)chatChanged:(NSDictionary *)chat
+{
+    NSArray *base = [baseline objectForKey:[chat objectForKey:@"id"]];
+    return !base || [[base objectAtIndex:0] unsignedLongLongValue] != chatPrint(chat);
+}
+
+/* Brings what is in the file together with what is in memory (the file is locked by the caller). With writing NO, only changes made elsewhere are taken in
+   (nothing is resolved or written); returns whether memory changed. */
+- (BOOL)mergeWithDisk:(NSMutableDictionary *)disk writing:(BOOL)writing
+{
+    NSMutableDictionary *mine = [NSMutableDictionary dictionary];
+    NSMutableSet *onDisk = [NSMutableSet set];
+    NSArray *theirs = [disk objectForKey:@"chats"];
+    NSMutableArray *added = [NSMutableArray array];
+    BOOL changed = NO;
+    unsigned i;
+    for (i = 0; i < [chats count]; i++)
+        if ([[chats objectAtIndex:i] objectForKey:@"id"])
+            [mine setObject:[chats objectAtIndex:i] forKey:[[chats objectAtIndex:i] objectForKey:@"id"]];
+    if (![theirs isKindOfClass:[NSArray class]])
+        theirs = [NSArray array];
+    for (i = 0; i < [theirs count]; i++) {
+        NSMutableDictionary *other = [theirs objectAtIndex:i], *chat;
+        NSString *ident = [other objectForKey:@"id"];
+        NSArray *base;
+        BOOL local, remote;
+        if (![ident isKindOfClass:[NSString class]])
+            continue;
+        [onDisk addObject:ident];
+        chat = [mine objectForKey:ident];
+        base = [baseline objectForKey:ident];
+        if (!chat) {
+            if (!base) {                      /* made elsewhere */
+                [added addObject:other];
+                changed = YES;
+            }                                 /* else: deleted here, so it is not kept */
+            continue;
+        }
+        local = [self chatChanged:chat];
+        remote = !base || [[other objectForKey:@"rev"] intValue] != [[base objectAtIndex:1] intValue];
+        if (!remote)
+            continue;
+        if (!local) {                          /* changed elsewhere only: take it, keeping this object */
+            [chat setDictionary:other];
+            [baseline setObject:[NSArray arrayWithObjects:[NSNumber numberWithUnsignedLongLong:chatPrint(chat)], [chat objectForKey:@"rev"] ? [chat objectForKey:@"rev"] : [NSNumber numberWithInt:0], nil] forKey:ident];
+            changed = YES;
+        } else if (writing) {                  /* changed in both: this one stays, the other becomes a second chat */
+            NSString *title = [other objectForKey:@"title"];
+            int theirRev = [[other objectForKey:@"rev"] intValue], baseRev = base ? [[base objectAtIndex:1] intValue] : 0;
+            [other setObject:[NSString stringWithFormat:@"%d", [self takeNextIdLocked]] forKey:@"id"];
+            [other setObject:[NSString stringWithFormat:@"%@ (other copy)", title ? title : @"Chat"] forKey:@"title"];
+            [other removeObjectForKey:@"rev"];
+            [added addObject:other];
+            [chat setObject:[NSNumber numberWithInt:MAX(theirRev, baseRev)] forKey:@"rev"];
+            changed = YES;
+        }
+    }
+    /* chats that are no longer in the file */
+    for (i = 0; i < [chats count]; i++) {
+        NSDictionary *chat = [chats objectAtIndex:i];
+        NSString *ident = [chat objectForKey:@"id"];
+        if (ident && ![onDisk containsObject:ident] && [baseline objectForKey:ident] && ![self chatChanged:chat]) {
+            [chats removeObjectAtIndex:i--];   /* deleted elsewhere, and not touched here */
+            changed = YES;
+        }
+    }
+    for (i = 0; i < [added count]; i++) {
+        NSDictionary *chat = [added objectAtIndex:i];
+        [chats insertObject:chat atIndex:0];
+        [baseline setObject:[NSArray arrayWithObjects:[NSNumber numberWithUnsignedLongLong:chatPrint(chat)], [chat objectForKey:@"rev"] ? [chat objectForKey:@"rev"] : [NSNumber numberWithInt:0], nil] forKey:[chat objectForKey:@"id"]];
+    }
+    /* the workspace's settings: the file's, with this process's own changes on top */
+    {
+        NSDictionary *theirSettings = [disk objectForKey:@"settings"];
+        BOOL localSettings = ![[settings description] isEqualToString:settingsPrint];
+        if ([theirSettings isKindOfClass:[NSDictionary class]] && ![[theirSettings description] isEqualToString:[settings description]]) {
+            NSMutableDictionary *merged = [NSMutableDictionary dictionaryWithDictionary:theirSettings];
+            if (localSettings) {
+                if (writing)
+                    [merged addEntriesFromDictionary:settings];
+                else
+                    merged = nil;
+            }
+            if (merged) {
+                [settings setDictionary:merged];
+                if (!writing)
+                    [settingsPrint release], settingsPrint = [[settings description] copy];
+                changed = changed || !localSettings;
+            }
+        }
+    }
+    if ([[disk objectForKey:@"next"] intValue] > next)
+        next = [[disk objectForKey:@"next"] intValue];
+    return changed;
+}
+
+/* a number for a chat while the file is already locked */
+- (int)takeNextIdLocked
+{
+    NSString *counter = [path stringByAppendingString:@".next"];
+    NSString *text = [NSString stringWithContentsOfFile:counter encoding:NSUTF8StringEncoding error:NULL];
+    int value = next;
+    if ([text intValue] > value)
+        value = [text intValue];
+    [[NSString stringWithFormat:@"%d\n", value + 1] writeToFile:counter atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    next = value + 1;
+    return value;
+}
+
+/* Takes in what another process wrote since this one last looked. NO when the file is as it was. */
+- (BOOL)reloadExternal
+{
+    NSMutableDictionary *disk;
+    BOOL changed;
+    int fd;
+    if ([fileStamp(path) isEqualToString:stamp])
+        return NO;
+    fd = [self lockFile];
+    disk = readRoot(path);
+    changed = disk ? [self mergeWithDisk:disk writing:NO] : NO;
+    [stamp release];
+    stamp = [fileStamp(path) copy];
+    [self unlockFile:fd];
+    return changed;
 }
 
 /* A streamed reply, a rename and a model change can all arrive within a
@@ -754,13 +1015,30 @@ static NSMutableDictionary *openStores = nil;
 
 - (void)flush
 {
-    NSMutableDictionary *root;
+    NSMutableDictionary *root, *disk;
     NSString *error = nil;
     NSData *data;
+    unsigned i;
+    int fd;
     if (!dirty)
         return;
     dirty = NO;
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flush) object:nil];
+    fd = [self lockFile];
+    disk = readRoot(path);
+    if (disk)
+        [self mergeWithDisk:disk writing:YES];
+    /* the chats this process changed move to a new revision */
+    for (i = 0; i < [chats count]; i++) {
+        NSMutableDictionary *chat = [chats objectAtIndex:i];
+        NSArray *base = [baseline objectForKey:[chat objectForKey:@"id"]];
+        if ([self chatChanged:chat]) {
+            int old = [[chat objectForKey:@"rev"] intValue];
+            if (base && [[base objectAtIndex:1] intValue] > old)
+                old = [[base objectAtIndex:1] intValue];
+            [chat setObject:[NSNumber numberWithInt:old + 1] forKey:@"rev"];
+        }
+    }
     root = [NSMutableDictionary dictionary];
     [root setObject:chats forKey:@"chats"];
     [root setObject:[NSNumber numberWithInt:next] forKey:@"next"];
@@ -777,8 +1055,13 @@ static NSMutableDictionary *openStores = nil;
         NSFileManager *manager = [NSFileManager defaultManager];
         [manager createDirectoryAtPath:[path stringByDeletingLastPathComponent] attributes:nil];
         TBRollingBackup(path);
-        [data writeToFile:path atomically:YES];
+        if ([data writeToFile:path atomically:YES]) {
+            [self rebaseline];
+            [stamp release];
+            stamp = [fileStamp(path) copy];
+        }
     }
+    [self unlockFile:fd];
 }
 
 @end
