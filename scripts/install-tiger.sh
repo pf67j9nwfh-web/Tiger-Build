@@ -38,6 +38,8 @@ if ! make test > test.log 2>&1; then grep -v "^PASS" test.log; echo "make test f
 tail -1 test.log
 if ! make > build.log 2>&1; then cat build.log; echo "make failed" >&2; exit 1; fi
 grep -i "warning" build.log || true
+if ! make tb > tb.log 2>&1; then cat tb.log; echo "make tb failed" >&2; exit 1; fi
+cp tb TigerBuild.app/Contents/Resources/tb
 test -x TigerBuild.app/Contents/MacOS/TigerBuild'
 "$SSH" 'cd "$HOME/TigerBuild-build" && rm -rf native.old && mv native native.old && mv native.new native
 rm -rf "$HOME/Desktop/Tiger Build.app" && cp -R native/TigerBuild.app "$HOME/Desktop/Tiger Build.app"'

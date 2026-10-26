@@ -6,6 +6,12 @@ chown -R root:wheel "$D" /Library/LaunchDaemons/local.tigerbuild.sshd.plist /Lib
 chmod 755 "$D" "$D/sbin" "$D/bin" "$D/libexec" "$D/etc" "$D/sbin/sshd" "$D/bin/"* "$D/libexec/"*
 chmod 644 "$D/libsmb2-LICENSE" "$D/etc/sshd_config" "$D/etc/sshd_config_shell" "$D/LICENSE" "$D/sshfs-LICENSE" /Library/LaunchDaemons/local.tigerbuild.sshd.plist /Library/LaunchDaemons/local.tigerbuild.sshd-shell.plist
 chown -R root:admin "/Applications/Tiger Build.app" 2>/dev/null
+# the terminal program, as tb and tigerbuild
+if [ -x "/Applications/Tiger Build.app/Contents/Resources/tb" ]; then
+  mkdir -p /usr/local/bin
+  ln -sf "/Applications/Tiger Build.app/Contents/Resources/tb" /usr/local/bin/tb
+  ln -sf "/Applications/Tiger Build.app/Contents/Resources/tb" /usr/local/bin/tigerbuild
+fi
 chown -R root:wheel /Library/QuickLook/TigerBuild.qlgenerator 2>/dev/null
 qlmanage -r > /dev/null 2>&1
 mkdir -p /var/empty

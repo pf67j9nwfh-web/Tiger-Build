@@ -48,6 +48,7 @@ do_ rm -f "$PLIST" "$SHELLPLIST" /Library/LaunchDaemons/local.tigerbuild.smbd.pl
 do_ rm -rf /usr/local/tbssh
 do_ rm -rf /Library/QuickLook/TigerBuild.qlgenerator
 do_ qlmanage -r >/dev/null 2>&1
+for l in tb tigerbuild; do [ -L /usr/local/bin/$l ] && do_ rm -f /usr/local/bin/$l; done
 do_ rm -rf "/Applications/Tiger Build.app"
 for r in /Library/Receipts/TigerBuild-*.pkg; do [ -e "$r" ] && do_ rm -rf "$r"; done
 if [ -n "$DATA" ]; then

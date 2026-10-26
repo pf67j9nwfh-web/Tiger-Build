@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8
+- **`tb` (also `tigerbuild`): Tiger Build in the Terminal.** The same engine, chats, models, tools and keys as the window, on the old Mac itself or over SSH from a modern one (the program only exists on the old Mac). Streamed, formatted replies (headings, lists, tables, code with colour, diffs), tool cards, a one-key approval prompt with a preview of the file change, a spinner with *Esc* to stop and notes to the model while it works.
+- **Chats are shared with the window both ways**: both can be open at once; the chat files are locked and merged, and a chat opened in the other program shows up within seconds. Pictures, videos, files and posts the terminal cannot draw are noted as *[picture ... shown in the Tiger Build window]* and are still there when the chat is opened in the window.
+- **Any model or service at any time** (`/model grok`, `/model claude:claude-sonnet-5-5`, `-m` on the command line), `/models`, and **tools switched on and off** per chat (`/tools`, `--no-tools`, `--tools a,b`), with approvals switchable per tool.
+- **Modes**: ask, edits, plan (the model investigates and proposes; you approve) and auto, changed with *Shift-Tab* or `/mode`; `/allow` and `/deny` rules such as `start_process(git *)`.
+- Project instructions from `TIGERBUILD.md`, `AGENTS.md` or `CLAUDE.md` (this folder and above), `@file` and `@folder` mentions with Tab completion, `!command`, `# note`, `/init`, `/diff`, `/commit`, `/review`, custom commands from `.tigerbuild/commands/NAME.md`, `/fork`, `/retry`, `/export`, `/copy`, `/resume`, `/cost`, `/context`, `-p` for scripts (`--output-format json|stream-json`), `--continue` and `--resume`.
+- **Keys over SSH**: `tb login NAME` (or `tb login --import` once at the Mac) keeps keys in a private file, since the Keychain cannot ask over SSH; `TB_<NAME>` environment variables also work.
+
 ## 2.7
 - **Services in every application**: select text anywhere and choose *Services → Tiger Build →* **Summarize** or **Explain** (the answer appears in a small panel with *Copy*, and *Copy the answer automatically*), **Rewrite** (the selection is replaced in place by the improved text; if the model cannot answer, the text is left alone) or **Add to Message** (puts the selection in the open chat's message box). **Ask** is now in the same submenu. Each has a default shortcut (Control-Option-Command S, E, R, A; Snow Leopard lets you change them in System Preferences, Keyboard, Keyboard Shortcuts). They use the open chat's service and model, or the first service that has a key, and their cost counts in the spending limits.
 - Tiger Build's own application menu has a Services submenu now.

@@ -56,6 +56,8 @@
 
 @interface TBCLIApp (Private)
 - (void)watchTurn;
+- (NSString *)cliDir;
+- (BOOL)runCustomCommand:(NSString *)cmd arguments:(NSString *)arg;
 - (void)banner;
 - (NSString *)modelLabel:(NSDictionary *)chat;
 - (NSString *)statusLine;

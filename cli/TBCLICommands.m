@@ -7,7 +7,7 @@
 {
     return [NSArray arrayWithObjects:@"/help", @"/exit", @"/quit", @"/new", @"/clear", @"/chats", @"/resume", @"/model", @"/models", @"/tools", @"/mode", @"/cost", @"/context",
         @"/rename", @"/delete", @"/fork", @"/export", @"/copy", @"/retry", @"/workspace", @"/status", @"/verbose", @"/thinking", @"/instructions", @"/allow", @"/deny",
-        @"/doctor", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
+        @"/doctor", @"/init", @"/history", @"/diff", @"/commit", @"/review", @"/bell", nil];
 }
 
 - (void)table:(NSArray *)rows
@@ -161,6 +161,43 @@
     [self printStyled:[NSString stringWithFormat:@"  %@ %@ (saved)", key, rule] style:@"gray"];
 }
 
+/* /name runs the text of .tigerbuild/commands/name.md (this folder or above) or cli/commands/name.md, with $ARGUMENTS replaced */
+- (NSString *)customCommandFile:(NSString *)name
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dir = [fm currentDirectoryPath], *file = [name stringByAppendingPathExtension:@"md"];
+    for (;;) {
+        NSString *p = [[[dir stringByAppendingPathComponent:@".tigerbuild"] stringByAppendingPathComponent:@"commands"] stringByAppendingPathComponent:file];
+        if ([fm fileExistsAtPath:p])
+            return p;
+        if ([dir length] <= 1)
+            break;
+        dir = [dir stringByDeletingLastPathComponent];
+    }
+    {
+        NSString *p = [[[self cliDir] stringByAppendingPathComponent:@"commands"] stringByAppendingPathComponent:file];
+        return [fm fileExistsAtPath:p] ? p : nil;
+    }
+}
+
+- (BOOL)runCustomCommand:(NSString *)cmd arguments:(NSString *)arg
+{
+    NSString *path = [self customCommandFile:[cmd substringFromIndex:1]], *text;
+    NSMutableString *body;
+    if (!path || [cmd rangeOfString:@"/" options:0 range:NSMakeRange(1, [cmd length] - 1)].length)
+        return NO;
+    text = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
+    if (![text length])
+        return NO;
+    body = [NSMutableString stringWithString:text];
+    if ([body rangeOfString:@"$ARGUMENTS"].length)
+        [body replaceOccurrencesOfString:@"$ARGUMENTS" withString:arg options:0 range:NSMakeRange(0, [body length])];
+    else if ([arg length])
+        [body appendFormat:@"\n\n%@", arg];
+    [self runTurnWithText:body];
+    return YES;
+}
+
 - (BOOL)runCommand:(NSString *)line
 {
     NSRange sp = [line rangeOfString:@" "];
@@ -269,7 +306,9 @@
             [self printLine:[NSString stringWithFormat:@"  %@ %@", [core providerUsable:p] ? [term styled:@"ok " with:@"green"] : [term styled:@"-- " with:@"gray"], [[ModelCatalog shared] titleForProvider:p]]];
         }
         [self printLine:[NSString stringWithFormat:@"  commander: %@", [core commanderProblem] ? [core commanderProblem] : @"ok"]];
-    } else {
+    } else if ([cmd isEqualToString:@"/init"])
+        [self runTurnWithText:@"Look around this folder and write a TIGERBUILD.md here: what the project is, how to build and test it, and the conventions to follow. Keep it short."];
+    else if (![self runCustomCommand:cmd arguments:arg]) {
         [self printStyled:[NSString stringWithFormat:@"  unknown command %@ (/help)", cmd] style:@"red"];
     }
     return YES;

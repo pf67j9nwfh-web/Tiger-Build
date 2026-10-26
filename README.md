@@ -331,6 +331,17 @@ scp  -P 2223 -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh
 
 A key in Allowed Keys therefore works for both servers, so list only computers you would let run anything as that account (Commander can already do that).
 
+### Tiger Build in the Terminal (`tb`)
+
+`tb` (or `tigerbuild`) is the chat client for a terminal, on the old Mac or over SSH from any computer. It uses the same chats, models, tools and keys as the window.
+
+    tb                      start (or tb "first message")
+    tb -c                   continue the latest chat       tb -r 12   open chat 12
+    tb -p "question"        answer once and exit           tb -m claude:claude-sonnet-5-5
+    tb login openai_api_key keep a key for use over SSH    tb keys   which keys are set
+
+Inside: `/help` lists the commands; `/model` and `/models` switch service, `/tools` turns tools and their approvals on and off, `/mode` (or Shift-Tab) picks ask, edits, plan or auto, `@path` adds a file, `!cmd` runs a command, `Esc` stops a reply. Pictures, videos and posts are noted in the terminal and shown in the window when you open the chat there.
+
 ### Spotlight search of chats
 
 Preferences → Privacy → *Let Spotlight search my chats* (off by default). Tiger Build then keeps one small file per chat (`.tbchat`: its title and words, not pictures, files or tool output; up to 300,000 characters) in `Application Support/Tiger Build/Spotlight/`, updates them half a minute after a chat stops changing, and installs a Spotlight importer in `~/Library/Spotlight`. Searching in Spotlight then finds chats by title or content, and opening a result opens that chat (switching workspace if needed). Anyone who can search this Mac can find that text, and the lock does not hide it. Turning it off removes the files and the importer.
