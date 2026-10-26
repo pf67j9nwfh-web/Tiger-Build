@@ -1,4 +1,5 @@
 #import "TBHTTP.h"
+#import "TBSupport.h"
 
 static const char *kRoots = NULL;
 
@@ -16,9 +17,7 @@ static const char *kRoots = NULL;
     if (loaded)
         return;
     loaded = YES;
-    pem = [NSData dataWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"]];
-    if (!pem)
-        pem = [NSData dataWithContentsOfFile:@"cacert.pem"];
+    pem = [NSData dataWithContentsOfFile:TBResourcePath(@"cacert", @"pem")];
     if (pem)
         tbnet_set_roots([pem bytes], [pem length]);
     (void)kRoots;

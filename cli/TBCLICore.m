@@ -523,6 +523,10 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     [approve setObject:[NSNumber numberWithBool:on] forKey:key];
 }
 
+- (void)setPermissionMode:(NSString *)mode { [permissionMode release]; permissionMode = [mode copy]; }
+- (NSString *)permissionMode { return permissionMode ? permissionMode : @"ask"; }
+- (void)setExtraInstructions:(NSString *)text { [extraInstructions release]; extraInstructions = [text copy]; }
+
 - (void)setRunOverrides:(NSDictionary *)servers
 {
     [overrides setDictionary:servers ? servers : [NSDictionary dictionary]];
@@ -586,6 +590,17 @@ static NSString *HelloText = @"Hello. Ask me anything.";
                 if (([key isEqualToString:@"commander"] || [key hasPrefix:@"mcp_"]) && ![merged objectForKey:key] && ![merged objectForKey:@"all"])
                     [merged setObject:[NSNumber numberWithBool:YES] forKey:key];
             }
+        /* the terminal asks by default: Commander asks unless the chat says otherwise, and plan mode always asks (and refuses) */
+        {
+            NSString *mode = [self permissionMode];
+            for (i = 0; i < [list count]; i++) {
+                key = [[list objectAtIndex:i] objectForKey:@"id"];
+                if ([mode isEqualToString:@"auto"])
+                    [merged setObject:[NSNumber numberWithBool:NO] forKey:key];
+                else if ([key isEqualToString:@"commander"] && ([mode isEqualToString:@"plan"] || ![merged objectForKey:key]))
+                    [merged setObject:[NSNumber numberWithBool:YES] forKey:key];
+            }
+        }
         keys = [merged keyEnumerator];
         while ((key = [keys nextObject])) {
             [body appendFormat:@"%@\"%@\":%s", firstKey ? @"" : @",", TBJSONEscape(key), [[merged objectForKey:key] boolValue] ? "true" : "false"];
@@ -595,8 +610,12 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     [body appendString:@"}"];
     if ([[settings objectForKey:@"limitRoot"] boolValue] && [[settings objectForKey:@"root"] length])
         [body appendFormat:@",\"root\":\"%@\"", TBJSONEscape([settings objectForKey:@"root"])];
-    if ([[chat objectForKey:@"instructions"] length])
-        [body appendFormat:@",\"instructions\":\"%@\"", TBJSONEscape([chat objectForKey:@"instructions"])];
+    {
+        NSString *own = [chat objectForKey:@"instructions"];
+        NSString *all = [own length] ? ([extraInstructions length] ? [NSString stringWithFormat:@"%@\n\n%@", own, extraInstructions] : own) : extraInstructions;
+        if ([all length])
+            [body appendFormat:@",\"instructions\":\"%@\"", TBJSONEscape(all)];
+    }
     if ([[settings objectForKey:@"memoryOn"] boolValue] && [[settings objectForKey:@"memory"] length])
         [body appendFormat:@",\"memory\":\"%@\"", TBJSONEscape([settings objectForKey:@"memory"])];
     if ([[chat objectForKey:@"params"] isKindOfClass:[NSDictionary class]] && [[chat objectForKey:@"params"] count])

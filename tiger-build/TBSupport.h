@@ -112,6 +112,7 @@ NSString *TBDisplayFileName(NSString *stored);
 NSString *TBReadTextFile(NSString *path, unsigned maxBytes, BOOL *truncated);
 NSString *TBHumanSize(double bytes);
 NSString *TBBase64(NSData *data);
+NSString *TBResourcePath(NSString *name, NSString *ext);   /* in the app bundle, or for the tb command the installed app's Resources; nil if absent */
 NSData *TBBase64Decode(NSString *text); /* nil when it is not base64 */
 NSString *TBImageMime(NSString *path);
 

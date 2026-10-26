@@ -1,4 +1,5 @@
 #import "TBPricing.h"
+#import "TBSupport.h"
 #import "TBLocal.h"
 #import "TBEngine.h"
 #import "TBJSON.h"
@@ -114,7 +115,7 @@ static void install(NSDictionary *newRates, double stamp)
     data = [NSData dataWithContentsOfFile:cachePath()];
     blob = data ? TBJSONParse(data, NULL) : nil;
     if (![TBDictionary(blob, @"rates") count]) {
-        data = [NSData dataWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"prices-seed" ofType:@"json"]];
+        data = [NSData dataWithContentsOfFile:TBResourcePath(@"prices-seed", @"json")];
         blob = data ? TBJSONParse(data, NULL) : nil;
     }
     if ([TBDictionary(blob, @"rates") count]) {

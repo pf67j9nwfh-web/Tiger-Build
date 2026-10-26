@@ -34,6 +34,7 @@
     double turnStart;
     NSMutableDictionary *question;     /* the approval being asked, if any */
     NSMutableDictionary *overrides;    /* command line: servers on/off for this run */
+    NSString *permissionMode, *extraInstructions;
 }
 + (TBCLICore *)core;
 - (void)setEvents:(id<TBCLIEvents>)delegate;
@@ -74,6 +75,10 @@
 - (BOOL)approvalOn:(NSString *)key chat:(NSDictionary *)chat;
 - (void)setApproval:(BOOL)on forKey:(NSString *)key chat:(NSMutableDictionary *)chat;
 - (NSString *)commanderProblem;
+/* how tools are approved: ask (the default), edits (file changes go through), plan (nothing changes; the model plans), auto (nothing is asked) */
+- (void)setPermissionMode:(NSString *)mode;
+- (NSString *)permissionMode;
+- (void)setExtraInstructions:(NSString *)text;       /* added to every request: project files and the mode's own note */
 - (void)setRunOverrides:(NSDictionary *)servers;      /* {key: BOOL} applied to every request of this run, not saved */
 
 /* a turn */

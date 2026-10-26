@@ -1,6 +1,7 @@
 /* tb / tigerbuild: Tiger Build in the terminal. Uses the same engine, chats and settings as the window. */
 #import <Foundation/Foundation.h>
 #import "TBCLICore.h"
+#import "TBCLIApp.h"
 #import "TBEngine.h"
 #include <unistd.h>
 #include <stdio.h>
@@ -114,7 +115,14 @@ int main(int argc, char **argv)
         }
         [core setRunOverrides:o];
     }
-    if (!print) { fprintf(stderr, "tb: the interactive mode is not built yet; use -p\n"); return 1; }
+    if (!print) {
+        TBCLIApp *app;
+        if (![[TBTerm term] isInteractive]) { fprintf(stderr, "tb: needs a terminal; use -p for scripts\n"); return 1; }
+        app = [[TBCLIApp alloc] initWithCore:core];
+        i = [app runInteractive];
+        [pool release];
+        return i;
+    }
     printer->json = [format hasPrefix:@"json"];
     printer->stream = [format isEqualToString:@"stream-json"];
     [core setEvents:printer];

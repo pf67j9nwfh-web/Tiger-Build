@@ -705,7 +705,7 @@ static BOOL mentionsWord(NSString *line, NSString *word)
         detail = [@"As administrator (sudo): " stringByAppendingString:detail];
     if ([detail length] > 4000)
         detail = [detail substringToIndex:4000];
-    [self emit:@"q" text:[TBSession propertyListText:[NSDictionary dictionaryWithObjectsAndKeys:callId, @"id", [name length] ? name : @"tool", @"name", key, @"server", detail, @"detail", nil]]];
+    [self emit:@"q" text:[TBSession propertyListText:[NSDictionary dictionaryWithObjectsAndKeys:callId, @"id", [name length] ? name : @"tool", @"name", key, @"server", detail, @"detail", [TBJSONString(args) length] > 6000 ? [TBJSONString(args) substringToIndex:6000] : TBJSONString(args), @"args", nil]]];
     decision = [run waitFor:callId];
     if ([decision isEqualToString:@"always"]) {
         /* "Always Allow" holds from now on in this reply too, not only from the next one. */

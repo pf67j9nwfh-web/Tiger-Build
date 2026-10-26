@@ -1,4 +1,5 @@
 #import "TBProviders.h"
+#import "TBSupport.h"
 #import "TBJSON.h"
 #import "TBHTTP.h"
 
@@ -267,9 +268,7 @@ static void loadCatalog(void)
     providerList = [[NSMutableArray alloc] init];
     modelLists = [[NSMutableDictionary alloc] init];
     defaultModels = [[NSMutableDictionary alloc] init];
-    text = [NSString stringWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"models" ofType:@"txt"]];
-    if (!text)
-        text = [NSString stringWithContentsOfFile:@"models.txt"];
+    text = [NSString stringWithContentsOfFile:TBResourcePath(@"models", @"txt")];
     lines = [text componentsSeparatedByString:@"\n"];
     for (i = 0; i < [lines count]; i++) {
         NSArray *parts = [[lines objectAtIndex:i] componentsSeparatedByString:@"\t"];

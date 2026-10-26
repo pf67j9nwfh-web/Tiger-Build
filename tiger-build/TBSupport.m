@@ -1079,7 +1079,7 @@ static NSMutableDictionary *readRoot(NSString *path)
     text = [NSString stringWithContentsOfFile:[NSHomeDirectory()
         stringByAppendingPathComponent:@"Library/Application Support/Tiger Build/models.txt"]];
     if (![catalog loadText:text]) {
-        text = [NSString stringWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"models" ofType:@"txt"]];
+        text = [NSString stringWithContentsOfFile:TBResourcePath(@"models", @"txt")];
         if (![catalog loadText:text])
             [catalog loadText:@"provider\tgrok\tGrok\nmodel\tgrok\tgrok-4.7\t4.7\t1\nprovider\tlocal\tLocal\n"];
     }
@@ -1301,4 +1301,20 @@ NSData *TBBase64Decode(NSString *text)
         [out appendBytes:b length:2];
     }
     return out;
+}
+
+NSString *TBResourcePath(NSString *name, NSString *ext)
+{
+    NSString *path = [[NSBundle mainBundle] pathForResource:name ofType:ext];
+    NSString *file = [name stringByAppendingPathExtension:ext];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray *dirs = [NSArray arrayWithObjects:[NSString stringWithUTF8String:getenv("TB_RESOURCES") ? getenv("TB_RESOURCES") : "/nonexistent"],
+        @"/Applications/Tiger Build.app/Contents/Resources", [NSHomeDirectory() stringByAppendingPathComponent:@"Applications/Tiger Build.app/Contents/Resources"], @".", nil];
+    unsigned i;
+    for (i = 0; !path && i < [dirs count]; i++) {
+        NSString *p = [[dirs objectAtIndex:i] stringByAppendingPathComponent:file];
+        if ([fm fileExistsAtPath:p])
+            path = p;
+    }
+    return path;
 }
