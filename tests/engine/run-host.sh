@@ -47,7 +47,7 @@ build chatexport ../tests/engine/chatexporttest.m TBChatExport.m $COMMON
 build mcptransport ../tests/engine/mcptransporttest.m TBMCP.m TBOAuth.m $COMMON_NO_MCP
 build smbtest ../tests/engine/smbtest.m TBSMB.m "$OUT"/smb/*.o $COMMON
 build store ../tests/engine/storetest.m $COMMON
-build tb ../cli/main.m ../cli/TBCLICore.m ../cli/TBTerm.m ../cli/TBMarkdown.m ../cli/TBCLIApp.m ../cli/TBCLICommands.m ../cli/TBCLIExtras.m TBSMB.m "$OUT"/smb/*.o TBSession.m TBSessionGrok.m TBSessionSub.m TBModelProfiles.m TBModelUpdate.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBSkills.m TBBuiltin.m TBBackground.m TBMedia.m TBWebTools.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m TBService.m TBSpeech.m TBChatExport.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
+build tb ../cli/main.m ../cli/TBCLICore.m ../cli/TBTerm.m ../cli/TBMarkdown.m ../cli/TBCLIApp.m ../cli/TBCLICommands.m ../cli/TBCLIExtras.m ../cli/TBSudoBroker.m TBSMB.m "$OUT"/smb/*.o TBSession.m TBSessionGrok.m TBSessionSub.m TBModelProfiles.m TBModelUpdate.m TBProviders.m TBPricing.m TBLocal.m TBLocalTools.m TBExtras.m TBSkills.m TBBuiltin.m TBBackground.m TBMedia.m TBWebTools.m TBOutputs.m TBExtract.m TBOffice.m TBHEIC.m TBIntegrations.m TBSSH.m TBService.m TBSpeech.m TBChatExport.m $COMMON "$OUT"/webp/*.o "$OUT"/aom/*.o
 build mock ../tests/engine/mockservices.m TBJSON.m
 clang -w -fobjc-exceptions -I. -framework Foundation -o "$OUT/fakecommander" ../tests/engine/fakecommander.m TBJSON.m
 make -s -C ../commander host TB="$PWD" >/dev/null && cp ../commander/ppc-commander-host "$OUT/ppc-commander"

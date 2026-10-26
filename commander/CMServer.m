@@ -226,8 +226,11 @@ static NSDictionary *dispatch(id msg)
     mid = [msg objectForKey:@"id"];
     if ([method isEqualToString:@"tb/sudo-key"] && [[msg objectForKey:@"params"] isKindOfClass:[NSDictionary class]]) {
         id key = [[msg objectForKey:@"params"] objectForKey:@"key"];
+        id socket = [[msg objectForKey:@"params"] objectForKey:@"socket"];
         if ([key isKindOfClass:[NSString class]] && [key length] < 200)
             CMSetSudoKey(key);
+        if ([socket isKindOfClass:[NSString class]] && [socket hasPrefix:@"/"] && [socket length] < 104)
+            CMSetSudoSocket(socket);
         return nil;
     }
     if ([method hasPrefix:@"notifications/"] || [method isEqualToString:@"initialized"] || mid == nil)

@@ -159,6 +159,9 @@ NSString *TBImageMime(NSString *path);
    key, sent over its standard input (not its environment or arguments, which other programs of this account can read); the password
    goes only to a program that quotes a key that is registered here. A chat without the item has no key. */
 NSString *TBSudoLocalKeyNew(void);
+/* where this program serves the administrator password to Commander when it is not at the default place (the tb command); nil otherwise */
+NSString *TBSudoSocketPath(void);
+void TBSudoSetSocketPath(NSString *path);
 void TBSudoLocalKeyForget(NSString *key);
 BOOL TBSudoLocalKeyKnown(NSString *key);
 

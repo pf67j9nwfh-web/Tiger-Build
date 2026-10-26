@@ -3,6 +3,7 @@
 #import "TBCLICore.h"
 #import "TBCLIApp.h"
 #import "TBBackground.h"
+#import "TBSudoBroker.h"
 #import "TBIntegrations.h"
 #import "TBEngine.h"
 #include <termios.h>
@@ -79,7 +80,7 @@ static void *keychainHint(void *unused)
     for (i = 0; i < 10 && !keychainDone; i++)
         usleep(100000);
     if (!keychainDone)
-        fprintf(stderr, "Reading your saved keys from the Keychain: if a window asks, choose Always Allow.\n");
+        fprintf(stderr, "Reading from the Keychain: if a window asks, choose Always Allow.\n");
     return NULL;
 }
 
@@ -92,6 +93,21 @@ static void warmKeychain(BOOL quiet)
         pthread_detach(t);
     [TBSettings keychainValueForName:@"openai_api_key"];
     keychainDone = 1;
+}
+
+/* Administrator mode (Preferences, Commander) lets a chat that has the sudo tool on use sudo through Commander. This program serves the saved password to that
+   Commander, as the window does; the Keychain's question about it comes now, at the start. Not over ssh: nobody is there to answer it. */
+static void startSudo(BOOL quiet)
+{
+    pthread_t t;
+    if (getenv("SSH_CONNECTION") || getenv("TB_NO_KEYCHAIN") || ![TBSudoBroker administratorModeOn])
+        return;
+    keychainDone = 0;
+    if (!quiet && pthread_create(&t, NULL, keychainHint, NULL) == 0)
+        pthread_detach(t);
+    [TBSudoBroker primeKeychain];
+    keychainDone = 1;
+    [TBSudoBroker start];
 }
 
 /* tb login [name] | tb login --import | tb logout name | tb keys: the key file that stands in for the Keychain over ssh */
@@ -191,6 +207,7 @@ int main(int argc, char **argv)
     if (workspace)
         [core openWorkspace:workspace];
     warmKeychain(print);
+    startSudo(print);
     [core refreshCatalog];
     prompt = [words componentsJoinedByString:@" "];
     if (print && ![prompt length]) {
@@ -223,6 +240,7 @@ int main(int argc, char **argv)
         app = [[TBCLIApp alloc] initWithCore:core];
         app->initial = [prompt length] ? prompt : nil;
         i = [app runInteractive];
+        [TBSudoBroker stop];
         [pool release];
         return i;
     }
@@ -247,6 +265,7 @@ int main(int argc, char **argv)
             if (problem) { fprintf(stderr, "tb: %s\n", [problem UTF8String]); break; }
         }
         [TBBackground stopAll];
+        [TBSudoBroker stop];
     }
     if (printer->json && !printer->stream)
         printf("{\"type\":\"result\",\"result\":\"%s\",\"chat\":\"%s\"}\n", [TBJSONEscape(printer->reply) UTF8String], [[chat objectForKey:@"id"] UTF8String]);

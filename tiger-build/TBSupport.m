@@ -1236,6 +1236,11 @@ void TBCivilFromDays(long long unixDays, int *year, int *month, int *day)
     *year = (int)(yoe + era * 400) + (*month <= 2);
 }
 
+static NSString *sudoSocket = nil;
+
+NSString *TBSudoSocketPath(void) { return sudoSocket; }
+void TBSudoSetSocketPath(NSString *path) { [sudoSocket release]; sudoSocket = [path copy]; }
+
 static NSMutableSet *sudoKeys = nil;
 
 NSString *TBSudoLocalKeyNew(void)

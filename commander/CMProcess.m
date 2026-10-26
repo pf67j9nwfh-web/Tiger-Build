@@ -325,7 +325,10 @@ static NSString *page(CMSession *s, long long offset, long long length, BOOL new
 
 static NSString *sudoSocketPath(void)
 {
-    NSString *path = [CMStateFolder() stringByAppendingPathComponent:@"sudo.sock"];
+    NSString *path = CMSudoSocket();
+    if ([path length])
+        return path;
+    path = [CMStateFolder() stringByAppendingPathComponent:@"sudo.sock"];
     if ([path length] > 100)
         path = [NSString stringWithFormat:@"/tmp/tigerbuild-%d-sudo.sock", (int)getuid()];
     return path;

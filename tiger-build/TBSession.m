@@ -1016,7 +1016,10 @@ NSString *TBCommanderProgram(void)
         if (forChat && ![[self skipKeys] containsObject:@"sudo"]) {
             [sudoKey release];
             sudoKey = [TBSudoLocalKeyNew() retain];
-            [started notify:@"tb/sudo-key" params:[NSDictionary dictionaryWithObject:sudoKey forKey:@"key"]];
+            NSMutableDictionary *given = [NSMutableDictionary dictionaryWithObject:sudoKey forKey:@"key"];
+            if (TBSudoSocketPath())
+                [given setObject:TBSudoSocketPath() forKey:@"socket"];
+            [started notify:@"tb/sudo-key" params:given];
         }
     } @catch (NSException *exception) {
         [run detach:started];

@@ -37,6 +37,8 @@ BOOL CMSudoEnabled(void);
 BOOL CMPolicyAllowsSudo(void);
 void CMSetSudoKey(NSString *key);
 NSString *CMSudoKey(void);
+void CMSetSudoSocket(NSString *path);
+NSString *CMSudoSocket(void);
 BOOL CMDiffsEnabled(void);                         /* write_file and edit_block show what changed */
 BOOL CMScreenEnabled(void);                        /* the screen_* tools are offered */
 NSString *CMNow(void);

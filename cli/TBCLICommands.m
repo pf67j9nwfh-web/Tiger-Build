@@ -390,6 +390,7 @@
             [self printLine:[NSString stringWithFormat:@"  %@ %@", [core providerUsable:p] ? [term styled:@"ok " with:@"green"] : [term styled:@"-- " with:@"gray"], [[ModelCatalog shared] titleForProvider:p]]];
         }
         [self printLine:[NSString stringWithFormat:@"  commander: %@", [[core commanderProblem] length] ? [core commanderProblem] : @"ok"]];
+        [self printLine:[NSString stringWithFormat:@"  sudo: %@", TBSudoSocketPath() ? @"administrator mode is on and served from here; /tools sudo on lets a chat use it" : @"not available here (administrator mode is off, or this is an ssh session)"]];
     } else if ([cmd isEqualToString:@"/wakes"]) {
         if ([arg length]) {
             int n = [arg intValue];

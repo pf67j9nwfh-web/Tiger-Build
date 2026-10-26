@@ -590,6 +590,20 @@ NSString *CMSudoKey(void)
     return sudoKeyHeld;
 }
 
+/* where to ask for it, when the program that started this Commander serves the password at a place of its own (the tb command does, so it does not meet the window's) */
+static NSString *sudoSocketHeld = nil;
+
+void CMSetSudoSocket(NSString *path)
+{
+    [sudoSocketHeld release];
+    sudoSocketHeld = [path copy];
+}
+
+NSString *CMSudoSocket(void)
+{
+    return sudoSocketHeld;
+}
+
 /* a root-owned policy that keeps administrator mode off wins over everything */
 BOOL CMPolicyAllowsSudo(void)
 {
