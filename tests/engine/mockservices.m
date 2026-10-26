@@ -71,7 +71,10 @@ static void sendBody(int fd, int status, NSString *type, NSData *body, NSString 
 
 static void sendJSON(int fd, int status, id object) { sendBody(fd, status, @"application/json", TBJSONData(object), nil); }
 
-static NSArray *openaiChunks(BOOL tools)
+static NSArray *openaiChunksTool(BOOL tools, NSString *tool, NSString *first, NSString *second);
+static NSArray *openaiChunks(BOOL tools) { return openaiChunksTool(tools, @"start_process", @"{\"command\":", @"\"ls\"}"); }
+
+static NSArray *openaiChunksTool(BOOL tools, NSString *tool, NSString *first, NSString *second)
 {
     NSMutableArray *c = [NSMutableArray arrayWithObjects:
         D(A(D(D(@"Let me think. ", @"reasoning_content"), @"delta")), @"choices"),
@@ -81,8 +84,8 @@ static NSArray *openaiChunks(BOOL tools)
     NSMutableArray *out = [NSMutableArray array];
     unsigned i;
     if (tools) {
-        [c addObject:D(A(D(D(A(D(N(0), @"index", @"call_1", @"id", D(@"start_process", @"name", @"{\"command\":", @"arguments"), @"function")), @"tool_calls"), @"delta")), @"choices")];
-        [c addObject:D(A(D(D(A(D(N(0), @"index", D(@"\"ls\"}", @"arguments"), @"function")), @"tool_calls"), @"delta")), @"choices")];
+        [c addObject:D(A(D(D(A(D(N(0), @"index", @"call_1", @"id", D(tool, @"name", first, @"arguments"), @"function")), @"tool_calls"), @"delta")), @"choices")];
+        [c addObject:D(A(D(D(A(D(N(0), @"index", D(second, @"arguments"), @"function")), @"tool_calls"), @"delta")), @"choices")];
     }
     [c addObject:D(A(D([NSDictionary dictionary], @"delta", tools ? @"tool_calls" : @"stop", @"finish_reason")), @"choices")];
     [c addObject:D([NSArray array], @"choices", D(N(100), @"prompt_tokens", N(20), @"completion_tokens", D(N(40), @"cached_tokens"), @"prompt_tokens_details"), @"usage")];
@@ -501,6 +504,11 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
             sendChunked(fd, 200, sse(anthropicEvents(!answered, NO)));
         else
             sendChunked(fd, 200, sse(openaiChunks(!answered)));
+    } else if ([path isEqualToString:@"/write-openai"]) {
+        /* like /loop-openai, but the tool is write_file on the file named by $TB_MOCK_WRITE */
+        NSString *text = TBJSONString(request), *file = [NSString stringWithUTF8String:getenv("TB_MOCK_WRITE") ? getenv("TB_MOCK_WRITE") : "/tmp/tbundo/target.txt"];
+        BOOL answered = [text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound;
+        sendChunked(fd, 200, sse(openaiChunksTool(!answered, @"write_file", [NSString stringWithFormat:@"{\"path\":\"%@\",", file], @"\"content\":\"NEW\\n\"}")));
     } else if ([path isEqualToString:@"/empty-openai"]) {
         /* a tool call, then an empty reply once the tool has answered, then a real answer when asked to carry on */
         NSString *text = TBJSONString(request);
