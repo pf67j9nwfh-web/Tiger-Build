@@ -101,20 +101,21 @@ static NSString *plainGlyphs(NSString *text)
         level = TBColorTrue;
     else if (termname && strstr(termname, "256color"))
         level = TBColor256;
-    /* Text goes out as UTF-8 when the terminal takes it. The locale says so when it names UTF-8; when it names nothing (Terminal on the old systems sets no
-       LANG unless asked to) the terminal is asked in -enterRaw, because one that is set to Mac OS Roman shows UTF-8 as garbage. TB_ASCII and TB_UTF8 decide it by hand. */
+    /* Text goes out as UTF-8 when the terminal takes it. The terminal is asked in -enterRaw, whatever the locale says: a Terminal window can be set to Mac OS
+       Roman while LANG names UTF-8, and then UTF-8 shows as garbage. The locale is only the answer when the terminal gives none. TB_ASCII and TB_UTF8 decide it by hand. */
     legacy = NSMacOSRomanStringEncoding;
     unicode = !getenv("TB_ASCII");
     if (getenv("TB_ASCII"))
         asciiOnly = YES;
     else if (!getenv("TB_UTF8")) {
         const char *loc = lc && *lc ? lc : (ctype && *ctype ? ctype : lang);
-        if (loc && *loc && strcmp(loc, "C") && strcmp(loc, "POSIX") && !strcasestr(loc, "utf")) {
+        localeUTF8 = loc && strcasestr(loc, "utf") != NULL;
+        if (loc && *loc && strcmp(loc, "C") && strcmp(loc, "POSIX") && !localeUTF8) {
             unicode = NO;
             if (strcasestr(loc, "8859-1") || strcasestr(loc, "latin1"))
                 legacy = NSISOLatin1StringEncoding;
-        } else if (!(loc && strcasestr(loc, "utf")))
-            probeEncoding = YES;
+        }
+        probeEncoding = isatty(0) && isatty(1);
     }
     signal(SIGWINCH, onWinch);
     return self;
@@ -193,9 +194,12 @@ static NSString *plainGlyphs(NSString *text)
     [self flush];
     if (got && col == 2)
         unicode = YES;                  /* UTF-8 */
-    else {
-        unicode = NO;
-        asciiOnly = !got;               /* no answer at all: plain ASCII is the safe choice */
+    else if (got) {
+        unicode = NO;                   /* it answered, and took the two bytes as two characters */
+        asciiOnly = NO;
+    } else {
+        unicode = localeUTF8;           /* no answer: the locale, and without that plain ASCII */
+        asciiOnly = !localeUTF8;
     }
 }
 

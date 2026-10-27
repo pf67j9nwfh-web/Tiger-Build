@@ -18,7 +18,7 @@ typedef enum { TBColorNone, TBColor16, TBColor256, TBColorTrue } TBColorLevel;
     BOOL raw;
     TBColorLevel level;
     BOOL unicode;
-    BOOL asciiOnly, probeEncoding;       /* see -init: the terminal may not take UTF-8 */
+    BOOL asciiOnly, probeEncoding, localeUTF8;       /* see -init: the terminal may not take UTF-8 */
     NSStringEncoding legacy;             /* what a terminal that is not UTF-8 takes: Mac OS Roman unless the locale says Latin 1 */
     int columns, rows;
     NSMutableData *out;
