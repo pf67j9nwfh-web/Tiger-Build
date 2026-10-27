@@ -1177,26 +1177,50 @@ static NSString *slugFor(NSString *name)
     return names;
 }
 
+/* still mounted? (by its mount point) */
+static BOOL stillMounted(NSString *path)
+{
+    struct statfs *list = NULL;
+    int n = getmntinfo(&list, MNT_NOWAIT), i;
+    for (i = 0; i < n; i++)
+        if ([[NSString stringWithUTF8String:list[i].f_mntonname] isEqualToString:path])
+            return YES;
+    return NO;
+}
+
+static void runTool(NSString *program, NSArray *arguments)
+{
+    NSTask *task = [[[NSTask alloc] init] autorelease];
+    [task setLaunchPath:program];
+    [task setArguments:arguments];
+    [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+    [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+    [task setStandardInput:[NSFileHandle fileHandleWithNullDevice]];
+    NS_DURING
+        [task launch];
+        [task waitUntilExit];
+    NS_HANDLER
+    NS_ENDHANDLER
+}
+
+/* diskutil first (Tiger's has no "force"); umount when the disk is still there, which a disk of this account allows */
+static BOOL eject(NSString *path, BOOL force)
+{
+    runTool(@"/usr/sbin/diskutil", [NSArray arrayWithObjects:@"unmount", path, nil]);
+    if (!stillMounted(path))
+        return YES;
+    runTool(@"/sbin/umount", force ? [NSArray arrayWithObjects:@"-f", path, nil] : [NSArray arrayWithObject:path]);
+    return !stillMounted(path);
+}
+
 + (NSString *)unmountShare:(NSString *)name
 {
     NSArray *points = [self mountPointsForShare:name];
     unsigned i;
     NSString *problem = nil;
-    for (i = 0; i < [points count]; i++) {
-        NSTask *task = [[[NSTask alloc] init] autorelease];
-        [task setLaunchPath:@"/usr/sbin/diskutil"];
-        [task setArguments:[NSArray arrayWithObjects:@"unmount", [points objectAtIndex:i], nil]];
-        [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
-        [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
-        NS_DURING
-            [task launch];
-            [task waitUntilExit];
-            if ([task terminationStatus] != 0)
-                problem = [NSString stringWithFormat:@"%@ is in use, so it was not ejected.", [[points objectAtIndex:i] lastPathComponent]];
-        NS_HANDLER
-            problem = @"Could not eject it.";
-        NS_ENDHANDLER
-    }
+    for (i = 0; i < [points count]; i++)
+        if (!eject([points objectAtIndex:i], NO))
+            problem = [NSString stringWithFormat:@"%@ is in use, so it was not ejected.", [[points objectAtIndex:i] lastPathComponent]];
     return problem;
 }
 
@@ -1204,18 +1228,8 @@ static NSString *slugFor(NSString *name)
 {
     NSArray *points = [self mountPointsForShare:nil];
     unsigned i;
-    for (i = 0; i < [points count]; i++) {
-        NSTask *task = [[[NSTask alloc] init] autorelease];
-        [task setLaunchPath:@"/usr/sbin/diskutil"];
-        [task setArguments:[NSArray arrayWithObjects:@"unmount", @"force", [points objectAtIndex:i], nil]];
-        [task setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
-        [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
-        NS_DURING
-            [task launch];
-            [task waitUntilExit];
-        NS_HANDLER
-        NS_ENDHANDLER
-    }
+    for (i = 0; i < [points count]; i++)
+        eject([points objectAtIndex:i], YES);
 }
 
 @end
