@@ -170,8 +170,20 @@ static NSString *statusText(int code)
     }
 }
 
+/* TB_DEBUG_DAV=file: every request and the answer, for finding out what the Finder asks */
+static void dlog(NSString *line)
+{
+    const char *path = getenv("TB_DEBUG_DAV");
+    FILE *f;
+    if (!path || !(f = fopen(path, "a")))
+        return;
+    fprintf(f, "%s\n", [line UTF8String]);
+    fclose(f);
+}
+
 static BOOL respond(Conn *c, int code, NSString *extraHeaders, NSData *body, BOOL head)
 {
+    dlog([NSString stringWithFormat:@"  -> %d", code]);
     NSMutableString *h = [NSMutableString stringWithFormat:@"HTTP/1.1 %d %@\r\nServer: TigerBuild-DAV\r\nDAV: 1, 2\r\nMS-Author-Via: DAV\r\nContent-Length: %lu\r\n%@\r\n",
         code, statusText(code), (unsigned long)(body ? [body length] : 0), extraHeaders ? extraHeaders : @""];
     NSData *hd = [h dataUsingEncoding:NSUTF8StringEncoding];
@@ -956,6 +968,7 @@ static BOOL readRequest(Conn *c, Request *r)
             [inner release];
             break;
         }
+        dlog([NSString stringWithFormat:@"%@ %@ depth=%@ dest=%@ auth=%@", r.method, r.rawPath, [r.headers objectForKey:@"depth"], [r.headers objectForKey:@"destination"], [r.headers objectForKey:@"authorization"] ? @"yes" : @"no"]);
         if ([r.path isEqualToString:@"\x01"]) {
             discardBody(&conn, &r);
             keep = respond(&conn, 403, nil, nil, NO);
