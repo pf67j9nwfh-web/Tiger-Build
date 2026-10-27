@@ -105,6 +105,12 @@ static NSString *hrefEscape(NSString *s)
     return out;
 }
 
+/* NSString's -longLongValue is 10.5 and later; Tiger has -intValue only */
+static long long llv(NSString *s)
+{
+    return s ? strtoll([s UTF8String], NULL, 10) : 0;
+}
+
 static NSString *lastComponent(NSString *path)
 {
     NSRange r = [path rangeOfString:@"/" options:NSBackwardsSearch];
@@ -343,7 +349,7 @@ static NSData *readBody(Conn *c, Request *r)
 {
     NSString *len = header(r, @"content-length");
     NSMutableData *body = [NSMutableData data];
-    long long n = len ? [len longLongValue] : 0;
+    long long n = len ? llv(len) : 0;
     if (n > 1048576)
         n = 0;
     while ((long long)[c->buffer length] < n)
@@ -359,7 +365,7 @@ static NSData *readBody(Conn *c, Request *r)
 static void discardBody(Conn *c, Request *r)
 {
     NSString *len = header(r, @"content-length");
-    long long n = len ? [len longLongValue] : 0;
+    long long n = len ? llv(len) : 0;
     while (n > 0) {
         long long have = (long long)[c->buffer length];
         if (have > 0) {
@@ -474,11 +480,11 @@ static BOOL handleGet(Conn *c, Request *r, TBDAVShare *s, BOOL head)
         if ([p count] == 2) {
             NSString *a = [p objectAtIndex:0], *b = [p objectAtIndex:1];
             if ([a length]) {
-                start = (uint64_t)[a longLongValue];
+                start = (uint64_t)llv(a);
                 if ([b length])
-                    end = (uint64_t)[b longLongValue];
+                    end = (uint64_t)llv(b);
             } else if ([b length]) {
-                uint64_t n = (uint64_t)[b longLongValue];
+                uint64_t n = (uint64_t)llv(b);
                 start = n > st.smb2_size ? 0 : st.smb2_size - n;
             }
             if (end >= st.smb2_size)
@@ -549,7 +555,7 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
 {
     NSString *len = header(r, @"content-length"), *enc = [header(r, @"transfer-encoding") lowercaseString];
     BOOL chunked = [enc rangeOfString:@"chunked"].length > 0, existed;
-    long long left = len ? [len longLongValue] : 0;
+    long long left = len ? llv(len) : 0;
     struct smb2_stat_64 st;
     struct smb2fh *fh;
     uint64_t offset = 0;

@@ -193,7 +193,15 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
         parts = [row componentsSeparatedByString:@"|"];
         for (c = 0; c < [parts count]; c++) {
             NSString *cell = [[parts objectAtIndex:c] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            NSString *plain = [[cell componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"-: "]] componentsJoinedByString:@""];
+            NSMutableString *plain = [NSMutableString string];
+            {
+                unsigned pi;
+                for (pi = 0; pi < [cell length]; pi++) {   /* the cell without its dashes, colons and spaces (the 10.5-only component call is not on Tiger) */
+                    unichar pc = [cell characterAtIndex:pi];
+                    if (pc != '-' && pc != ':' && pc != ' ')
+                        [plain appendFormat:@"%C", pc];
+                }
+            }
             if ([plain length])
                 rule = NO;
             [cells addObject:cell];
