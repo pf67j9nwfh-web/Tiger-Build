@@ -509,6 +509,11 @@ static void handle(int fd, NSString *method, NSString *fullPath, NSDictionary *h
         NSString *text = TBJSONString(request), *file = [NSString stringWithUTF8String:getenv("TB_MOCK_WRITE") ? getenv("TB_MOCK_WRITE") : "/tmp/tbundo/target.txt"];
         BOOL answered = [text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound;
         sendChunked(fd, 200, sse(openaiChunksTool(!answered, @"write_file", [NSString stringWithFormat:@"{\"path\":\"%@\",", file], @"\"content\":\"NEW\\n\"}")));
+    } else if ([path isEqualToString:@"/sudo-openai"]) {
+        /* runs "sudo whoami" through Commander, then answers once the tool has answered */
+        NSString *text = TBJSONString(request);
+        BOOL answered = [text rangeOfString:@"\"role\":\"tool\""].location != NSNotFound;
+        sendChunked(fd, 200, sse(openaiChunksTool(!answered, @"start_process", @"{\"command\":", @"\"sudo whoami\"}")));
     } else if ([path isEqualToString:@"/bg-openai"]) {
         /* starts a background task; once it has finished and the chat is woken with its result, answers */
         NSString *text = TBJSONString(request);
