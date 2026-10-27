@@ -10,7 +10,7 @@ int main(int argc, char **argv)
     int seconds = argc > 2 ? atoi(argv[2]) : 40;
     if (argc > 3 && !strcmp(argv[3], "put")) {            /* the SMB tool alone, to tell a slow share from a slow bridge */
         @try {
-            printf("%s\n", [[TBSMB call:@"smb_put" arguments:[NSDictionary dictionaryWithObjectsAndKeys:name, @"connection", @"put-test.txt", @"path", @"written by the tool", @"text", [NSNumber numberWithBool:YES], @"overwrite", nil] allowLocal:NO] UTF8String]);
+            printf("%s\n", [[TBSMB call:@"smb_put" arguments:[NSDictionary dictionaryWithObjectsAndKeys:name, @"connection", @"put-test.txt", @"path", argc > 4 ? [NSString stringWithUTF8String:argv[4]] : @"written by the tool", @"text", [NSNumber numberWithBool:YES], @"overwrite", nil] allowLocal:NO] UTF8String]);
         } @catch (NSException *e) {
             printf("failed: %s\n", [[e reason] UTF8String]);
         }

@@ -575,7 +575,9 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
         discardBody(c, r);
         return respond(c, 502, nil, nil, NO);
     }
+    dlog(@"  put: connected");
     existed = smb2_stat(s->context, [r->path UTF8String], &st) == 0;
+    dlog([NSString stringWithFormat:@"  put: statted, existed=%d", existed]);
     if (existed && st.smb2_type == SMB2_TYPE_DIRECTORY) {
         [s->lock unlock];
         discardBody(c, r);
@@ -583,6 +585,7 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
     }
     fh = smb2_open(s->context, [r->path UTF8String], O_WRONLY | O_CREAT | O_TRUNC);
     [s->lock unlock];
+    dlog([NSString stringWithFormat:@"  put: opened, fh=%p", fh]);
     if (!fh) {
         discardBody(c, r);
         return respond(c, 409, nil, nil, NO);
@@ -691,10 +694,12 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
         if (failure)
             break;
     }
+    dlog(@"  put: closing");
     [s->lock lock];
     if (s->context)
         smb2_close(s->context, fh);
     [s->lock unlock];
+    dlog(@"  put: closed");
     if (failure)
         return respond(c, failure < 0 ? errorStatus(failure) : 400, @"Connection: close\r\n", nil, NO) && NO;
     return respond(c, status, nil, nil, NO);
