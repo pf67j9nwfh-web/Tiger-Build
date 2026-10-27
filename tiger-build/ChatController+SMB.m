@@ -84,19 +84,17 @@ static NSString *signatureOf(NSString *folder, NSString *share, BOOL readOnly, i
     y -= 30;
     [self preferencesButton:@"People..." frame:NSMakeRect(16, y, 110, 28) action:@selector(editSMBPeople:) inView:tab];
     [prefsFields setObject:[self preferencesLabel:@"" frame:NSMakeRect(136, y + 6, 400, 18) inView:tab] forKey:@"smb.status"];
-    y -= 14;
+    (void)y;
+    /* the rest is placed from the bottom, so the last note is never cut off */
     [self preferencesNote:@"People: who may sign in, one name:password per line (a password for this only; the file is readable by your account alone). Computers connect to smb://this-mac/Name, "
         @"or \\\\this-mac\\Name on Windows. Port 445 is what other computers expect and needs the administrator password; the Mac's own File Sharing (System Preferences, Sharing) must not be using it."
-        frame:NSMakeRect(16, y - 56, 520, 68) inView:tab];
-    y -= 86;
-    [self preferencesHeading:@"Connect to SMB shares" y:y inView:tab];
-    y -= 34;
-    [self preferencesButton:@"Saved Shares..." frame:NSMakeRect(16, y, 130, 28) action:@selector(editSavedShares:) inView:tab];
-    [self preferencesButton:@"Mount in Finder..." frame:NSMakeRect(152, y, 150, 28) action:@selector(showShareMounter:) inView:tab];
-    y -= 14;
-    [self preferencesNote:@"Saved shares can be mounted as disks in the Finder, also from Macs that cannot speak SMB 2 or 3 themselves, and chats may use them through the SMB file shares tools "
-        @"(Tool Settings, MCP Servers: turn on \"SMB file shares\"). One per line: name = smb://user:password@server/share. They are kept in the Keychain, so a chat can say \"use the share office\" without being told the password."
-        frame:NSMakeRect(16, y - 56, 520, 68) inView:tab];
+        frame:NSMakeRect(16, 112, 520, 56) inView:tab];
+    [self preferencesHeading:@"Connect to SMB shares" y:90 inView:tab];
+    [self preferencesButton:@"Saved Shares..." frame:NSMakeRect(16, 56, 130, 28) action:@selector(editSavedShares:) inView:tab];
+    [self preferencesButton:@"Mount in Finder..." frame:NSMakeRect(152, 56, 150, 28) action:@selector(showShareMounter:) inView:tab];
+    [self preferencesNote:@"Mount a saved share as a disk in the Finder (also from Macs that cannot speak SMB 2 or 3), or let chats use it through the SMB file shares tools (Tool Settings, MCP Servers). "
+        @"One per line: name = smb://user:password@server/share. Kept in the Keychain, so a chat can name a share without being told its password."
+        frame:NSMakeRect(16, 6, 520, 46) inView:tab];
 }
 
 /* a small text editor for lines; returns the new text, or nil when cancelled */
