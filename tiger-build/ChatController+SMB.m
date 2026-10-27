@@ -92,9 +92,9 @@ static NSString *signatureOf(NSString *folder, NSString *share, BOOL readOnly, i
     [self preferencesHeading:@"Connect to SMB shares" y:90 inView:tab];
     [self preferencesButton:@"Saved Shares..." frame:NSMakeRect(16, 56, 130, 28) action:@selector(editSavedShares:) inView:tab];
     [self preferencesButton:@"Mount in Finder..." frame:NSMakeRect(152, 56, 150, 28) action:@selector(showShareMounter:) inView:tab];
-    [self preferencesNote:@"Mount a saved share as a disk in the Finder (also from Macs that cannot speak SMB 2 or 3), or let chats use it through the SMB file shares tools (Tool Settings, MCP Servers). "
-        @"One per line: name = smb://user:password@server/share. Kept in the Keychain, so a chat can name a share without being told its password."
-        frame:NSMakeRect(16, 6, 520, 46) inView:tab];
+    [self preferencesNote:@"Mount a saved share as a disk in the Finder, or let chats use it through the SMB file shares tools (Tool Settings, MCP Servers). "
+        @"One per line: name = smb://user:password@server/share, kept in the Keychain."
+        frame:NSMakeRect(16, 10, 520, 42) inView:tab];
 }
 
 /* a small text editor for lines; returns the new text, or nil when cancelled */
