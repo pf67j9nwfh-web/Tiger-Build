@@ -974,7 +974,8 @@ static BOOL readRequest(Conn *c, Request *r)
             [inner release];
             break;
         }
-        dlog([NSString stringWithFormat:@"%@ %@ depth=%@ dest=%@ auth=%@", r.method, r.rawPath, [r.headers objectForKey:@"depth"], [r.headers objectForKey:@"destination"], [r.headers objectForKey:@"authorization"] ? @"yes" : @"no"]);
+        dlog([NSString stringWithFormat:@"%@ %@ depth=%@ dest=%@ auth=%@ len=%@ te=%@ expect=%@ if=%@", r.method, r.rawPath, [r.headers objectForKey:@"depth"], [r.headers objectForKey:@"destination"], [r.headers objectForKey:@"authorization"] ? @"yes" : @"no",
+            [r.headers objectForKey:@"content-length"], [r.headers objectForKey:@"transfer-encoding"], [r.headers objectForKey:@"expect"], [r.headers objectForKey:@"if"]]);
         if ([r.path isEqualToString:@"\x01"]) {
             discardBody(&conn, &r);
             keep = respond(&conn, 403, nil, nil, NO);
