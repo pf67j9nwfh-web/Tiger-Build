@@ -1121,7 +1121,7 @@ static NSString *slugFor(NSString *name)
     task = [[[NSTask alloc] init] autorelease];
     [task setLaunchPath:@"/usr/bin/osascript"];
     /* a name and password in the address, which this server does not ask for: without them the system asks the person for a login to a server that wants none */
-    [task setArguments:[NSArray arrayWithObjects:@"-e", [NSString stringWithFormat:@"mount volume \"%@\"", [url stringByReplacingOccurrencesOfString:@"http://" withString:@"http://tigerbuild:tigerbuild@"]], nil]];
+    [task setArguments:[NSArray arrayWithObjects:@"-e", [NSString stringWithFormat:@"mount volume \"%@\"", [@"http://tigerbuild:tigerbuild@" stringByAppendingString:[url substringFromIndex:7]]], nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:pipe];
     [task setStandardInput:[NSFileHandle fileHandleWithNullDevice]];
