@@ -554,7 +554,7 @@ static BOOL handleGet(Conn *c, Request *r, TBDAVShare *s, BOOL head)
 static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
 {
     NSString *len = header(r, @"content-length"), *enc = [header(r, @"transfer-encoding") lowercaseString];
-    BOOL chunked = [enc rangeOfString:@"chunked"].length > 0, existed;
+    BOOL chunked = enc != nil && [enc rangeOfString:@"chunked"].length > 0, existed;   /* not a message to nil: a struct result from nil is garbage on PowerPC */
     long long left = len ? llv(len) : 0;
     struct smb2_stat_64 st;
     struct smb2fh *fh;

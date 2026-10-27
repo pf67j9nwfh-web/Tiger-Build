@@ -80,6 +80,8 @@ int main(int argc, char **argv)
         [task waitUntilExit];
         expectThat([[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] intValue] == 201 && [[NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"docs/chunked.txt"] encoding:NSUTF8StringEncoding error:NULL] isEqualToString:@"sent in chunks"], @"dav: PUT with a chunked body");
     }
+    out = dav(@"PUT", [url stringByAppendingString:@"docs/empty.txt"], [NSArray arrayWithObjects:@"-H", @"Content-Length: 0", nil], nil, &status);
+    expectThat(status == 201 && [fm fileExistsAtPath:[dir stringByAppendingPathComponent:@"docs/empty.txt"]], @"dav: PUT with an empty body creates an empty file (the first step of a Finder write)");
     out = dav(@"MKCOL", [url stringByAppendingString:@"made"], nil, nil, &status);
     expectThat(status == 201 && [fm fileExistsAtPath:[dir stringByAppendingPathComponent:@"made"]], @"dav: MKCOL");
     out = dav(@"MKCOL", [url stringByAppendingString:@"made"], nil, nil, &status);
