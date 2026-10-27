@@ -1162,6 +1162,8 @@ static NSString *slugFor(NSString *name)
         return points;
     for (i = 0; i < n; i++) {
         NSString *from = [NSString stringWithUTF8String:list[i].f_mntfromname];
+        if ([from hasPrefix:@"http://tigerbuild:tigerbuild@"])      /* Tiger lists the name and password of the address too */
+            from = [@"http://" stringByAppendingString:[from substringFromIndex:[@"http://tigerbuild:tigerbuild@" length]]];
         if ([from hasPrefix:prefix] && (!name || [from hasPrefix:[prefix stringByAppendingString:slugFor(name)]]))
             [points addObject:[NSString stringWithUTF8String:list[i].f_mntonname]];
     }
