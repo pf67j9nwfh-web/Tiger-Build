@@ -107,6 +107,19 @@ int main(int argc, char **argv)
         }
     }
 
+    /* pinned chats stay at the top when a chat made in the other program arrives */
+    {
+        NSMutableDictionary *pinned = chat(@"900", @"pinned one", @"keep me on top"), *newer = chat(@"901", @"made in the other program", @"new");
+        [pinned setObject:[NSNumber numberWithBool:YES] forKey:@"pinned"];
+        [[a chats] insertObject:pinned atIndex:0];
+        touch(a);
+        [b reloadExternal];
+        [[b chats] insertObject:newer atIndex:TBFirstUnpinnedIndex([b chats])];
+        touch(b);
+        [a reloadExternal];
+        expectThat([[[[a chats] objectAtIndex:0] objectForKey:@"id"] isEqualToString:@"900"] && [[[[a chats] objectAtIndex:1] objectForKey:@"id"] isEqualToString:@"901"], @"a chat from the other program goes in below the pinned ones");
+    }
+
     /* workspace settings */
     [[a settings] setObject:@"/x" forKey:@"root"];
     touch(a);

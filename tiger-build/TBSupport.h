@@ -115,6 +115,8 @@ NSString *TBBase64(NSData *data);
 /* Who is making a reply in a chat (the window and the tb command can both be open): "working in the terminal (tb)" while that process lives, else nil. */
 NSString *TBChatLeaseNote(NSDictionary *chat);
 void TBChatTakeLease(NSMutableDictionary *chat, NSString *who);
+/* where a new chat goes in the chat list: below the pinned chats, which stay at the top */
+NSUInteger TBFirstUnpinnedIndex(NSArray *chats);
 NSString *TBResourcePath(NSString *name, NSString *ext);   /* in the app bundle, or for the tb command the installed app's Resources; nil if absent */
 NSData *TBBase64Decode(NSString *text); /* nil when it is not base64 */
 NSString *TBImageMime(NSString *path);

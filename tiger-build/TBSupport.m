@@ -948,7 +948,7 @@ static NSMutableDictionary *readRoot(NSString *path)
     }
     for (i = 0; i < [added count]; i++) {
         NSDictionary *chat = [added objectAtIndex:i];
-        [chats insertObject:chat atIndex:0];
+        [chats insertObject:chat atIndex:TBFirstUnpinnedIndex(chats)];   /* below the pinned chats */
         [baseline setObject:[NSArray arrayWithObjects:[NSNumber numberWithUnsignedLongLong:chatPrint(chat)], [chat objectForKey:@"rev"] ? [chat objectForKey:@"rev"] : [NSNumber numberWithInt:0], nil] forKey:[chat objectForKey:@"id"]];
     }
     /* the workspace's settings: the file's, with this process's own changes on top */
@@ -1351,4 +1351,12 @@ void TBChatTakeLease(NSMutableDictionary *chat, NSString *who)
     gethostname(host, sizeof host);
     [chat setObject:[NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:(int)getpid()], @"pid", [NSString stringWithUTF8String:host], @"host",
         [NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970]], @"since", who, @"who", nil] forKey:@"lease"];
+}
+
+NSUInteger TBFirstUnpinnedIndex(NSArray *chats)
+{
+    NSUInteger n = 0;
+    while (n < [chats count] && [[[chats objectAtIndex:n] objectForKey:@"pinned"] boolValue])
+        n++;
+    return n;
 }

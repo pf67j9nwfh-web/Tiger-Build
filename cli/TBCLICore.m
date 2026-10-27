@@ -404,7 +404,7 @@ static NSString *HelloText = @"Hello. Ask me anything.";
         if ([[last objectForKey:@"approve"] isKindOfClass:[NSDictionary class]])
             [chat setObject:[NSMutableDictionary dictionaryWithDictionary:[last objectForKey:@"approve"]] forKey:@"approve"];
     }
-    [[self chats] insertObject:chat atIndex:0];
+    [[self chats] insertObject:chat atIndex:TBFirstUnpinnedIndex([self chats])];
     current = chat;
     return chat;
 }
@@ -423,7 +423,7 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     [copy setObject:[NSNumber numberWithBool:NO] forKey:@"autoTitle"];
     [copy removeObjectForKey:@"rev"];
     [copy removeObjectForKey:@"lease"];
-    [[self chats] insertObject:copy atIndex:0];
+    [[self chats] insertObject:copy atIndex:TBFirstUnpinnedIndex([self chats])];
     return copy;
 }
 
