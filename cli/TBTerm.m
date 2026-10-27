@@ -192,6 +192,13 @@ static NSString *plainGlyphs(NSString *text)
     }
     [self write:@"\r\033[K"];
     [self flush];
+    if (getenv("TB_DEBUG_TERM")) {
+        FILE *log = fopen(getenv("TB_DEBUG_TERM"), "a");
+        if (log) {
+            fprintf(log, "probe: got=%d col=%d reply=[%s] locale-utf8=%d\n", got, col, n > 0 ? reply : "", localeUTF8);
+            fclose(log);
+        }
+    }
     if (got && col == 2)
         unicode = YES;                  /* UTF-8 */
     else if (got) {

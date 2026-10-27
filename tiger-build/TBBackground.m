@@ -2,6 +2,7 @@
 #import "TBEngine.h"
 #import "TBSupport.h"
 #include <signal.h>
+#include <unistd.h>
 
 static NSMutableDictionary *tasks = nil;      /* id -> {task, label, command, run, started, ended, reported, log, stopped} */
 static NSMutableDictionary *runChats = nil;
