@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     [fm createDirectoryAtPath:[dir stringByAppendingPathComponent:@"docs"] attributes:nil];
     [@"in a folder" writeToFile:[dir stringByAppendingPathComponent:@"docs/a.txt"] atomically:NO encoding:NSUTF8StringEncoding error:NULL];
     url = [TBDAV addressForShare:@"Work files" problem:&problem];
-    expectThat(url && [url hasPrefix:@"http://127.0.0.1:"] && [url hasSuffix:@"/Work%20files/"], @"dav: a saved share gets a loopback address with a secret and its name");
+    expectThat(url && [url hasPrefix:@"http://127.0.0.1:"] && [url hasSuffix:@"/Work_files/"], @"dav: a saved share gets a loopback address with a secret and its name");
     expectThat([TBDAV addressForShare:@"nope" problem:&problem] == nil && [problem length], @"dav: an unknown share is refused");
     out = dav(@"OPTIONS", url, nil, nil, &status);
     expectThat(status == 200, @"dav: OPTIONS");
@@ -82,12 +82,12 @@ int main(int argc, char **argv)
     expectThat(status == 204 && ![fm fileExistsAtPath:[dir stringByAppendingPathComponent:@"made"]], @"dav: DELETE of a folder takes what is in it");
     out = dav(@"DELETE", [url stringByAppendingString:@"missing"], nil, nil, &status);
     expectThat(status == 404, @"dav: DELETE of a missing file is 404");
-    bad = [url stringByReplacingOccurrencesOfString:@"/Work%20files/" withString:@"/Work%20files/../../x"];
+    bad = [url stringByReplacingOccurrencesOfString:@"/Work_files/" withString:@"/Work_files/../../x"];
     out = dav(@"GET", [bad stringByReplacingOccurrencesOfString:@"/../../x" withString:@"/..%2f..%2fetc/passwd"], nil, nil, &status);
     expectThat(status != 200, @"dav: a path that climbs out of the share is refused");
     {
         NSRange slash = [url rangeOfString:@"/" options:NSBackwardsSearch range:NSMakeRange(0, [url length] - 1)];
-        NSString *noToken = [[url substringToIndex:NSMaxRange([url rangeOfString:@"127.0.0.1:"]) + 5] stringByAppendingString:@"/wrongtoken/Work%20files/hello.txt"];
+        NSString *noToken = [[url substringToIndex:NSMaxRange([url rangeOfString:@"127.0.0.1:"]) + 5] stringByAppendingString:@"/wrongtoken/Work_files/hello.txt"];
         (void)slash;
         out = dav(@"GET", noToken, nil, nil, &status);
         expectThat(status == 404, @"dav: an address without the secret gets nothing");

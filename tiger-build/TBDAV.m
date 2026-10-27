@@ -1008,6 +1008,21 @@ static BOOL readRequest(Conn *c, Request *r)
 
 @end
 
+/* the name in an address: letters, digits and . _ - only, so no client has to guess how many times to escape it */
+static NSString *slugFor(NSString *name)
+{
+    NSMutableString *s = [NSMutableString string];
+    unsigned i;
+    for (i = 0; i < [name length]; i++) {
+        unichar c = [name characterAtIndex:i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')
+            [s appendFormat:@"%C", c];
+        else
+            [s appendString:@"_"];
+    }
+    return [s length] ? s : @"share";
+}
+
 @implementation TBDAV
 
 + (void)initialize
@@ -1063,17 +1078,17 @@ static BOOL readRequest(Conn *c, Request *r)
                 *problem = why;
             return nil;
         }
-        s = [shares objectForKey:name];
+        s = [shares objectForKey:slugFor(name)];
         if (!s) {
             s = [[[TBDAVShare alloc] init] autorelease];
             s->name = [name copy];
             s->lock = [[NSLock alloc] init];
-            [shares setObject:s forKey:name];
+            [shares setObject:s forKey:slugFor(name)];
         }
         [s->target release];
         s->target = [target retain];
     }
-    return [NSString stringWithFormat:@"http://127.0.0.1:%d/%@/%@/", listenPort, token, hrefEscape(name)];
+    return [NSString stringWithFormat:@"http://127.0.0.1:%d/%@/%@/", listenPort, token, slugFor(name)];
 }
 
 + (NSString *)mountShareInFinder:(NSString *)name
@@ -1090,7 +1105,7 @@ static BOOL readRequest(Conn *c, Request *r)
         TBDAVShare *s;
         void *ctx;
         @synchronized(serverLock) {
-            s = [[[shares objectForKey:name] retain] autorelease];
+            s = [[[shares objectForKey:slugFor(name)] retain] autorelease];
         }
         [s->lock lock];
         ctx = connection(s);
@@ -1105,7 +1120,8 @@ static BOOL readRequest(Conn *c, Request *r)
     }
     task = [[[NSTask alloc] init] autorelease];
     [task setLaunchPath:@"/usr/bin/osascript"];
-    [task setArguments:[NSArray arrayWithObjects:@"-e", [NSString stringWithFormat:@"mount volume \"%@\"", url], nil]];
+    /* a name and password in the address, which this server does not ask for: without them the system asks the person for a login to a server that wants none */
+    [task setArguments:[NSArray arrayWithObjects:@"-e", [NSString stringWithFormat:@"mount volume \"%@\"", [url stringByReplacingOccurrencesOfString:@"http://" withString:@"http://tigerbuild:tigerbuild@"]], nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:pipe];
     [task setStandardInput:[NSFileHandle fileHandleWithNullDevice]];
@@ -1134,7 +1150,7 @@ static BOOL readRequest(Conn *c, Request *r)
         return points;
     for (i = 0; i < n; i++) {
         NSString *from = [NSString stringWithUTF8String:list[i].f_mntfromname];
-        if ([from hasPrefix:prefix] && (!name || [[from stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding] hasPrefix:[prefix stringByAppendingString:name]]))
+        if ([from hasPrefix:prefix] && (!name || [from hasPrefix:[prefix stringByAppendingString:slugFor(name)]]))
             [points addObject:[NSString stringWithUTF8String:list[i].f_mntonname]];
     }
     return points;
@@ -1146,11 +1162,11 @@ static BOOL readRequest(Conn *c, Request *r)
     NSArray *all;
     unsigned i;
     @synchronized(serverLock) {
-        all = [shares allKeys];
+        all = [shares allValues];
     }
     for (i = 0; i < [all count]; i++)
-        if ([[self mountPointsForShare:[all objectAtIndex:i]] count])
-            [names addObject:[all objectAtIndex:i]];
+        if ([[self mountPointsForShare:((TBDAVShare *)[all objectAtIndex:i])->name] count])
+            [names addObject:((TBDAVShare *)[all objectAtIndex:i])->name];
     return names;
 }
 
