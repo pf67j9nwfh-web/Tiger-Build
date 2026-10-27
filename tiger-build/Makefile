@@ -42,7 +42,7 @@ HEADERS := TBCompat.h ChatController.h ChatController_Private.h EngineRequest.h 
 APP := TigerBuild.app
 BIN := $(APP)/Contents/MacOS/TigerBuild
 
-.PHONY: all clean test convert cmtest quicklook mdimporter tb
+.PHONY: all clean test davmount convert cmtest quicklook mdimporter tb
 
 all: $(BIN)
 
@@ -88,6 +88,11 @@ else
 	cp build/tb32 tb
 endif
 	rm -rf build
+
+davmount: ../tests/engine/davmount.m TBSMB.m TBDAV.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
+	mkdir -p build
+	$(CC32) $(CFLAGS32) -c -o build/TBNet32.o TBNet.c
+	$(CC32) $(CFLAGS32) -fobjc-exceptions -Wl,-w -o davmount -I. ../tests/engine/davmount.m TBSMB.m TBDAV.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m build/TBNet32.o $(LIBS32)
 
 convert: ../tests/engine/convert.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBNet.c TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
 	mkdir -p build
