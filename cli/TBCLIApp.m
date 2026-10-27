@@ -130,7 +130,7 @@ static NSString *toolKind(NSString *name)
 
 - (NSString *)spinnerGlyph
 {
-    static NSString *frames[] = {@"⠋", @"⠙", @"⠹", @"⠸", @"⠼", @"⠴", @"⠦", @"⠧", @"⠇", @"⠏"};
+    NSString *frames[] = {TBU("\u280b"), TBU("\u2819"), TBU("\u2839"), TBU("\u2838"), TBU("\u283c"), TBU("\u2834"), TBU("\u2826"), TBU("\u2827"), TBU("\u2807"), TBU("\u280f")};
     if (![term unicode])
         return @"*";
     return frames[spinFrame % 10];
@@ -144,7 +144,7 @@ static NSString *toolKind(NSString *name)
         return;
     cols = [term columns];
     line = [NSString stringWithFormat:@"%@ %@ %ds  esc to stop%@%@", [term styled:[self spinnerGlyph] with:@"orange"], spinLabel ? spinLabel : @"Working", (int)(CFAbsoluteTimeGetCurrent() - spinStart),
-        [typed length] ? @"  › " : @"", typed];
+        [typed length] ? TBU("  \u203a ") : @"", typed];
     [term write:@"\r\033[2K"];
     [term write:[term clipToWidth:line width:cols]];
     liveShown = YES;
@@ -167,7 +167,7 @@ static NSString *toolKind(NSString *name)
     if (firstLine) {
         firstLine = NO;
         if ([text hasPrefix:@"  "])
-            text = [NSString stringWithFormat:@"%@ %@", [term styled:[term unicode] ? @"●" : @"*" with:@"orange"], [text substringFromIndex:2]];
+            text = [NSString stringWithFormat:@"%@ %@", [term styled:[term unicode] ? TBU("\u25cf") : @"*" with:@"orange"], [text substringFromIndex:2]];
     }
     [self emit:text];
 }
@@ -228,12 +228,12 @@ static NSString *toolKind(NSString *name)
         [parts addObject:[NSString stringWithFormat:@"%@ tokens", [self tokenText:used]]];
     if (cost)
         [parts addObject:cost];
-    return [parts componentsJoinedByString:@" · "];
+    return [parts componentsJoinedByString:TBU(" \u00b7 ")];
 }
 
 - (NSString *)promptText
 {
-    return [NSString stringWithFormat:@"%@ ", [term styled:[term unicode] ? @"❯" : @">" with:@"cyan"]];
+    return [NSString stringWithFormat:@"%@ ", [term styled:[term unicode] ? TBU("\u276f") : @">" with:@"cyan"]];
 }
 
 - (void)banner
@@ -243,10 +243,10 @@ static NSString *toolKind(NSString *name)
     NSString *home = NSHomeDirectory();
     if ([cwd hasPrefix:home])
         cwd = [@"~" stringByAppendingString:[cwd substringFromIndex:[home length]]];
-    [term write:[NSString stringWithFormat:@"\r\n %@ %@\r\n", [term styled:@"Tiger Build" with:@"bold"], [term styled:[NSString stringWithFormat:@"%@ · terminal", kVersion] with:@"gray"]]];
+    [term write:[NSString stringWithFormat:@"\r\n %@ %@\r\n", [term styled:@"Tiger Build" with:@"bold"], [term styled:[NSString stringWithFormat:TBU("%@ \u00b7 terminal"), kVersion] with:@"gray"]]];
     if (chat)
-        [term write:[NSString stringWithFormat:@" %@\r\n", [term styled:[NSString stringWithFormat:@"%@ · chat %@ “%@” · %@", [self modelLabel:chat], [chat objectForKey:@"id"], [core titleOf:chat], cwd] with:@"gray"]]];
-    [term write:[NSString stringWithFormat:@" %@\r\n\r\n", [term styled:@"/help for commands · @ mentions a file · ! runs a command · Esc stops a reply · Shift-Tab changes the mode" with:@"gray"]]];
+        [term write:[NSString stringWithFormat:@" %@\r\n", [term styled:[NSString stringWithFormat:TBU("%@ \u00b7 chat %@ \u201c%@\u201d \u00b7 %@"), [self modelLabel:chat], [chat objectForKey:@"id"], [core titleOf:chat], cwd] with:@"gray"]]];
+    [term write:[NSString stringWithFormat:@" %@\r\n\r\n", [term styled:TBU("/help for commands \u00b7 @ mentions a file \u00b7 ! runs a command \u00b7 Esc stops a reply \u00b7 Shift-Tab changes the mode") with:@"gray"]]];
     [term flush];
 }
 
@@ -457,7 +457,7 @@ static NSString *toolKind(NSString *name)
         return NO;
     }
     wakesInARow++;
-    [self printStyled:@"  \u00b7 a background task finished: waking the model" style:@"gray"];
+    [self printStyled:TBU("  \u00b7 a background task finished: waking the model") style:@"gray"];
     [self runTurnWithText:message];
     return YES;
 }
@@ -569,14 +569,14 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     if (![decision isEqualToString:@"deny"]) {
         NSString *out = nil;
         if ([self runHook:@"pre_tool" env:[NSDictionary dictionaryWithObjectsAndKeys:name, @"TB_TOOL", [event objectForKey:@"detail"] ? [event objectForKey:@"detail"] : @"", @"TB_DETAIL", nil] output:&out] != 0) {
-            [self printStyled:[NSString stringWithFormat:@"  \u2717 a hook denied %@%@", name, [out length] ? [@": " stringByAppendingString:TBTrim(out)] : @""] style:@"red"];
+            [self printStyled:[NSString stringWithFormat:TBU("  \u2717 a hook denied %@%@"), name, [out length] ? [@": " stringByAppendingString:TBTrim(out)] : @""] style:@"red"];
             [core answer:@"deny"];
             return;
         }
     }
     if (decision) {
         if ([decision isEqualToString:@"deny"])
-            [self printStyled:[NSString stringWithFormat:@"  ✗ %@ is not allowed %@", name, [[core permissionMode] isEqualToString:@"plan"] ? @"in plan mode" : @"by your rules"] style:@"red"];
+            [self printStyled:[NSString stringWithFormat:TBU("  \u2717 %@ is not allowed %@"), name, [[core permissionMode] isEqualToString:@"plan"] ? @"in plan mode" : @"by your rules"] style:@"red"];
         [core answer:decision];
         return;
     }
@@ -589,18 +589,18 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
             TBKey k;
             NSArray *rows = [detail componentsSeparatedByString:@"\n"];
             unsigned i, cap = full ? 60 : 6;
-            [card appendFormat:@"%@\n", [term styled:[NSString stringWithFormat:@"%@ Allow %@?  %@", [term unicode] ? @"╭─" : @",-", name, title] with:@"yellow"]];
+            [card appendFormat:@"%@\n", [term styled:[NSString stringWithFormat:@"%@ Allow %@?  %@", [term unicode] ? TBU("\u256d\u2500") : @",-", name, title] with:@"yellow"]];
             for (i = 0; i < [rows count] && i < cap; i++)
-                [card appendFormat:@"%@%@\n", [term styled:[term unicode] ? @"│ " : @"| " with:@"yellow"], [term clipToWidth:[rows objectAtIndex:i] width:[term columns] - 4]];
+                [card appendFormat:@"%@%@\n", [term styled:[term unicode] ? TBU("\u2502 ") : @"| " with:@"yellow"], [term clipToWidth:[rows objectAtIndex:i] width:[term columns] - 4]];
             if ([rows count] > cap)
-                [card appendFormat:@"%@%@\n", [term styled:[term unicode] ? @"│ " : @"| " with:@"yellow"], [term styled:[NSString stringWithFormat:@"... %lu more lines (v shows more)", (unsigned long)([rows count] - cap)] with:@"gray"]];
+                [card appendFormat:@"%@%@\n", [term styled:[term unicode] ? TBU("\u2502 ") : @"| " with:@"yellow"], [term styled:[NSString stringWithFormat:@"... %lu more lines (v shows more)", (unsigned long)([rows count] - cap)] with:@"gray"]];
             if (diff) {
                 NSArray *d = [diff componentsSeparatedByString:@"\n"];
                 for (i = 0; i < [d count]; i++)
                     if ([[d objectAtIndex:i] length])
-                        [card appendFormat:@"%@%@\n", [term styled:[term unicode] ? @"│ " : @"| " with:@"yellow"], [term clipToWidth:[d objectAtIndex:i] width:[term columns] - 4]];
+                        [card appendFormat:@"%@%@\n", [term styled:[term unicode] ? TBU("\u2502 ") : @"| " with:@"yellow"], [term clipToWidth:[d objectAtIndex:i] width:[term columns] - 4]];
             }
-            [card appendFormat:@"%@%@", [term styled:[term unicode] ? @"╰─ " : @"`- " with:@"yellow"], [term styled:@"y allow · a always for this chat · n deny · v more" with:@"gray"]];
+            [card appendFormat:@"%@%@", [term styled:[term unicode] ? TBU("\u2570\u2500 ") : @"`- " with:@"yellow"], [term styled:TBU("y allow \u00b7 a always for this chat \u00b7 n deny \u00b7 v more") with:@"gray"]];
             [self emit:card];
             [self clearLive];
             for (;;) {
@@ -657,7 +657,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
 - (void)core:(TBCLICore *)c status:(NSString *)note error:(BOOL)error
 {
     [self endText];
-    [self printStyled:[NSString stringWithFormat:@"%@ %@", error ? @"✗" : @"·", note] style:error ? @"red" : @"gray"];
+    [self printStyled:[NSString stringWithFormat:@"%@ %@", error ? TBU("\u2717") : TBU("\u00b7"), note] style:error ? @"red" : @"gray"];
 }
 
 - (void)core:(TBCLICore *)c activity:(NSDictionary *)event
@@ -669,7 +669,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         [toolStarts setObject:[NSNumber numberWithDouble:CFAbsoluteTimeGetCurrent()] forKey:[event objectForKey:@"id"]];
         [spinLabel release];
         spinLabel = [[NSString stringWithFormat:@"%@%@", name, [label length] ? [@": " stringByAppendingString:label] : @""] copy];
-        [self printLine:[NSString stringWithFormat:@"%@ %@%@", [term styled:[term unicode] ? @"●" : @"*" with:@"cyan"], [term styled:name with:@"bold"],
+        [self printLine:[NSString stringWithFormat:@"%@ %@%@", [term styled:[term unicode] ? TBU("\u25cf") : @"*" with:@"cyan"], [term styled:name with:@"bold"],
             [label length] ? [@"  " stringByAppendingString:[term styled:[term clipToWidth:label width:[term columns] - [term widthOf:name] - 6] with:@"gray"]] : @""]];
         return;
     }
@@ -683,8 +683,8 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         NSMutableString *card = [NSMutableString string];
         NSString *summary = [NSString stringWithFormat:@"%@ %.1fs", failed ? @"failed" : @"done", [[event objectForKey:@"elapsed"] doubleValue]];
         if ([event objectForKey:@"files"])
-            summary = [NSString stringWithFormat:@"%@ · %d file%@ +%d −%d", summary, [[event objectForKey:@"files"] intValue], [[event objectForKey:@"files"] intValue] == 1 ? @"" : @"s", [[event objectForKey:@"added"] intValue], [[event objectForKey:@"removed"] intValue]];
-        [card appendFormat:@"  %@ %@\n", [term styled:[term unicode] ? @"⎿" : @"`" with:@"gray"], [term styled:summary with:failed ? @"red" : @"gray"]];
+            summary = [NSString stringWithFormat:TBU("%@ \u00b7 %d file%@ +%d \u2212%d"), summary, [[event objectForKey:@"files"] intValue], [[event objectForKey:@"files"] intValue] == 1 ? @"" : @"s", [[event objectForKey:@"added"] intValue], [[event objectForKey:@"removed"] intValue]];
+        [card appendFormat:@"  %@ %@\n", [term styled:[term unicode] ? TBU("\u23bf") : @"`" with:@"gray"], [term styled:summary with:failed ? @"red" : @"gray"]];
         if ([output length] && (failed || verbose || [rows count] <= 4)) {
             for (i = 0; i < [rows count] && i < cap; i++)
                 if ([[rows objectAtIndex:i] length] || verbose)
@@ -708,7 +708,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     [self endTextOnly];
     if (!thinkingStarted) {
         thinkingStarted = YES;
-        [self printLine:[term styled:[term unicode] ? @"✻ Thinking" : @"* Thinking" with:@"gray"]];
+        [self printLine:[term styled:[term unicode] ? TBU("\u273b Thinking") : @"* Thinking" with:@"gray"]];
     }
     [thinkBuffer appendString:delta ? delta : @""];
     {
@@ -727,7 +727,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
 - (void)core:(TBCLICore *)c media:(NSString *)description
 {
     [self endText];
-    [self printStyled:[NSString stringWithFormat:@"  [%@ — shown in the Tiger Build window]", description] style:@"gray"];
+    [self printStyled:[NSString stringWithFormat:TBU("  [%@ \u2014 shown in the Tiger Build window]"), description] style:@"gray"];
 }
 
 - (void)core:(TBCLICore *)c usage:(NSDictionary *)event {}
@@ -755,7 +755,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
             NSString *note = [[typed copy] autorelease];
             [typed setString:@""];
             if ([core guide:note])
-                [self printStyled:[NSString stringWithFormat:@"  › note for the model: %@", note] style:@"gray"];
+                [self printStyled:[NSString stringWithFormat:TBU("  \u203a note for the model: %@"), note] style:@"gray"];
             else
                 [self printStyled:@"  The model cannot take a note now." style:@"red"];
         }
@@ -858,11 +858,11 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
             }
         [line appendFormat:@"%.1fs", CFAbsoluteTimeGetCurrent() - spinStart];
         if (last)
-            [line appendFormat:@" · ↑%@ ↓%@", [self tokenText:[[last objectForKey:@"statsIn"] intValue]], [self tokenText:[[last objectForKey:@"statsOut"] intValue]]];
+            [line appendFormat:TBU(" \u00b7 \u2191%@ \u2193%@"), [self tokenText:[[last objectForKey:@"statsIn"] intValue]], [self tokenText:[[last objectForKey:@"statsOut"] intValue]]];
         if ([self costText:chat])
-            [line appendFormat:@" · %@ in this chat", [self costText:chat]];
+            [line appendFormat:TBU(" \u00b7 %@ in this chat"), [self costText:chat]];
         if (turnTools)
-            [line appendFormat:@" · %d tool call%@", turnTools, turnTools == 1 ? @"" : @"s"];
+            [line appendFormat:TBU(" \u00b7 %d tool call%@"), turnTools, turnTools == 1 ? @"" : @"s"];
         [self printStyled:line style:@"gray"];
         [self runHook:@"stop" env:[NSDictionary dictionary] output:NULL];
         if (bell)
@@ -911,18 +911,18 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         if (![text isKindOfClass:[NSString class]])
             text = @"";
         if ([role isEqualToString:@"user"]) {
-            [term write:[NSString stringWithFormat:@"\r\n%@ %@\r\n", [term styled:[term unicode] ? @"❯" : @">" with:@"cyan"], [term styled:text with:@"bold"]]];
+            [term write:[NSString stringWithFormat:@"\r\n%@ %@\r\n", [term styled:[term unicode] ? TBU("\u276f") : @">" with:@"cyan"], [term styled:text with:@"bold"]]];
         } else if ([role isEqualToString:@"status"]) {
             NSString *kind = [m objectForKey:@"activityKind"];
             if ([kind isEqualToString:@"thinking"])
                 continue;
             if ([kind isEqualToString:@"tool"])
-                [term write:[NSString stringWithFormat:@"%@ %@\r\n", [term styled:[term unicode] ? @"●" : @"*" with:@"cyan"], [term styled:text with:@"gray"]]];
+                [term write:[NSString stringWithFormat:@"%@ %@\r\n", [term styled:[term unicode] ? TBU("\u25cf") : @"*" with:@"cyan"], [term styled:text with:@"gray"]]];
             else
-                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:@"  · %@", text] with:@"gray"]]];
+                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:TBU("  \u00b7 %@"), text] with:@"gray"]]];
         } else {
             if ([m objectForKey:@"tweet"]) {
-                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:@"  [post: %@ — shown in the Tiger Build window]", [text length] > 100 ? [[text substringToIndex:100] stringByAppendingString:@"..."] : text] with:@"gray"]]];
+                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:TBU("  [post: %@ \u2014 shown in the Tiger Build window]"), [text length] > 100 ? [[text substringToIndex:100] stringByAppendingString:@"..."] : text] with:@"gray"]]];
                 continue;
             }
             if ([text length]) {
@@ -932,9 +932,9 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
                 [show finish];
             }
             if ([m objectForKey:@"image"])
-                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:@"  [picture %@ — shown in the Tiger Build window]", [[m objectForKey:@"image"] lastPathComponent]] with:@"gray"]]];
+                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:TBU("  [picture %@ \u2014 shown in the Tiger Build window]"), [[m objectForKey:@"image"] lastPathComponent]] with:@"gray"]]];
             if ([m objectForKey:@"video"])
-                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:@"  [video %@ — shown in the Tiger Build window]", [[m objectForKey:@"video"] lastPathComponent]] with:@"gray"]]];
+                [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:TBU("  [video %@ \u2014 shown in the Tiger Build window]"), [[m objectForKey:@"video"] lastPathComponent]] with:@"gray"]]];
             if ([m objectForKey:@"file"])
                 [term write:[NSString stringWithFormat:@"%@\r\n", [term styled:[NSString stringWithFormat:@"  [file %@]", [m objectForKey:@"file"]] with:@"gray"]]];
         }
@@ -947,7 +947,7 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
     if (firstLine) {
         firstLine = NO;
         if ([text hasPrefix:@"  "])
-            text = [NSString stringWithFormat:@"%@ %@", [term styled:[term unicode] ? @"●" : @"*" with:@"orange"], [text substringFromIndex:2]];
+            text = [NSString stringWithFormat:@"%@ %@", [term styled:[term unicode] ? TBU("\u25cf") : @"*" with:@"orange"], [text substringFromIndex:2]];
     }
     [term write:[[text componentsSeparatedByString:@"\n"] componentsJoinedByString:@"\r\n"]];
 }

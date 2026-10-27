@@ -57,7 +57,7 @@ static int textWidth(NSString *text)
 /* The drawing characters the program uses, as plain ones, for a terminal that is not UTF-8 (Mac OS Roman has the dot, dash, bullet and quotes; the rest it has not). */
 static NSString *plainGlyphs(NSString *text)
 {
-    static NSString *from[] = {@"\u276f", @"\u25cf", @"\u23bf", @"\u256d", @"\u256e", @"\u2570", @"\u256f", @"\u2500", @"\u2502", @"\u2191", @"\u2193", @"\u2717", @"\u273b", @"\u203a", @"\u2212", @"\u2265", @"\u2264"};
+    NSString *from[] = {TBU("\u276f"), TBU("\u25cf"), TBU("\u23bf"), TBU("\u256d"), TBU("\u256e"), TBU("\u2570"), TBU("\u256f"), TBU("\u2500"), TBU("\u2502"), TBU("\u2191"), TBU("\u2193"), TBU("\u2717"), TBU("\u273b"), TBU("\u203a"), TBU("\u2212"), TBU("\u2265"), TBU("\u2264")};
     static NSString *to[] = {@">", @"*", @"`", @",", @".", @"`", @"'", @"-", @"|", @"^", @"v", @"x", @"*", @">", @"-", @">=", @"<="};
     NSMutableString *s;
     unsigned i, n = [text length];
@@ -450,7 +450,7 @@ static NSString *plainGlyphs(NSString *text)
         w += charWidth(c);
     }
     if (cut)
-        [out2 appendString:unicode ? @"…" : @"~"];
+        [out2 appendString:unicode ? TBU("\u2026") : @"~"];
     [out2 appendString:[self style:@"reset"]];
     return out2;
 }

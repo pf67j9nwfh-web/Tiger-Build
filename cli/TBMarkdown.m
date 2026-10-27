@@ -234,7 +234,7 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
     }
     {
         BOOL u = [term unicode];
-        NSString *v = u ? @"│" : @"|", *h = u ? @"─" : @"-";
+        NSString *v = u ? TBU("\u2502") : @"|", *h = u ? TBU("\u2500") : @"-";
         [self blank];
         for (r = 0; r < [rows count]; r++) {
             NSArray *cells = [rows objectAtIndex:r];
@@ -286,11 +286,11 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
     if (inCode) {
         if ([trim hasPrefix:@"```"]) {
             inCode = NO;
-            [self line:[term styled:[NSString stringWithFormat:@"%@%@", margin, [term unicode] ? @"└─" : @"`--"] with:@"gray"]];
+            [self line:[term styled:[NSString stringWithFormat:@"%@%@", margin, [term unicode] ? TBU("\u2514\u2500") : @"`--"] with:@"gray"]];
             return;
         }
         {
-            NSString *prefix = [term styled:[term unicode] ? @"│ " : @"| " with:@"gray"], *body;
+            NSString *prefix = [term styled:[term unicode] ? TBU("\u2502 ") : @"| " with:@"gray"], *body;
             if ([codeLang isEqualToString:@"diff"] || [codeLang isEqualToString:@"patch"]) {
                 if ([line hasPrefix:@"+"] && ![line hasPrefix:@"+++"])
                     body = [term styled:line with:@"green"];
@@ -313,7 +313,7 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
         inCode = YES;
         [codeLang release];
         codeLang = [[lang lowercaseString] copy];
-        [self line:[term styled:[NSString stringWithFormat:@"%@%@%@", margin, [term unicode] ? @"┌─ " : @",-- ", [lang length] ? lang : @"code"] with:@"gray"]];
+        [self line:[term styled:[NSString stringWithFormat:@"%@%@%@", margin, [term unicode] ? TBU("\u250c\u2500 ") : @",-- ", [lang length] ? lang : @"code"] with:@"gray"]];
         return;
     }
     if ([trim hasPrefix:@"|"] && [trim rangeOfString:@"|" options:0 range:NSMakeRange(1, [trim length] - 1)].location != NSNotFound) {
@@ -341,13 +341,13 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
         NSMutableString *rule = [NSMutableString string];
         int k;
         for (k = 0; k < MIN(avail, 60); k++)
-            [rule appendString:[term unicode] ? @"─" : @"-"];
+            [rule appendString:[term unicode] ? TBU("\u2500") : @"-"];
         [self line:[NSString stringWithFormat:@"%@%@", margin, [term styled:rule with:@"gray"]]];
         return;
     }
     if ([trim hasPrefix:@">"]) {
         NSString *rest = [[trim substringFromIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        NSString *bar = [term styled:[term unicode] ? @"▎ " : @"| " with:@"gray"];
+        NSString *bar = [term styled:[term unicode] ? TBU("\u258e ") : @"| " with:@"gray"];
         NSArray *rows = [[term wrap:[term styled:[TBMarkdown renderInline:rest term:term] with:@"italic"] width:avail - 2 indent:@""] componentsSeparatedByString:@"\n"];
         unsigned i;
         for (i = 0; i < [rows count]; i++)
@@ -363,7 +363,7 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
         {
             NSString *t = [line substringFromIndex:lead];
             if ([t hasPrefix:@"- "] || [t hasPrefix:@"* "] || [t hasPrefix:@"+ "]) {
-                bullet = [term unicode] ? @"•" : @"*";
+                bullet = [term unicode] ? TBU("\u2022") : @"*";
                 rest = [t substringFromIndex:2];
             } else {
                 NSUInteger k = 0;
@@ -410,7 +410,7 @@ static NSString *highlight(NSString *line, NSString *lang, TBTerm *term)
     [self flushTable];
     if (inCode) {
         inCode = NO;
-        [self line:[term styled:[NSString stringWithFormat:@"%@%@", margin, [term unicode] ? @"└─" : @"`--"] with:@"gray"]];
+        [self line:[term styled:[NSString stringWithFormat:@"%@%@", margin, [term unicode] ? TBU("\u2514\u2500") : @"`--"] with:@"gray"]];
     }
     lastBlank = NO;
     started = NO;

@@ -115,7 +115,7 @@
     }
     for (i = 0; i < [list count] && i < 40; i++) {
         NSDictionary *c = [list objectAtIndex:i];
-        [self printLine:[NSString stringWithFormat:@"  %@ %5@  %@  %@", c == cur ? @"›" : @" ", [c objectForKey:@"id"], [term clipToWidth:[core titleOf:c] width:[term columns] - 40],
+        [self printLine:[NSString stringWithFormat:@"  %@ %5@  %@  %@", c == cur ? TBU("\u203a") : @" ", [c objectForKey:@"id"], [term clipToWidth:[core titleOf:c] width:[term columns] - 40],
             [term styled:[self modelLabel:c] with:@"gray"]]];
     }
 }
@@ -371,7 +371,7 @@
         else [self printLine:[NSString stringWithFormat:@"  %@  (all: %@)", [core workspace], [[core workspaceNames] componentsJoinedByString:@", "]]];
     } else if ([cmd isEqualToString:@"/status"]) {
         [self printLine:[NSString stringWithFormat:@"  %@", [self statusLine]]];
-        [self printLine:[NSString stringWithFormat:@"  workspace %@ · chat %@ · %@", [core workspace], [chat objectForKey:@"id"], [[NSFileManager defaultManager] currentDirectoryPath]]];
+        [self printLine:[NSString stringWithFormat:TBU("  workspace %@ \u00b7 chat %@ \u00b7 %@"), [core workspace], [chat objectForKey:@"id"], [[NSFileManager defaultManager] currentDirectoryPath]]];
         if (projectNote) [self printLine:[NSString stringWithFormat:@"  instructions: %@", projectNote]];
         if ([core liveLeaseNoteForChat:chat]) [self printStyled:[NSString stringWithFormat:@"  %@", [core liveLeaseNoteForChat:chat]] style:@"yellow"];
     } else if ([cmd isEqualToString:@"/verbose"]) { verbose = !verbose; [config setObject:[NSNumber numberWithBool:verbose] forKey:@"verbose"]; [self saveConfig]; [self printStyled:verbose ? @"  tool output in full" : @"  tool output short" style:@"gray"]; }

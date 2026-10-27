@@ -3,6 +3,10 @@
 /* The terminal: raw input, escape sequences, colours, the width of text, and a line editor. Plain ANSI (works on Tiger's Terminal, with 16 colours,
    and on modern terminals over ssh, which get more). No terminfo. */
 
+/* A string with characters beyond ASCII. Not @"\u00b7": gcc 4.0 (Tiger and Snow Leopard) reads the bytes of such a literal as Mac OS Roman, so every
+   such character came out as two wrong ones. A plain C string is UTF-8 on every compiler. */
+#define TBU(s) ([NSString stringWithUTF8String:(s)])
+
 typedef enum { TBKeyChar, TBKeyEnter, TBKeyTab, TBKeyBackTab, TBKeyBackspace, TBKeyDelete, TBKeyUp, TBKeyDown, TBKeyLeft, TBKeyRight, TBKeyHome, TBKeyEnd,
     TBKeyPageUp, TBKeyPageDown, TBKeyEscape, TBKeyCtrl, TBKeyAlt, TBKeyAltEnter, TBKeyWordLeft, TBKeyWordRight, TBKeyPaste, TBKeyEOF, TBKeyNone, TBKeyResize } TBKeyType;
 
