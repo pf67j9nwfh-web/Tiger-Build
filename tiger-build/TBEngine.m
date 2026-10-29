@@ -151,6 +151,11 @@ static NSString *kAccount = @"keys";
     return nil;
 }
 
++ (BOOL)keychainAvailable
+{
+    return [self loadSecrets] != nil;
+}
+
 + (BOOL)saveSecrets
 {
     if (getenv("TB_NO_KEYCHAIN"))

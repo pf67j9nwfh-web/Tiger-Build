@@ -4,6 +4,7 @@
 #import "TBCLIApp.h"
 #import "TBBackground.h"
 #import "TBSudoBroker.h"
+#import "TBPricing.h"
 #import "TBIntegrations.h"
 #import "TBEngine.h"
 #include <termios.h>
@@ -25,7 +26,8 @@ static void usage(void)
         "      --output-format text|json|stream-json   (with -p)\n"
         "  -y, --yes             allow every tool without asking\n"
         "  -h, --help\n"
-        "  tb login NAME | tb login --import | tb logout NAME | tb keys   API keys kept for use over ssh\n"
+        "  tb login NAME | tb login --import | tb logout NAME | tb keys   keys and MCP servers kept for use over ssh\n"
+        "  tb unlock             unlock the login Keychain for this ssh session\n"
         "  tb [options] \"prompt\"   starts the interactive session with that first message\n");
 }
 
@@ -87,9 +89,9 @@ static void *keychainHint(void *unused)
 static void warmKeychain(BOOL quiet)
 {
     pthread_t t;
-    if (getenv("SSH_CONNECTION") || getenv("TB_NO_KEYCHAIN"))
+    if (getenv("TB_NO_KEYCHAIN"))
         return;
-    if (!quiet && pthread_create(&t, NULL, keychainHint, NULL) == 0)
+    if (!quiet && !getenv("SSH_CONNECTION") && pthread_create(&t, NULL, keychainHint, NULL) == 0)      /* over ssh there is no window to click */
         pthread_detach(t);
     [TBSettings keychainValueForName:@"openai_api_key"];
     keychainDone = 1;
@@ -100,10 +102,10 @@ static void warmKeychain(BOOL quiet)
 static void startSudo(BOOL quiet)
 {
     pthread_t t;
-    if (getenv("SSH_CONNECTION") || getenv("TB_NO_KEYCHAIN") || ![TBSudoBroker administratorModeOn])
+    if (getenv("TB_NO_KEYCHAIN") || (getenv("SSH_CONNECTION") && ![TBSettings keychainAvailable]) || ![TBSudoBroker administratorModeOn])
         return;
     keychainDone = 0;
-    if (!quiet && pthread_create(&t, NULL, keychainHint, NULL) == 0)
+    if (!quiet && !getenv("SSH_CONNECTION") && pthread_create(&t, NULL, keychainHint, NULL) == 0)
         pthread_detach(t);
     [TBSudoBroker primeKeychain];
     keychainDone = 1;
@@ -124,20 +126,39 @@ static int keyCommand(NSArray *args)
         for (i = 0; i < [names count]; i++) {
             NSString *n = [names objectAtIndex:i];
             if ([n hasSuffix:@"_api_key"])
-                printf("%-18s %s\n", [n UTF8String], getenv([[@"TB_" stringByAppendingString:[n uppercaseString]] UTF8String]) ? "environment" : [keys objectForKey:n] ? "key file" : [[TBSettings keychainValueForName:n] length] ? "keychain" : "-");
+                printf("%-18s %s\n", [n UTF8String], getenv([[@"TB_" stringByAppendingString:[n uppercaseString]] UTF8String]) ? "environment" : [[TBSettings keychainValueForName:n] length] ? "keychain" : [keys objectForKey:n] ? "key file" : "-");
         }
+        printf("MCP servers        %s\n", [[TBSettings keychainValueForName:@"mcp_servers"] length] ? "keychain" : [keys objectForKey:@"mcp_servers"] ? "key file" : "-");
+        printf("Keychain           %s\n", [TBSettings keychainAvailable] ? "readable" : "not readable here (locked, or not allowed)");
         return 0;
+    }
+    if ([cmd isEqualToString:@"unlock"]) {
+        /* an ssh session has its own locked view of the login Keychain; this unlocks it for the session (the password is typed to the system's own tool) */
+        fprintf(stderr, "Unlocking the login Keychain for this session. Then tb can read what you allowed it to read (Always Allow, at the Mac).\n");
+        return system("/usr/bin/security unlock-keychain") == 0 ? 0 : 1;
     }
     if ([cmd isEqualToString:@"logout"]) {
         if (!name) { fprintf(stderr, "usage: tb logout NAME\n"); return 2; }
         [keys removeObjectForKey:name];
     } else if ([name isEqualToString:@"--import"]) {
-        /* from the Keychain (run this at the Mac itself, where it can ask) */
-        for (i = 0; i < [names count]; i++) {
-            NSString *v = [TBSettings keychainValueForName:[names objectAtIndex:i]];
-            if ([v length] && [[names objectAtIndex:i] hasSuffix:@"_api_key"])
-                [keys setObject:v forKey:[names objectAtIndex:i]];
+        /* from the Keychain (run this at the Mac itself, where it can ask): the API keys and the rest of what an ssh session cannot read, such as the MCP servers */
+        int copied = 0;
+        if (![TBSettings keychainAvailable]) {
+            fprintf(stderr, "tb: the Keychain cannot be read here. Run this at the Mac itself, in Terminal, and answer its question with Always Allow (or `tb unlock` first).\n");
+            return 1;
         }
+        for (i = 0; i < [names count]; i++) {
+            NSString *v = [names objectAtIndex:i], *got;
+            if ([v isEqualToString:@"lock_hash"])
+                continue;
+            got = [TBSettings keychainValueForName:v];
+            if ([got length]) {
+                [keys setObject:got forKey:v];
+                copied++;
+                fprintf(stderr, "  %s\n", [v UTF8String]);
+            }
+        }
+        fprintf(stderr, "%d item%s copied. A later change in the window needs `tb login --import` again.\n", copied, copied == 1 ? "" : "s");
     } else {
         char buf[1024];
         struct termios t, old;
@@ -180,7 +201,9 @@ int main(int argc, char **argv)
     NSMutableDictionary *chat;
     NSString *prompt, *problem = nil;
     int i;
-    if (argc > 1 && (!strcmp(argv[1], "login") || !strcmp(argv[1], "logout") || !strcmp(argv[1], "keys"))) {
+    if (getenv("SSH_CONNECTION"))
+        SecKeychainSetUserInteractionAllowed(FALSE);   /* nobody at the screen to click Allow: fail at once instead of waiting */
+    if (argc > 1 && (!strcmp(argv[1], "login") || !strcmp(argv[1], "logout") || !strcmp(argv[1], "keys") || !strcmp(argv[1], "unlock"))) {
         NSMutableArray *rest = [NSMutableArray array];
         for (i = 1; i < argc; i++)
             [rest addObject:[NSString stringWithUTF8String:argv[i]]];
@@ -208,6 +231,11 @@ int main(int argc, char **argv)
         [core openWorkspace:workspace];
     warmKeychain(print);
     startSudo(print);
+    [TBPricing start];     /* the price list, so a chat's cost is known (the window starts it too); without it every chat made here showed "Cost N/A" in the window */
+    if (!print && getenv("SSH_CONNECTION") && !getenv("TB_NO_KEYCHAIN") && ![TBSettings keychainAvailable])
+        fprintf(stderr, "The Keychain is locked in this ssh session, so keys, MCP servers and shared folders kept there are not seen.\n"
+            "  tb unlock          unlock it for this session (your login password; then what you allowed tb to read is readable)\n"
+            "  tb login --import  once, at the Mac itself: copy them to a private file ssh sessions can read\n");
     [core refreshCatalog];
     prompt = [words componentsJoinedByString:@" "];
     if (print && ![prompt length]) {

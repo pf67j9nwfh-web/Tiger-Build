@@ -31,6 +31,7 @@ BOOL TBTruthy(id value);   /* non-empty text or collection, true number, any oth
 + (void)clearName:(NSString *)name;
 + (NSArray *)secretNames;
 + (NSString *)keychainValueForName:(NSString *)name;
++ (BOOL)keychainAvailable;               /* the saved keys could be read (NO: locked, or the person said no) */
 + (NSString *)settingForProvider:(NSString *)provider;
 + (NSString *)keyForProvider:(NSString *)provider;
 + (BOOL)hasKeyForProvider:(NSString *)provider;
