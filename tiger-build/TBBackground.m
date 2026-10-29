@@ -110,8 +110,6 @@ static NSString *stateText(NSString *ident, NSMutableDictionary *t, int lines)
         t = [NSMutableDictionary dictionaryWithObjectsAndKeys:task, @"task", [label length] ? label : command, @"label", command, @"command", log, @"log",
             [NSDate date], @"started", runId ? runId : @"", @"run", nil];
         [tasks setObject:t forKey:ident];
-        if (getenv("TB_DEBUG_BG"))
-            fprintf(stderr, "bg %s run=%s chat=%s\n", [ident UTF8String], [runId UTF8String], [[runChats objectForKey:runId] UTF8String]);
     }
     return ident;
 }

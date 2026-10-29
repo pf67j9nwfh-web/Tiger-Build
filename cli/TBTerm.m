@@ -91,7 +91,7 @@ static NSString *plainGlyphs(NSString *text)
 
 - (id)init
 {
-    const char *colorterm = getenv("COLORTERM"), *termname = getenv("TERM"), *lang = getenv("LANG"), *lc = getenv("LC_ALL"), *ctype = getenv("LC_CTYPE");
+    const char *colorterm = getenv("COLORTERM"), *termname = getenv("TERM");
     self = [super init];
     out = [[NSMutableData alloc] init];
     level = TBColor16;
@@ -101,22 +101,9 @@ static NSString *plainGlyphs(NSString *text)
         level = TBColorTrue;
     else if (termname && strstr(termname, "256color"))
         level = TBColor256;
-    /* Text goes out as UTF-8 when the terminal takes it. The terminal is asked in -enterRaw, whatever the locale says: a Terminal window can be set to Mac OS
-       Roman while LANG names UTF-8, and then UTF-8 shows as garbage. The locale is only the answer when the terminal gives none. TB_ASCII and TB_UTF8 decide it by hand. */
-    legacy = NSMacOSRomanStringEncoding;
+    /* UTF-8, which every Terminal tried (Tiger on) takes; TB_ASCII for plain characters only */
     unicode = !getenv("TB_ASCII");
-    if (getenv("TB_ASCII"))
-        asciiOnly = YES;
-    else if (!getenv("TB_UTF8")) {
-        const char *loc = lc && *lc ? lc : (ctype && *ctype ? ctype : lang);
-        localeUTF8 = loc && strcasestr(loc, "utf") != NULL;
-        if (loc && *loc && strcmp(loc, "C") && strcmp(loc, "POSIX") && !localeUTF8) {
-            unicode = NO;
-            if (strcasestr(loc, "8859-1") || strcasestr(loc, "latin1"))
-                legacy = NSISOLatin1StringEncoding;
-        }
-        probeEncoding = isatty(0) && isatty(1);
-    }
+    asciiOnly = !unicode;
     signal(SIGWINCH, onWinch);
     return self;
 }
@@ -156,58 +143,8 @@ static NSString *plainGlyphs(NSString *text)
     t.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &t);
     raw = YES;
-    if (probeEncoding) {
-        probeEncoding = NO;
-        [self probeUTF8];
-    }
     [self write:@"\033[?2004h"];   /* bracketed paste */
     [self flush];
-}
-
-/* Prints a two-byte UTF-8 character and asks where the cursor is: one column on, and the terminal reads UTF-8; two, and it does not. */
-- (void)probeUTF8
-{
-    int col = 0, c, tries = 0;
-    char reply[32];
-    int n = 0;
-    BOOL got = NO;
-    {
-        static const char ask[] = "\r\303\251\033[6n";      /* the two bytes of e-acute in UTF-8, then "where is the cursor" */
-        [out appendBytes:ask length:sizeof ask - 1];
-    }
-    [self flush];
-    while (tries++ < 40) {            /* up to about 0.8 s */
-        c = [self readByte:20];
-        if (c < 0)
-            continue;
-        if (c == 033) { n = 0; continue; }
-        if (n < (int)sizeof reply - 1)
-            reply[n++] = (char)c;
-        if (c == 'R') {
-            reply[n] = 0;
-            if (sscanf(reply, "[%*d;%dR", &col) == 1)
-                got = YES;
-            break;
-        }
-    }
-    [self write:@"\r\033[K"];
-    [self flush];
-    if (getenv("TB_DEBUG_TERM")) {
-        FILE *log = fopen(getenv("TB_DEBUG_TERM"), "a");
-        if (log) {
-            fprintf(log, "probe: got=%d col=%d reply=[%s] locale-utf8=%d\n", got, col, n > 0 ? reply : "", localeUTF8);
-            fclose(log);
-        }
-    }
-    if (got && col == 2)
-        unicode = YES;                  /* UTF-8 */
-    else if (got) {
-        unicode = NO;                   /* it answered, and took the two bytes as two characters */
-        asciiOnly = NO;
-    } else {
-        unicode = localeUTF8;           /* no answer: the locale, and without that plain ASCII */
-        asciiOnly = !localeUTF8;
-    }
 }
 
 - (void)leaveRaw
@@ -226,7 +163,7 @@ static NSString *plainGlyphs(NSString *text)
     if (unicode)
         d = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:YES];
     else {
-        d = [plainGlyphs(text) dataUsingEncoding:asciiOnly ? NSASCIIStringEncoding : legacy allowLossyConversion:YES];
+        d = [plainGlyphs(text) dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:YES];
         if (!d)
             d = [NSData data];
     }
@@ -361,13 +298,6 @@ static NSString *plainGlyphs(NSString *text)
     if (b < 32) {
         k.type = TBKeyCtrl;
         k.ch = (unsigned)(b + 'a' - 1);
-        return k;
-    }
-    if (!unicode && b >= 0x80) {          /* a terminal that is not UTF-8 sends one byte in its own encoding */
-        unsigned char byte = (unsigned char)b;
-        NSString *one = [[[NSString alloc] initWithBytes:&byte length:1 encoding:asciiOnly ? NSISOLatin1StringEncoding : legacy] autorelease];
-        k.type = TBKeyChar;
-        k.ch = [one length] ? [one characterAtIndex:0] : '?';
         return k;
     }
     /* a UTF-8 character */

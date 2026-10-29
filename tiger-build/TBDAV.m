@@ -167,6 +167,7 @@ static NSString *statusText(int code)
     case 403: return @"Forbidden";
     case 404: return @"Not Found";
     case 405: return @"Method Not Allowed";
+    case 411: return @"Length Required";
     case 409: return @"Conflict";
     case 412: return @"Precondition Failed";
     case 416: return @"Requested Range Not Satisfiable";
@@ -176,20 +177,8 @@ static NSString *statusText(int code)
     }
 }
 
-/* TB_DEBUG_DAV=file: every request and the answer, for finding out what the Finder asks */
-static void dlog(NSString *line)
-{
-    const char *path = getenv("TB_DEBUG_DAV");
-    FILE *f;
-    if (!path || !(f = fopen(path, "a")))
-        return;
-    fprintf(f, "%s\n", [line UTF8String]);
-    fclose(f);
-}
-
 static BOOL respond(Conn *c, int code, NSString *extraHeaders, NSData *body, BOOL head)
 {
-    dlog([NSString stringWithFormat:@"  -> %d", code]);
     NSMutableString *h = [NSMutableString stringWithFormat:@"HTTP/1.1 %d %@\r\nServer: TigerBuild-DAV\r\nDAV: 1, 2\r\nMS-Author-Via: DAV\r\nContent-Length: %lu\r\n%@\r\n",
         code, statusText(code), (unsigned long)(body ? [body length] : 0), extraHeaders ? extraHeaders : @""];
     NSData *hd = [h dataUsingEncoding:NSUTF8StringEncoding];
@@ -344,24 +333,6 @@ static NSString *header(Request *r, NSString *name)
     return [r->headers objectForKey:name];
 }
 
-/* the body the client sends, to a buffer in memory (small requests: PROPFIND and LOCK send XML) */
-static NSData *readBody(Conn *c, Request *r)
-{
-    NSString *len = header(r, @"content-length");
-    NSMutableData *body = [NSMutableData data];
-    long long n = len ? llv(len) : 0;
-    if (n > 1048576)
-        n = 0;
-    while ((long long)[c->buffer length] < n)
-        if (!fill(c))
-            return body;
-    if (n > 0) {
-        [body appendBytes:[c->buffer bytes] length:(NSUInteger)n];
-        [c->buffer replaceBytesInRange:NSMakeRange(0, (NSUInteger)n) withBytes:NULL length:0];
-    }
-    return body;
-}
-
 static void discardBody(Conn *c, Request *r)
 {
     NSString *len = header(r, @"content-length");
@@ -375,11 +346,6 @@ static void discardBody(Conn *c, Request *r)
         } else if (!fill(c))
             return;
     }
-}
-
-static NSString *joinedPath(NSString *base, NSString *name)
-{
-    return [base length] ? [NSString stringWithFormat:@"%@/%@", base, name] : name;
 }
 
 /* the part of an address after the secret and the share: "" or "folder/file" (nil when it climbs out) */
@@ -550,20 +516,20 @@ static BOOL handleGet(Conn *c, Request *r, TBDAVShare *s, BOOL head)
     }
 }
 
-/* the request body goes to the file as it arrives, in pieces */
+/* the request body goes to the file as it arrives, in pieces. Content-Length only: the Finders of Tiger and Snow Leopard send one, and a chunked body is told to say its length (411). */
 static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
 {
-    NSString *len = header(r, @"content-length"), *enc = [header(r, @"transfer-encoding") lowercaseString];
-    BOOL chunked = enc != nil && [enc rangeOfString:@"chunked"].length > 0, existed;   /* not a message to nil: a struct result from nil is garbage on PowerPC */
-    long long left = len ? llv(len) : 0;
+    NSString *enc = [header(r, @"transfer-encoding") lowercaseString];
+    long long left = llv(header(r, @"content-length"));
     struct smb2_stat_64 st;
     struct smb2fh *fh;
     uint64_t offset = 0;
-    int status = 201, failure = 0;
-    long long chunkLeft = 0;
-    BOOL finished = NO;
+    BOOL existed;
+    int failure = 0;
     if ([r->path length] == 0)
         return respond(c, 405, nil, nil, NO);
+    if (enc != nil && [enc rangeOfString:@"chunked"].length > 0)     /* not a message to nil: a struct result from nil is garbage on PowerPC */
+        return respond(c, 411, @"Connection: close\r\n", nil, NO) && NO;
     if ([[header(r, @"expect") lowercaseString] hasPrefix:@"100"]) {
         const char *go = "HTTP/1.1 100 Continue\r\n\r\n";
         if (!sendAll(c->fd, go, strlen(go)))
@@ -575,9 +541,7 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
         discardBody(c, r);
         return respond(c, 502, nil, nil, NO);
     }
-    dlog(@"  put: connected");
     existed = smb2_stat(s->context, [r->path UTF8String], &st) == 0;
-    dlog([NSString stringWithFormat:@"  put: statted, existed=%d", existed]);
     if (existed && st.smb2_type == SMB2_TYPE_DIRECTORY) {
         [s->lock unlock];
         discardBody(c, r);
@@ -585,75 +549,13 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
     }
     fh = smb2_open(s->context, [r->path UTF8String], O_WRONLY | O_CREAT | O_TRUNC);
     [s->lock unlock];
-    dlog([NSString stringWithFormat:@"  put: opened, fh=%p", fh]);
     if (!fh) {
         discardBody(c, r);
         return respond(c, 409, nil, nil, NO);
     }
-    status = existed ? 204 : 201;
-    while (!finished) {
-        NSUInteger have;
-        long long take;
-        if (chunked && chunkLeft == 0) {
-            /* the size line of the next piece */
-            NSRange eol;
-            for (;;) {
-                const char *b = [c->buffer bytes];
-                NSUInteger i, n = [c->buffer length];
-                eol = NSMakeRange(NSNotFound, 0);
-                for (i = 0; i + 1 < n; i++)
-                    if (b[i] == '\r' && b[i + 1] == '\n') {
-                        eol = NSMakeRange(i, 2);
-                        break;
-                    }
-                if (eol.location != NSNotFound)
-                    break;
-                if (!fill(c)) {
-                    failure = 1;
-                    break;
-                }
-            }
-            if (failure)
-                break;
-            {
-                NSString *line = [[[NSString alloc] initWithBytes:[c->buffer bytes] length:eol.location encoding:NSASCIIStringEncoding] autorelease];
-                chunkLeft = (long long)strtoull([line UTF8String], NULL, 16);
-                [c->buffer replaceBytesInRange:NSMakeRange(0, eol.location + 2) withBytes:NULL length:0];
-                if (chunkLeft == 0) {
-                    /* the trailer ends with an empty line */
-                    for (;;) {
-                        const char *b = [c->buffer bytes];
-                        NSUInteger n = [c->buffer length];
-                        if (n >= 2 && b[0] == '\r' && b[1] == '\n') {
-                            [c->buffer replaceBytesInRange:NSMakeRange(0, 2) withBytes:NULL length:0];
-                            break;
-                        }
-                        if (n >= 4) {
-                            NSUInteger k;
-                            BOOL done = NO;
-                            for (k = 0; k + 3 < n; k++)
-                                if (!memcmp(b + k, "\r\n\r\n", 4)) {
-                                    [c->buffer replaceBytesInRange:NSMakeRange(0, k + 4) withBytes:NULL length:0];
-                                    done = YES;
-                                    break;
-                                }
-                            if (done)
-                                break;
-                        }
-                        if (!fill(c)) {
-                            failure = 1;
-                            break;
-                        }
-                    }
-                    finished = YES;
-                    continue;
-                }
-            }
-        }
-        take = chunked ? chunkLeft : left;
-        if (!chunked && left <= 0)
-            break;
-        have = [c->buffer length];
+    while (left > 0) {
+        NSUInteger have = [c->buffer length];
+        int put;
         if (have == 0) {
             if (!fill(c)) {
                 failure = 1;
@@ -661,48 +563,30 @@ static BOOL handlePut(Conn *c, Request *r, TBDAVShare *s)
             }
             have = [c->buffer length];
         }
-        if ((long long)have > take)
-            have = (NSUInteger)take;
+        if ((long long)have > left)
+            have = (NSUInteger)left;
         if (have > CHUNK)
             have = CHUNK;
-        {
-            int put;
-            [s->lock lock];
-            put = s->context ? smb2_pwrite(s->context, fh, (const uint8_t *)[c->buffer bytes], (uint32_t)have, offset) : -ECONNRESET;
-            if (isConnectionLoss(put))
-                lostConnection(s);
-            [s->lock unlock];
-            if (put < 0) {
-                failure = put;
-                break;
-            }
-            if ((NSUInteger)put < have)
-                have = (NSUInteger)put;
-        }
-        offset += have;
-        [c->buffer replaceBytesInRange:NSMakeRange(0, have) withBytes:NULL length:0];
-        if (chunked) {
-            chunkLeft -= (long long)have;
-            if (chunkLeft == 0) {
-                while ([c->buffer length] < 2)
-                    if (!fill(c)) { failure = 1; break; }
-                if (!failure)
-                    [c->buffer replaceBytesInRange:NSMakeRange(0, 2) withBytes:NULL length:0];
-            }
-        } else
-            left -= (long long)have;
-        if (failure)
+        [s->lock lock];
+        put = s->context ? smb2_pwrite(s->context, fh, (const uint8_t *)[c->buffer bytes], (uint32_t)have, offset) : -ECONNRESET;
+        if (isConnectionLoss(put))
+            lostConnection(s);
+        [s->lock unlock];
+        if (put <= 0) {
+            failure = put < 0 ? put : -EIO;
             break;
+        }
+        offset += (uint64_t)put;
+        left -= put;
+        [c->buffer replaceBytesInRange:NSMakeRange(0, (NSUInteger)put) withBytes:NULL length:0];
     }
-    dlog(@"  put: closing");
     [s->lock lock];
     if (s->context)
         smb2_close(s->context, fh);
     [s->lock unlock];
-    dlog(@"  put: closed");
     if (failure)
         return respond(c, failure < 0 ? errorStatus(failure) : 400, @"Connection: close\r\n", nil, NO) && NO;
-    return respond(c, status, nil, nil, NO);
+    return respond(c, existed ? 204 : 201, nil, nil, NO);
 }
 
 static NSString *destinationPath(Request *r, NSString *shareName, int *status)
@@ -777,24 +661,6 @@ static NSString *newLockToken(void)
     return [NSString stringWithFormat:@"opaquelocktoken:%08x-%04x-%04x-%04x-%08x%04x", arc4random(), arc4random() & 0xffff, arc4random() & 0xffff, arc4random() & 0xffff, arc4random(), arc4random() & 0xffff];
 }
 
-/* the list of shares at the top of the address (not used by the Finder's mount, which goes straight to a share) */
-static BOOL handleTop(Conn *c, Request *r)
-{
-    NSMutableString *x = [NSMutableString stringWithString:@"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus xmlns:D=\"DAV:\">\n"];
-    NSArray *names;
-    unsigned i;
-    discardBody(c, r);
-    @synchronized(serverLock) {
-        names = [[shares allKeys] sortedArrayUsingSelector:@selector(compare:)];
-    }
-    entryXML(x, [NSString stringWithFormat:@"/%@/", token], @"Shares", YES, NULL, NULL);
-    if (![[header(r, @"depth") description] isEqualToString:@"0"])
-        for (i = 0; i < [names count]; i++)
-            entryXML(x, [NSString stringWithFormat:@"/%@/%@/", token, [names objectAtIndex:i]], [names objectAtIndex:i], YES, NULL, NULL);
-    [x appendString:@"</D:multistatus>\n"];
-    return respondXML(c, 207, x, nil);
-}
-
 /* one request; NO to close the connection */
 static BOOL handleRequest(Conn *c, Request *r)
 {
@@ -805,8 +671,6 @@ static BOOL handleRequest(Conn *c, Request *r)
         return respond(c, 200, @"Allow: OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, MOVE, COPY, PROPFIND, PROPPATCH, LOCK, UNLOCK\r\n", nil, NO);
     }
     if ([r->shareName length] == 0) {
-        if ([m isEqualToString:@"PROPFIND"])
-            return handleTop(c, r);
         discardBody(c, r);
         return respond(c, 405, nil, nil, NO);
     }
@@ -979,8 +843,6 @@ static BOOL readRequest(Conn *c, Request *r)
             [inner release];
             break;
         }
-        dlog([NSString stringWithFormat:@"%@ %@ depth=%@ dest=%@ auth=%@ len=%@ te=%@ expect=%@ if=%@", r.method, r.rawPath, [r.headers objectForKey:@"depth"], [r.headers objectForKey:@"destination"], [r.headers objectForKey:@"authorization"] ? @"yes" : @"no",
-            [r.headers objectForKey:@"content-length"], [r.headers objectForKey:@"transfer-encoding"], [r.headers objectForKey:@"expect"], [r.headers objectForKey:@"if"]]);
         if ([r.path isEqualToString:@"\x01"]) {
             discardBody(&conn, &r);
             keep = respond(&conn, 403, nil, nil, NO);

@@ -66,7 +66,7 @@ int main(int argc, char **argv)
     expectThat(status == 201 && [[NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"docs/new file.txt"] encoding:NSUTF8StringEncoding error:NULL] isEqualToString:@"written through WebDAV"], @"dav: PUT creates a file (spaces in the name)");
     out = dav(@"PUT", [url stringByAppendingString:@"docs/new%20file.txt"], nil, @"again", &status);
     expectThat(status == 204 && [[NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"docs/new file.txt"] encoding:NSUTF8StringEncoding error:NULL] isEqualToString:@"again"], @"dav: PUT over a file replaces it");
-    /* a body of unknown length goes up as chunks (curl -T - does that), as an older Finder's may */
+    /* a body of unknown length goes up as chunks (curl -T - does that) */
     {
         NSTask *task = [[[NSTask alloc] init] autorelease];
         NSPipe *pipe = [NSPipe pipe];
@@ -78,7 +78,7 @@ int main(int argc, char **argv)
         [task launch];
         data = [[pipe fileHandleForReading] readDataToEndOfFile];
         [task waitUntilExit];
-        expectThat([[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] intValue] == 201 && [[NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"docs/chunked.txt"] encoding:NSUTF8StringEncoding error:NULL] isEqualToString:@"sent in chunks"], @"dav: PUT with a chunked body");
+        expectThat([[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] intValue] == 411, @"dav: a chunked PUT is told to give a length (411)");
     }
     out = dav(@"PUT", [url stringByAppendingString:@"docs/empty.txt"], [NSArray arrayWithObjects:@"-H", @"Content-Length: 0", nil], nil, &status);
     expectThat(status == 201 && [fm fileExistsAtPath:[dir stringByAppendingPathComponent:@"docs/empty.txt"]], @"dav: PUT with an empty body creates an empty file (the first step of a Finder write)");

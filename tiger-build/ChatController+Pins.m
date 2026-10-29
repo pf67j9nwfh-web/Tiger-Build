@@ -6,10 +6,7 @@
 
 - (int)pinnedCount
 {
-    int n = 0;
-    while (n < (int)[chats count] && [[[chats objectAtIndex:n] objectForKey:@"pinned"] boolValue])
-        n++;
-    return n;
+    return (int)TBFirstUnpinnedIndex(chats);
 }
 
 /* Puts a new chat first among the unpinned ones; returns its row. */
