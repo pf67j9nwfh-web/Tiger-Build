@@ -339,6 +339,7 @@ A key in Allowed Keys therefore works for both servers, so list only computers y
     tb -c                   continue the latest chat       tb -r 12   open chat 12
     tb -p "question"        answer once and exit           tb -m claude:claude-sonnet-5-5
     tb login openai_api_key keep a key for use over SSH    tb keys   which keys are set
+    tb login --import       at the Mac: copy keys and MCP servers to a private file for ssh   tb unlock   unlock the Keychain in an ssh session
 
 `sudo` works in `tb` too when administrator mode is on (Preferences, Commander) and the chat has the sudo tool on (`/tools sudo on`): `tb` serves the saved password to Commander on a socket of its own, and the Keychain asks about it once at the start, not in the middle of a command. Not over SSH, where the Keychain cannot ask.
 

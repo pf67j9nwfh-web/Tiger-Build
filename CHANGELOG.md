@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.1
+- **Cost in the window for chats made in `tb`**: `tb` did not load the price list, so every turn it made was recorded without a price and the window showed *Cost (est) N/A*. It loads it now, as the window does.
+- **`tb` over ssh sees the Keychain's contents or says why not**: an ssh session has its own locked view of the login Keychain, so keys, MCP servers and shared folders kept there were silently missing (an ssh `tb` showed no MCP servers and a shorter tool list). `tb` now says so at start; `tb unlock` unlocks the Keychain for that session (what you allowed `tb` to read, with Always Allow at the Mac, is then readable); `tb login --import`, run once at the Mac, copies the API keys *and* the MCP servers, shared folders and sign-ins to a private file (0600) that ssh sessions read. `tb keys` shows where each comes from.
+- (Sudo from `tb` over ssh works once the Keychain is unlocked there.)
+
 ## 2.8
 - **`tb` (also `tigerbuild`): Tiger Build in the Terminal.** The same engine, chats, models, tools and keys as the window, on the old Mac itself or over SSH from a modern one (the program only exists on the old Mac). Streamed, formatted replies (headings, lists, tables, code with colour, diffs), tool cards, a one-key approval prompt with a preview of the file change, a spinner with *Esc* to stop and notes to the model while it works.
 - **Chats are shared with the window both ways**: both can be open at once; the chat files are locked and merged, and a chat opened in the other program shows up within seconds. Pictures, videos, files and posts the terminal cannot draw are noted as *[picture ... shown in the Tiger Build window]* and are still there when the chat is opened in the window.
