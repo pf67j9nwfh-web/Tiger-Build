@@ -67,13 +67,15 @@ static NSString *HelloText = @"Hello. Ask me anything.";
 {
     if (!workspace) {
         NSString *name = [[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildWorkspace"];
-        workspace = [([name length] ? name : @"Default") copy];
+        workspace = [(TBWorkspaceNameOK(name) ? name : @"Default") copy];   /* the name becomes a file name: a saved one that is not a plain name is not used */
     }
     return workspace;
 }
 
 - (NSString *)pathForWorkspace:(NSString *)name
 {
+    if (!TBWorkspaceNameOK(name))
+        name = @"Default";    /* never a path outside the workspaces folder */
     if ([name isEqualToString:@"Default"])
         return [TBCLISupportDir() stringByAppendingPathComponent:@"chats.plist"];
     return [[[TBCLISupportDir() stringByAppendingPathComponent:@"workspaces"] stringByAppendingPathComponent:name] stringByAppendingString:@".plist"];
@@ -86,7 +88,7 @@ static NSString *HelloText = @"Hello. Ask me anything.";
     unsigned i;
     for (i = 0; i < [items count]; i++) {
         NSString *name = [items objectAtIndex:i];
-        if ([name hasSuffix:@".plist"])
+        if ([name hasSuffix:@".plist"] && TBWorkspaceNameOK([name stringByDeletingPathExtension]))
             [names addObject:[name stringByDeletingPathExtension]];
     }
     [names sortUsingSelector:@selector(caseInsensitiveCompare:)];
@@ -96,6 +98,8 @@ static NSString *HelloText = @"Hello. Ask me anything.";
 
 - (void)openWorkspace:(NSString *)name
 {
+    if (!TBWorkspaceNameOK(name))
+        name = @"Default";
     [workspace release];
     workspace = [name copy];
     [store release];

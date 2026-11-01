@@ -257,11 +257,29 @@ static NSArray *validated(id list, BOOL forceOff)
     }
     /* a server is never started just because a file was imported */
     [integrations setObject:validated(TBValue(integrations, @"servers"), YES) forKey:@"servers"];
-    [self update:integrations];
-    for (i = 0; i < [names count]; i++) {
-        NSString *v = TBString(providers, [names objectAtIndex:i]);
-        if ([v length])
-            [TBSettings setValue:v forName:[names objectAtIndex:i]];
+    /* A file may make Tiger Build more careful, never less: it cannot switch on Commander, downloads, the toolbox, helpers or asking other models,
+       and it cannot stop the questions asked before Commander runs. Those are changed in Preferences, by the person. */
+    {
+        NSArray *wider = [NSArray arrayWithObjects:@"ppc_enabled", @"download_enabled", @"toolbox_enabled", @"subagents_enabled", @"consult_enabled", nil];
+        for (i = 0; i < [wider count]; i++)
+            if (TBTruth(integrations, [wider objectAtIndex:i]))
+                [integrations removeObjectForKey:[wider objectAtIndex:i]];
+        if ([integrations objectForKey:@"ppc_approval"] && !TBTruth(integrations, @"ppc_approval"))
+            [integrations removeObjectForKey:@"ppc_approval"];
+    }
+    {
+        /* the address of the local model server takes the local key along: a file may not point an existing key at another address */
+        BOOL hadKey = [[TBSettings valueForName:@"local_api_key"] length] > 0;
+        NSString *oldURL = [TBSettings valueForName:@"local_url"];
+        [self update:integrations];
+        for (i = 0; i < [names count]; i++) {
+            NSString *name = [names objectAtIndex:i], *v = TBString(providers, name);
+            if (![v length])
+                continue;
+            if ([name isEqualToString:@"local_url"] && hadKey && ![v isEqualToString:oldURL])
+                continue;
+            [TBSettings setValue:v forName:name];
+        }
     }
 }
 

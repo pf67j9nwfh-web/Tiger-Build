@@ -52,6 +52,9 @@ NSString *TBChatListProblem(id chats);
    settings}). Returns nil for anything else. */
 NSDictionary *TBHistoryBundle(id root, NSString *fallbackName);
 BOOL TBWorkspaceNameOK(NSString *name);
+NSDictionary *TBSafeImportedPreferences(NSDictionary *prefs);           /* the few preferences a settings file may set */
+NSMutableDictionary *TBSafeImportedSettings(NSDictionary *settings);    /* what a history file may set of a workspace's settings */
+NSString *TBMediaExtensionForData(NSData *data, BOOL video);            /* png, jpg, gif, mp4 or mov by the first bytes; nil if neither */
 
 /* One workspace's chats, shared by every window that shows it. Windows used
    to each load their own copy of the file, so the one that saved last

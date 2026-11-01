@@ -268,6 +268,11 @@ static TBAnswerPanel *openAnswer = nil;
     unsigned at;
     if (![TBSpotlight readChatFile:path workspace:&workspace chatId:&ident])
         return;
+    /* the file names the workspace, and anyone can make such a file: only a workspace that is already here is opened */
+    if (![[self workspaceNames] containsObject:workspace]) {
+        NSRunAlertPanel(@"Chat not found", @"That chat file names a workspace that is not on this Mac.", @"OK", nil, nil);
+        return;
+    }
     [window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     if (![workspace isEqualToString:[self workspaceName]])

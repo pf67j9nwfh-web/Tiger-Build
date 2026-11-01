@@ -441,6 +441,12 @@ static NSString *finishText(double when)
     return [NSString stringWithUTF8String:buffer[0] == '0' ? buffer + 1 : buffer];
 }
 
+/* A video is opened in the system's player only when its name says it is one (a file that came inside someone else's chat is renamed to what it is). */
+static BOOL playableVideoPath(NSString *path)
+{
+    return [[NSArray arrayWithObjects:@"mp4",@"mov",@"m4v",nil] containsObject:[[path pathExtension] lowercaseString]];
+}
+
 static NSString *statsLine(NSDictionary *message)
 {
     double seconds = [[message objectForKey:@"statsSeconds"] doubleValue];
@@ -943,6 +949,9 @@ static float transcriptScale = 0;
         return picture;
     if (![[NSFileManager defaultManager] fileExistsAtPath:path])
         return nil;
+    /* the system's image decoders also open PDF, PostScript and more: a picture is only drawn from a file named as one */
+    if (![[NSArray arrayWithObjects:@"png", @"jpg", @"jpeg", @"gif", @"tif", @"tiff", @"bmp", nil] containsObject:[[path pathExtension] lowercaseString]])
+        return nil;
     picture = [[NSImage alloc] initWithContentsOfFile:path];
     if (!picture)
         return nil;
@@ -1010,7 +1019,7 @@ static float transcriptScale = 0;
     [moviePaths removeAllObjects];
     for (i = 0; i < [paths count]; i++) {
         NSString *path = [paths objectAtIndex:i];
-        QTMovie *movie = [QTMovie movieWithFile:path error:nil];
+        QTMovie *movie = playableVideoPath(path) ? [QTMovie movieWithFile:path error:nil] : nil;
         SaveMovieView *view;
         [moviePaths addObject:path];
         if (!movie) {
@@ -2148,6 +2157,8 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
 - (void)openMediaPath:(NSString *)path
 {
     if(!path)return;
+    /* only a picture is handed to the system: a file of any other kind, from wherever it came, is not opened from here */
+    if(![[NSArray arrayWithObjects:@"png",@"jpg",@"jpeg",@"gif",@"tif",@"tiff",nil] containsObject:[[path pathExtension] lowercaseString]]){NSBeep();return;}
     if(TBSystemMinor()>=5&&[[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/bin/qlmanage"]) {
         NSTask *task=[[[NSTask alloc] init] autorelease];
         [task setLaunchPath:@"/usr/bin/qlmanage"];
@@ -2221,6 +2232,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         NSString *clip=[[clipBox objectForKey:@"message"] objectForKey:@"tweetVideo"];
         /* the picture of a post's video plays it in the Mac's own player */
         if(clip&&[clipBox objectForKey:@"imageRect"]&&NSPointInRect(point,[[clipBox objectForKey:@"imageRect"] rectValue])&&[[NSFileManager defaultManager] fileExistsAtPath:clip]) {
+            if(!playableVideoPath(clip)){NSBeep();return;}
             [[NSWorkspace sharedWorkspace] openFile:clip];return;
         }
     }
@@ -2234,6 +2246,7 @@ static BOOL appendProseLine(NSMutableAttributedString *out, NSString *line, NSDi
         for(i=0;i<[boxes count];i++) {
             NSDictionary *box=[boxes objectAtIndex:i];
             if([box objectForKey:@"videoRect"]&&NSPointInRect(point,[[box objectForKey:@"videoRect"] rectValue])&&![self playingVideo:[box objectForKey:@"video"]]) {
+                if(!playableVideoPath([box objectForKey:@"video"])){NSBeep();return;}
                 [[NSWorkspace sharedWorkspace] openFile:[box objectForKey:@"video"]];return;
             }
         }

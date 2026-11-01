@@ -573,7 +573,8 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
     if(error)[error release];
     if([backup isKindOfClass:[NSDictionary class]]&&([[backup objectForKey:@"format"] isEqualToString:@"TigerDesk-config"]||[[backup objectForKey:@"format"] isEqualToString:@"TigerBuildRelay-config"])) {
         if(NSRunAlertPanel(@"Import settings?",@"This restores API keys and tools from an earlier relay backup. "
-            @"Your other preferences stay unchanged. Imported custom MCPs remain disabled.",
+            @"Your other preferences stay unchanged. Imported custom MCPs remain disabled. A file can switch a tool off or make Tiger Build ask first, "
+            @"but it cannot switch Commander, downloads or other tools on, or stop the questions: do that here.",
             @"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
         NSString *text=[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
         [EngineRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(relayOnlySettingsImported:) context:nil];
@@ -587,8 +588,9 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
     if(![client isKindOfClass:[NSDictionary class]]||![[client objectForKey:@"preferences"] isKindOfClass:[NSDictionary class]]) {
         NSRunAlertPanel(@"Settings",@"Malformed client configuration.",@"OK",nil,nil);return;
     }
-    if(NSRunAlertPanel(@"Replace settings?",@"This replaces your preferences, API keys and tool settings. MCP servers are imported disabled. "
-        @"Your chats are unchanged. Export current settings first.",@"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
+    if(NSRunAlertPanel(@"Restore settings?",@"This restores your API keys and tool settings, and how the window looks (appearance, sidebar, sounds, text size). "
+        @"MCP servers are imported disabled. A file can switch a tool off or make Tiger Build ask first, but it cannot switch Commander, downloads or other tools on, "
+        @"stop the questions, or change where requests go or which programs run. Your chats are unchanged. Export current settings first.",@"Import",@"Cancel",nil)!=NSAlertDefaultReturn)return;
     NSString *text=[[[NSString alloc] initWithData:[backup objectForKey:@"relay"] encoding:NSUTF8StringEncoding] autorelease];
     [EngineRequest send:@"POST" path:@"/v1/config-import" body:text timeout:20 target:self action:@selector(settingsBackupImported:) context:backup];
 }
@@ -608,11 +610,13 @@ static NSString *const kRemoteCommander = @"\"/Applications/Tiger Build.app/Cont
 - (void)applyClientBackup:(NSDictionary *)backup
 {
     NSDictionary *client=[backup objectForKey:@"client"];
-    [[NSUserDefaults standardUserDefaults] setPersistentDomain:[client objectForKey:@"preferences"] forName:[[NSBundle mainBundle] bundleIdentifier]];
-    NSDictionary *commander=[client objectForKey:@"commander"];
-    if([commander isKindOfClass:[NSDictionary class]]) {
-        [self commanderCommand:([[commander objectForKey:@"remote"] intValue]!=0)?@"remote-on":@"remote-off"];
-        [self commanderCommand:([[commander objectForKey:@"enabled"] intValue]!=0)?@"start":@"stop"];
-    }
+    NSUserDefaults *defaults=[NSUserDefaults standardUserDefaults];
+    NSString *domainName=[[NSBundle mainBundle] bundleIdentifier];
+    NSMutableDictionary *domain=[NSMutableDictionary dictionaryWithDictionary:[defaults persistentDomainForName:domainName]];
+    /* Only how the window looks and a few harmless switches come back from a file. The rest of the preferences (addresses requests go to, paths of
+       programs and libraries, where updates come from, the questions asked before a tool runs) stay as the person set them here. The Commander
+       block of the file (turning other computers' access or Commander itself on or off) is not applied either: that is done in Preferences. */
+    [domain addEntriesFromDictionary:TBSafeImportedPreferences([client objectForKey:@"preferences"])];
+    [defaults setPersistentDomain:domain forName:domainName];
 }
 @end

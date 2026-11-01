@@ -40,6 +40,14 @@ int main(int argc, char **argv)
     n1 = [a takeNextId];
     n2 = [b takeNextId];
     n3 = [a takeNextId];
+    expectThat(TBWorkspaceNameOK(@"Work") && !TBWorkspaceNameOK(@"../../x") && !TBWorkspaceNameOK(@".hidden") && !TBWorkspaceNameOK(@"a:b") && !TBWorkspaceNameOK(@""), @"workspace names cannot be paths");
+    {
+        NSDictionary *p = TBSafeImportedPreferences([NSDictionary dictionaryWithObjectsAndKeys:@"https://evil", @"TBBaseURL.xai", [NSNumber numberWithBool:YES], @"TBRemoteSudo",
+            [NSNumber numberWithBool:YES], @"TBShowStats", @"x", @"TBThemePicture", nil]);
+        expectThat([p count] == 1 && [p objectForKey:@"TBShowStats"], @"a settings file sets only harmless preferences");
+        expectThat([TBSafeImportedSettings([NSDictionary dictionaryWithObjectsAndKeys:@"hi", @"instructions", @"/", @"folder", nil]) count] == 1, @"history settings keep only the safe few");
+        expectThat([TBMediaExtensionForData([NSData dataWithBytes:"\x89PNG\r\n\x1a\n\0\0\0\0" length:12], NO) isEqual:@"png"] && TBMediaExtensionForData([@"not a picture at all" dataUsingEncoding:NSUTF8StringEncoding], NO) == nil, @"media is told by its first bytes");
+    }
     expectThat(n1 != n2 && n2 != n3 && n1 != n3, @"chat numbers from two processes never repeat");
 
     [[a chats] addObject:chat([NSString stringWithFormat:@"%d", n1], @"from A", @"hello")];

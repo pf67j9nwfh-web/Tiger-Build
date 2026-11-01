@@ -8,18 +8,20 @@
 {
     if(!workspaceChoice) {
         NSString *name=[[NSUserDefaults standardUserDefaults] stringForKey:@"TigerBuildWorkspace"];
-        workspaceChoice=[([name length]?name:@"Default") copy];
+        workspaceChoice=[(TBWorkspaceNameOK(name)?name:@"Default") copy];   /* the name becomes a file name: a saved one that is not a plain name is not used */
     }
     return workspaceChoice;
 }
 - (void)setWorkspaceChoice:(NSString *)name
 {
+    if(!TBWorkspaceNameOK(name))name=@"Default";
     [workspaceChoice release];workspaceChoice=[name copy];
     [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"TigerBuildWorkspace"];
 }
 /* The file a workspace's chats live in. Default has always been chats.plist. */
 - (NSString *)pathForWorkspace:(NSString *)name
 {
+    if(!TBWorkspaceNameOK(name))name=@"Default";   /* never a path outside the workspaces folder */
     if([name isEqualToString:@"Default"])return [[self supportDir] stringByAppendingPathComponent:@"chats.plist"];
     return [[[[self supportDir] stringByAppendingPathComponent:@"workspaces"] stringByAppendingPathComponent:name] stringByAppendingString:@".plist"];
 }
@@ -52,7 +54,7 @@
 }
 - (void)switchWorkspace:(NSString *)name
 {
-    if([self anyRunActive]||naming) {NSBeep();return;}
+    if([self anyRunActive]||naming||!TBWorkspaceNameOK(name)) {NSBeep();return;}
     if([name isEqualToString:[self workspaceName]])return;
     [self forgetEdit];
     [self flushStore];

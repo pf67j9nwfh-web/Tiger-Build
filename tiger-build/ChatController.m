@@ -323,7 +323,7 @@ static NSMutableArray *allControllers = nil;
 - (NSString *)storePath
 {
     NSString *name=[self workspaceName];
-    if([name isEqualToString:@"Default"])return [[self supportDir] stringByAppendingPathComponent:@"chats.plist"];
+    if(!TBWorkspaceNameOK(name)||[name isEqualToString:@"Default"])return [[self supportDir] stringByAppendingPathComponent:@"chats.plist"];
     NSString *dir=[[self supportDir] stringByAppendingPathComponent:@"workspaces"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir attributes:nil];
     return [dir stringByAppendingPathComponent:[name stringByAppendingString:@".plist"]];

@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-static NSString *kVersion = @"2.8";
+static NSString *kVersion = @"2.8.1";
 
 /* ---- checkpoints: the files a turn's file tools are about to change, kept for /undo ---- */
 
@@ -515,7 +515,8 @@ static BOOL ruleMatches(NSString *rule, NSString *name, NSString *detail)
         return @"allow";
     if ([mode isEqualToString:@"plan"] && ([kind isEqualToString:@"edit"] || [kind isEqualToString:@"exec"]))
         return @"deny";
-    if ([kind isEqualToString:@"read"])
+    /* read_file can fetch an address: that reaches the network, so it is asked about like any other tool */
+    if ([kind isEqualToString:@"read"] && !([name hasPrefix:@"read_"] && [[event objectForKey:@"args"] rangeOfString:@"://"].location != NSNotFound))
         return @"allow";
     e = [allowRules objectEnumerator];
     while ((rule = [e nextObject]))

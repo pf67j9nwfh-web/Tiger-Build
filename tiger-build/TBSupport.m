@@ -213,8 +213,119 @@ NSString *TBCostDetail(NSDictionary *chat)
 
 BOOL TBWorkspaceNameOK(NSString *name)
 {
-    return [name length] > 0 && [name length] <= 60 && ![name hasPrefix:@"."]
-        && [name rangeOfString:@"/"].location == NSNotFound && [name rangeOfString:@":"].location == NSNotFound;
+    unsigned i;
+    if (![name isKindOfClass:[NSString class]] || [name length] == 0 || [name length] > 60 || [name hasPrefix:@"."]
+        || [name rangeOfString:@"/"].location != NSNotFound || [name rangeOfString:@":"].location != NSNotFound)
+        return NO;
+    for (i = 0; i < [name length]; i++)
+        if ([name characterAtIndex:i] < 32)
+            return NO;
+    return YES;
+}
+
+/* The preferences a settings file may bring back: how the window looks and a few harmless switches. Never an address a request goes to, a path of
+   a program or library or file, or a switch that takes away a question the person is asked. */
+NSDictionary *TBSafeImportedPreferences(NSDictionary *prefs)
+{
+    static NSArray *named = nil;
+    NSMutableDictionary *out = [NSMutableDictionary dictionary];
+    NSEnumerator *keys;
+    id key;
+    if (!named)
+        named = [[NSArray arrayWithObjects:@"TigerBuildAutoListed", @"TigerBuildAutoRouter", @"TigerBuildNewChatModel", @"TigerBuildSidebarHidden", @"TigerBuildSidebarWidth",
+            @"TBShowFinishTime", @"TBShowStats", @"TBSoundAlways", @"TBSoundOnFinish", @"TBServicesAutoCopy", @"TBVoiceAutoSpeak", @"TBCheckUpdates", @"TBTextScale", nil] retain];
+    if (![prefs isKindOfClass:[NSDictionary class]])
+        return out;
+    keys = [prefs keyEnumerator];
+    while ((key = [keys nextObject])) {
+        id value = [prefs objectForKey:key];
+        if (![key isKindOfClass:[NSString class]])
+            continue;
+        if (!([named containsObject:key] || ([key hasPrefix:@"TBTheme"] && ![key isEqualToString:@"TBThemePicture"]) || [key hasPrefix:@"NSWindow Frame "]))
+            continue;
+        if ([value isKindOfClass:[NSNumber class]] || ([value isKindOfClass:[NSString class]] && [value length] <= 200))
+            [out setObject:value forKey:key];
+        else if ([value isKindOfClass:[NSArray class]] && [value count] <= 4) {
+            unsigned i;
+            BOOL numbers = YES;
+            for (i = 0; i < [value count]; i++)
+                if (![[value objectAtIndex:i] isKindOfClass:[NSNumber class]])
+                    numbers = NO;
+            if (numbers)
+                [out setObject:value forKey:key];
+        }
+    }
+    return out;
+}
+
+/* What a workspace keeps besides its chats, as far as a history file may set it: the model new chats start with, the instructions, the notes about the
+   person, and the sampling numbers. Not the tool switches, the approvals or the folders Commander and the knowledge tools may use: those are the
+   person's own choice, and an imported file must not be able to turn off a question. */
+NSMutableDictionary *TBSafeImportedSettings(NSDictionary *settings)
+{
+    NSMutableDictionary *out = [NSMutableDictionary dictionary];
+    NSDictionary *last, *params;
+    NSArray *texts = [NSArray arrayWithObjects:@"instructions", @"memory", nil];
+    NSArray *numbers = [NSArray arrayWithObjects:@"temperature", @"top_p", @"max_tokens", nil];
+    unsigned i;
+    id value;
+    if (![settings isKindOfClass:[NSDictionary class]])
+        return out;
+    last = [settings objectForKey:@"last"];
+    if ([last isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *keep = [NSMutableDictionary dictionary];
+        NSArray *names = [NSArray arrayWithObjects:@"provider", @"model", nil];
+        for (i = 0; i < [names count]; i++) {
+            value = [last objectForKey:[names objectAtIndex:i]];
+            if ([value isKindOfClass:[NSString class]] && [value length] <= 200)
+                [keep setObject:value forKey:[names objectAtIndex:i]];
+        }
+        if ([keep count])
+            [out setObject:keep forKey:@"last"];
+    }
+    for (i = 0; i < [texts count]; i++) {
+        value = [settings objectForKey:[texts objectAtIndex:i]];
+        if ([value isKindOfClass:[NSString class]] && [value length] <= 20000)
+            [out setObject:value forKey:[texts objectAtIndex:i]];
+    }
+    value = [settings objectForKey:@"memoryOn"];
+    if ([value isKindOfClass:[NSNumber class]])
+        [out setObject:value forKey:@"memoryOn"];
+    params = [settings objectForKey:@"params"];
+    if ([params isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *keep = [NSMutableDictionary dictionary];
+        for (i = 0; i < [numbers count]; i++) {
+            value = [params objectForKey:[numbers objectAtIndex:i]];
+            if ([value isKindOfClass:[NSNumber class]])
+                [keep setObject:value forKey:[numbers objectAtIndex:i]];
+        }
+        if ([keep count])
+            [out setObject:keep forKey:@"params"];
+    }
+    return out;
+}
+
+/* The extension a picture or a video file ought to have, from its first bytes; nil when the bytes are neither. A file that came inside someone else's
+   chat is only treated as a picture or a video when it is one. */
+NSString *TBMediaExtensionForData(NSData *data, BOOL video)
+{
+    const unsigned char *b = [data bytes];
+    if ([data length] < 12)
+        return nil;
+    if (video) {
+        if (!memcmp(b + 4, "ftyp", 4))
+            return !memcmp(b + 8, "qt  ", 4) ? @"mov" : @"mp4";
+        if (!memcmp(b + 4, "moov", 4) || !memcmp(b + 4, "mdat", 4) || !memcmp(b + 4, "wide", 4))
+            return @"mov";
+        return nil;
+    }
+    if (!memcmp(b, "\x89PNG\r\n\x1a\n", 8))
+        return @"png";
+    if (b[0] == 0xff && b[1] == 0xd8 && b[2] == 0xff)
+        return @"jpg";
+    if (!memcmp(b, "GIF87a", 6) || !memcmp(b, "GIF89a", 6))
+        return @"gif";
+    return nil;
 }
 
 NSString *TBChatListProblem(id chats)

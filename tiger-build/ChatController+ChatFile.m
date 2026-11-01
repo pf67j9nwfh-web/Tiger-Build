@@ -116,6 +116,7 @@ static NSString *safeFileStem(NSString *title)
         NSMutableDictionary *attachment = [message objectForKey:@"attachment"];
         [message removeObjectForKey:@"open"];
         [message removeObjectForKey:@"pendingMedia"];
+        [message removeObjectForKey:@"tweetVideo"];     /* a path on this Mac, which a file cannot name */
         for (f = 0; f < [fields count] + 1; f++) {
             NSMutableDictionary *holder = f < [fields count] ? message : attachment;
             NSString *key = f < [fields count] ? [fields objectAtIndex:f] : @"path";
@@ -123,6 +124,7 @@ static NSString *safeFileStem(NSString *title)
             NSString *name;
             NSData *embedded;
             NSString *restored;
+            BOOL video, picture;
             if (!holder || ![value isKindOfClass:[NSString class]])
                 continue;
             if (![value hasPrefix:TB_FILE_PREFIX]) {
@@ -131,6 +133,18 @@ static NSString *safeFileStem(NSString *title)
             }
             name = [value substringFromIndex:[TB_FILE_PREFIX length]];
             embedded = [files objectForKey:name];
+            /* A picture or a video of someone else's chat is opened by the system's own decoders when it is shown, so it is kept only when its
+               first bytes say it is one, and under the name of what it is, not the name the file gave it. */
+            video = [key isEqualToString:@"video"];
+            picture = [key isEqualToString:@"image"] || (holder == attachment && [[attachment objectForKey:@"kind"] isEqualToString:@"image"]);
+            if ((video || picture) && [embedded isKindOfClass:[NSData class]]) {
+                NSString *ext = TBMediaExtensionForData(embedded, video);
+                if (!ext) {
+                    [holder removeObjectForKey:key];
+                    continue;
+                }
+                name = [[name stringByDeletingPathExtension] stringByAppendingPathExtension:ext];
+            }
             restored = [embedded isKindOfClass:[NSData class]]
                 ? [self restoredPathForEmbedded:embedded name:name directory:f < [fields count] ? @"media" : @"attachments"] : nil;
             if (restored)

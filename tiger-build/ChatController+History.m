@@ -160,8 +160,9 @@
     }
     [out setObject:list forKey:@"chats"];
     [out setObject:[NSNumber numberWithInt:number] forKey:@"next"];
+    /* only what cannot turn off a question or widen what a tool may reach (see TBSafeImportedSettings) */
     if ([[space objectForKey:@"settings"] isKindOfClass:[NSDictionary class]])
-        [out setObject:[space objectForKey:@"settings"] forKey:@"settings"];
+        [out setObject:TBSafeImportedSettings([space objectForKey:@"settings"]) forKey:@"settings"];
     return out;
 }
 
