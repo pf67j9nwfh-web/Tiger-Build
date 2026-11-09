@@ -20,7 +20,7 @@ static NSDictionary *converted(CFURLRef url)
 {
     NSData *data;
     NSDictionary *result = nil;
-    NSString *name = [(NSURL *)url lastPathComponent];
+    NSString *name = [[(NSURL *)url path] lastPathComponent];
     {
         /* the HEIC decoder (libde265) travels inside this plug-in, not inside an application */
         CFBundleRef bundle = CFBundleGetBundleWithIdentifier(CFSTR("local.tigerbuild.quicklook"));
@@ -354,7 +354,7 @@ static NSString *jsonText(CFURLRef url)
 OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview, CFURLRef url, CFStringRef contentTypeUTI, CFDictionaryRef options)
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    if ([[[(NSURL *)url pathExtension] lowercaseString] isEqualToString:@"json"]) {
+    if ([[[[(NSURL *)url path] pathExtension] lowercaseString] isEqualToString:@"json"]) {
         NSString *text = jsonText(url);
         if (text) {
             NSDictionary *props = [NSDictionary dictionaryWithObjectsAndKeys:@"UTF-8", (NSString *)kQLPreviewPropertyTextEncodingNameKey, @"text/plain", (NSString *)kQLPreviewPropertyMIMETypeKey, nil];
@@ -364,7 +364,7 @@ OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview,
         return noErr;
     }
     {
-        NSString *ext = [[(NSURL *)url pathExtension] lowercaseString];
+        NSString *ext = [[[(NSURL *)url path] pathExtension] lowercaseString];
         if ([[NSArray arrayWithObjects:@"md", @"markdown", @"mdown", @"mkd", nil] containsObject:ext]) {
             NSString *t = readText(url, 400000);
             if (t) setHTML(preview, pageHTML(markdownHTML(t)));
@@ -400,7 +400,7 @@ void CancelPreviewGeneration(void *thisInterface, QLPreviewRequestRef preview)
 OSStatus GenerateThumbnailForURL(void *thisInterface, QLThumbnailRequestRef thumbnail, CFURLRef url, CFStringRef contentTypeUTI, CFDictionaryRef options, CGSize maxSize)
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    if ([[NSArray arrayWithObjects:@"json", @"md", @"markdown", @"mdown", @"mkd", @"csv", @"tsv", nil] containsObject:[[(NSURL *)url pathExtension] lowercaseString]]) {
+    if ([[NSArray arrayWithObjects:@"json", @"md", @"markdown", @"mdown", @"mkd", @"csv", @"tsv", nil] containsObject:[[[(NSURL *)url path] pathExtension] lowercaseString]]) {
         [pool release];
         return noErr;
     }

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.8.2
+- **Quick Look on Leopard (10.5)**: the Quick Look plug-in failed on every file type there (JPEG XL, AVIF, HEIC, WebP, JSON, Markdown, CSV, Office, ZIP, EPUB) because it called two methods that only Snow Leopard has (`-[NSURL pathExtension]`, `-[NSURL lastPathComponent]`), so previews and thumbnails were empty. It works now.
+
 ## 2.8.1
 - **Cost in the window for chats made in `tb`**: `tb` did not load the price list, so every turn it made was recorded without a price and the window showed *Cost (est) N/A*. It loads it now, as the window does.
 - **`tb` over ssh sees the Keychain's contents or says why not**: an ssh session has its own locked view of the login Keychain, so keys, MCP servers and shared folders kept there were silently missing (an ssh `tb` showed no MCP servers and a shorter tool list). `tb` now says so at start; `tb unlock` unlocks the Keychain for that session (what you allowed `tb` to read, with Always Allow at the Mac, is then readable); `tb login --import`, run once at the Mac, copies the API keys *and* the MCP servers, shared folders and sign-ins to a private file (0600) that ssh sessions read. `tb keys` shows where each comes from.
