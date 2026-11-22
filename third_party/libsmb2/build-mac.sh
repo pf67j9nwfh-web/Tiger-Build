@@ -21,13 +21,15 @@ for f in $FILES; do
   gcc-4.2 -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5 -O2 -std=gnu99 -w $DEFS $INC -c $SRC/lib/$f -o build/64/$f.o
   gcc-4.2 -arch ppc64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5 -O2 -std=gnu99 -w $DEFS $INC -c $SRC/lib/$f -o build/p64/$f.o
 done
-# the server (../../smbd/tbsmbd.c) with them: bin/tbsmbd, ppc + i386 + x86_64
+# the server (../../smbd/tbsmbd.c) with them: bin/tbsmbd, ppc + i386 + x86_64 + ppc64
 mkdir -p bin
 gcc-4.0 -arch ppc -arch i386 -isysroot $D/MacOSX10.4u.sdk -mmacosx-version-min=10.4 -O2 -std=gnu99 -Wall $INC -c ../../smbd/tbsmbd.c -o build/32/tbsmbd.main
 gcc-4.2 -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5 -O2 -std=gnu99 -Wall $INC -c ../../smbd/tbsmbd.c -o build/64/tbsmbd.main
+gcc-4.2 -arch ppc64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5 -O2 -std=gnu99 -Wall $INC -c ../../smbd/tbsmbd.c -o build/p64/tbsmbd.main
 gcc-4.0 -arch ppc -arch i386 -isysroot $D/MacOSX10.4u.sdk -mmacosx-version-min=10.4 -o build/tbsmbd32 build/32/tbsmbd.main build/32/*.c.o
 gcc-4.2 -arch x86_64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5 -o build/tbsmbd64 build/64/tbsmbd.main build/64/*.c.o
-lipo -create build/tbsmbd32 build/tbsmbd64 -output bin/tbsmbd
+gcc-4.2 -arch ppc64 -isysroot $D/MacOSX10.5.sdk -mmacosx-version-min=10.5 -o build/tbsmbdp64 build/p64/tbsmbd.main build/p64/*.c.o
+lipo -create build/tbsmbd32 build/tbsmbd64 build/tbsmbdp64 -output bin/tbsmbd
 strip -x bin/tbsmbd
 rm -f lib/libsmb2-32.a lib/libsmb2-64x86.a lib/libsmb2-64ppc.a
 libtool -static -o lib/libsmb2-32.a build/32/*.o

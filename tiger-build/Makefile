@@ -111,23 +111,20 @@ test: tbtests
 clean:
 	rm -rf $(APP) "Tiger Build.app" tbtests build tb
 
-# The Spotlight importer for the chat files (see ../spotlight): ppc and i386 (10.4 SDK, so Tiger loads it) and x86_64. The app copies it to ~/Library/Spotlight
+# The Spotlight importer for the chat files (see ../spotlight): ppc and i386 (10.4 SDK, so Tiger loads it), x86_64 and ppc64. The app copies it to ~/Library/Spotlight
 # when Spotlight search of chats is switched on.
 MDDIR := TigerBuild.mdimporter
 mdimporter: ../spotlight/TBSpotlight.c ../spotlight/Info.plist
 	rm -rf $(MDDIR) build/md && mkdir -p build/md $(MDDIR)/Contents/MacOS
 	$(CC32) $(addprefix -arch ,$(ARCHS32)) -isysroot $(SDK32) -mmacosx-version-min=10.4 -Wall -Os -bundle -o build/md/md32 ../spotlight/TBSpotlight.c -framework CoreFoundation -framework CoreServices
-ifneq ($(findstring x86_64,$(ARCHS64)),)
-	$(CC64) -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Os -bundle -o build/md/mdx64 ../spotlight/TBSpotlight.c -framework CoreFoundation -framework CoreServices
-	lipo -create build/md/md32 build/md/mdx64 -output $(MDDIR)/Contents/MacOS/TigerBuildMD
-else
-	cp build/md/md32 $(MDDIR)/Contents/MacOS/TigerBuildMD
-endif
+	$(if $(findstring x86_64,$(ARCHS64)),$(CC64) -arch x86_64 -isysroot $(SDKX86) -mmacosx-version-min=10.5 -Wall -Os -bundle -o build/md/mdx64 ../spotlight/TBSpotlight.c -framework CoreFoundation -framework CoreServices)
+	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) -arch ppc64 -isysroot $(SDK64) -mmacosx-version-min=10.5 -Wall -Os -bundle -o build/md/mdp64 ../spotlight/TBSpotlight.c -framework CoreFoundation -framework CoreServices)
+	lipo -create build/md/md32 $$(ls build/md/mdx64 build/md/mdp64 2>/dev/null) -output $(MDDIR)/Contents/MacOS/TigerBuildMD
 	cp ../spotlight/Info.plist $(MDDIR)/Contents/Info.plist
 	rm -rf build/md
 
 # The Quick Look generator for Leopard and Snow Leopard (HEIC, AVIF, WebP, docx, xlsx, pptx, OpenDocument), built with the converter's sources.
-# ppc and i386 (10.5 SDK, which has the QuickLook framework) and x86_64; installed in /Library/QuickLook.
+# ppc and i386 (10.5 SDK, which has the QuickLook framework), x86_64 and ppc64; installed in /Library/QuickLook.
 QLDIR := TigerBuild.qlgenerator
 QLSRC := ../quicklook/TBQuickLook.m TBExtract.m TBOffice.m TBHEIC.m TBEngine.m TBHTTP.m TBJSON.m TBSupport.m TBMarkup.m TBEmoji.m TBMachine.m TBRun.m TBMCP.m TBOAuth.m
 quicklook: $(QLSRC) TBNet.c ../quicklook/Info.plist
@@ -136,9 +133,10 @@ quicklook: $(QLSRC) TBNet.c ../quicklook/Info.plist
 	$(CC32) $(CFLAGS32) -isysroot $(SDK64) -mmacosx-version-min=10.5 -fobjc-exceptions -I. -bundle -Wl,-w -o build/ql/ql32 $(QLSRC) build/ql/TBNet32.o $(LIBS32) -framework QuickLook
 	$(CC64) $(CFLAGSX86) -c -o build/ql/TBNetX64.o TBNet.c
 	$(CC64) $(CFLAGSX86) -fobjc-exceptions -I. -bundle -o build/ql/qlx64 $(QLSRC) build/ql/TBNetX64.o $(LIBSX86) -framework QuickLook
-	lipo -create build/ql/ql32 build/ql/qlx64 -output $(QLDIR)/Contents/MacOS/TigerBuildQL
+	$(if $(findstring ppc64,$(ARCHS64)),$(CC64) $(CFLAGSPPC64) -c -o build/ql/TBNetP64.o TBNet.c && $(CC64) $(CFLAGSPPC64) -fobjc-exceptions -I. -bundle -o build/ql/qlp64 $(QLSRC) build/ql/TBNetP64.o $(LIBS64) -framework QuickLook)
+	lipo -create build/ql/ql32 build/ql/qlx64 $$(ls build/ql/qlp64 2>/dev/null) -output $(QLDIR)/Contents/MacOS/TigerBuildQL
 	cp ../quicklook/Info.plist $(QLDIR)/Contents/Info.plist
-	lipo -create $(DE265)/lib/libde265-32.dylib $(DE265)/lib/libde265-64x86.dylib -output $(QLDIR)/Contents/Resources/libde265.dylib
+	lipo -create $(DE265)/lib/libde265-32.dylib $(DE265)/lib/libde265-64x86.dylib $(if $(findstring ppc64,$(ARCHS64)),$(DE265)/lib/libde265-64ppc.dylib) -output $(QLDIR)/Contents/Resources/libde265.dylib
 	cp $(DE265)/LICENSE $(QLDIR)/Contents/Resources/libde265-LICENSE.txt
 	cp $(AOM)/LICENSE $(QLDIR)/Contents/Resources/libaom-LICENSE.txt
 	rm -rf build/ql

@@ -8,11 +8,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SSH="${PPC_SSH:-$ROOT/ppc-commander/bin/ppc-ssh}"
 DIST="$ROOT/dist"
-VERSION="2.8.2"
+VERSION="2.8.3"
 mkdir -p "$DIST"
 
 "$SSH" 'killall TigerBuild >/dev/null 2>&1 || true'
-NO_OPEN=1 bash "$ROOT/scripts/install-tiger.sh"
+if [ -n "${PPC_BUILD_SSH:-}" ]; then
+  # Tiger has no 10.5 SDK, so the app built there is ppc + i386. Built on a Mac that has it (Leopard or Snow Leopard with Xcode 3.x), the app and tb
+  # also get ppc64 and x86_64 slices; Tiger only packs it (its mkbom is the one the 10.4 installer expects).
+  [ -n "${PPC_BUILD_SKIP:-}" ] || PPC_SSH="$PPC_BUILD_SSH" NO_OPEN=1 NO_DESKTOP=1 bash "$ROOT/scripts/install-tiger.sh"   # PPC_BUILD_SKIP=1: use the app already built there
+  "$SSH" 'mkdir -p "$HOME/TigerBuild-build/native" && rm -rf "$HOME/TigerBuild-build/native/TigerBuild.app"'
+  "$PPC_BUILD_SSH" 'cd "$HOME/TigerBuild-build/native" && COPYFILE_DISABLE=1 tar -cf - TigerBuild.app' | "$SSH" 'cd "$HOME/TigerBuild-build/native" && tar -xf -'
+  # what install-tiger.sh left on the builder and the packing below takes from this Mac
+  "$SSH" 'mkdir -p "$HOME/TigerBuild-build/third_party"'
+  COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT" -cf - third_party/openssh/bin third_party/openssh/LICENSE | "$SSH" 'cd "$HOME/TigerBuild-build" && tar -xf -'
+else
+  NO_OPEN=1 bash "$ROOT/scripts/install-tiger.sh"
+fi
 
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT" -cf - quicklook/TigerBuild.qlgenerator third_party/libsmb2/bin/tbsmbd third_party/libsmb2/LICENSE third_party/sshfs/bin/sshfs third_party/sshfs/LICENSE | "$SSH" 'cd "$HOME/TigerBuild-build" && tar -xf -'
 COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/installer" -cf - tbssh | "$SSH" 'rm -rf "$HOME/TigerBuild-build/tbssh" && cd "$HOME/TigerBuild-build" && tar -xf -'
@@ -21,7 +32,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs --format gnutar -C "$ROOT/installer" -cf - tb
 set -e
 APP="$HOME/TigerBuild-build/native/TigerBuild.app"
 PAYLOAD="$HOME/TigerBuild-pkg-payload"
-PKG="$HOME/TigerBuild-2.8.2.pkg"
+PKG="$HOME/TigerBuild-2.8.3.pkg"
 if [ ! -d "$APP" ]; then
   echo "Missing $APP" >&2
   exit 1
@@ -60,13 +71,13 @@ cat > "$PKG/Contents/Info.plist" << PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleGetInfoString</key>
-  <string>Tiger Build 2.8.2</string>
+  <string>Tiger Build 2.8.3</string>
   <key>CFBundleIdentifier</key>
   <string>local.tigerbuild.TigerBuild.pkg</string>
   <key>CFBundleName</key>
   <string>Tiger Build</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.8.2</string>
+  <string>2.8.3</string>
   <key>IFMajorVersion</key>
   <integer>1</integer>
   <key>IFMinorVersion</key>
@@ -104,7 +115,7 @@ cat > "$PKG/Contents/Resources/English.lproj/Description.plist" << PLIST
   <key>IFPkgDescriptionTitle</key>
   <string>Tiger Build</string>
   <key>IFPkgDescriptionVersion</key>
-  <string>2.8.2</string>
+  <string>2.8.3</string>
   <key>IFPkgDescriptionDescription</key>
   <string>Installs Tiger Build on Mac OS X 10.4 to 10.6; Commander, which lets a chat use this Mac's files and shell, is inside the application. Tiger Build's own SSH server is installed switched off (it starts only when you turn on Allow Other Computers and give an administrator password). No API keys are included: in Tiger Build Preferences, add a key for each service you use, or the address of a local LLM server. No other computer is needed.</string>
 </dict>
@@ -116,6 +127,6 @@ echo "PACKAGED"
 REMOTE
 
 rm -rf "$DIST/TigerBuild-$VERSION.pkg"
-"$SSH" 'tar -C "$HOME" -cf - TigerBuild-2.8.2.pkg' | tar -C "$DIST" -xf -
+"$SSH" 'tar -C "$HOME" -cf - TigerBuild-2.8.3.pkg' | tar -C "$DIST" -xf -
 echo "Wrote $DIST/TigerBuild-$VERSION.pkg"
-"$SSH" 'open "$HOME/Desktop/Tiger Build.app"'
+"$SSH" 'open "$HOME/Desktop/Tiger Build.app"' || true

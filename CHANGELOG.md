@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.3
+- **Everything now has a ppc64 slice, for the G5 on Leopard**: the app, `tb`, Commander, the bundled OpenSSH programs (`ssh`, `sshd`, `scp`, `sftp` and the rest; built against a ppc64 LibreSSL), `sshfs`, `tbsmbd`, the Quick Look generator (with its HEIC decoder) and the Spotlight importer. They were 32-bit PowerPC only (or Intel only) before. The installer's app used to be built on Tiger and had no 64-bit slice at all; it is now built on Snow Leopard and packed on Tiger, so a G5 with Leopard runs it as a 64-bit program.
+- **Terminal sessions into Tiger Build's SSH server work on Leopard with an Intel Mac**: the 64-bit `sshd` could not hand a terminal to a session there ("mm_send_fd: sendmsg: Bad file descriptor": the sessions that ran a command worked, an interactive shell did not). Leopard's kernel wants the packed layout of the descriptor message from a 64-bit program, as Snow Leopard's does; the program was asking for the other one on Leopard. The ppc64 `sshd` needs the same layout. Checked with ssh (with a terminal), scp and sftp on Leopard Intel, Snow Leopard, Tiger Intel and a G5.
+
 ## 2.8.2
 - **Quick Look on Leopard (10.5)**: the Quick Look plug-in failed on every file type there (JPEG XL, AVIF, HEIC, WebP, JSON, Markdown, CSV, Office, ZIP, EPUB) because it called two methods that only Snow Leopard has (`-[NSURL pathExtension]`, `-[NSURL lastPathComponent]`), so previews and thumbnails were empty. It works now.
 

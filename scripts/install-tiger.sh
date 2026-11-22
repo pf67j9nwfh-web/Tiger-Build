@@ -46,7 +46,7 @@ if ! make tb > tb.log 2>&1; then cat tb.log; echo "make tb failed" >&2; exit 1; 
 cp tb TigerBuild.app/Contents/Resources/tb
 test -x TigerBuild.app/Contents/MacOS/TigerBuild'
 "$SSH" 'cd "$HOME/TigerBuild-build" && rm -rf native.old && mv native native.old && mv native.new native
-rm -rf "$HOME/Desktop/Tiger Build.app" && cp -R native/TigerBuild.app "$HOME/Desktop/Tiger Build.app"'
+[ '"${NO_DESKTOP:-0}"' = 1 ] || { rm -rf "$HOME/Desktop/Tiger Build.app" && cp -R native/TigerBuild.app "$HOME/Desktop/Tiger Build.app"; }'
 
 # The root-owned policy file can only tighten Commander. It needs sudo on
 # the Mac, so it is optional: set TIGER_SUDO_POLICY=1 to be prompted.

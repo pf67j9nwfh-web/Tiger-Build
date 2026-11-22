@@ -10,7 +10,7 @@ This build has ML-KEM and curve25519 key exchange, ed25519, ECDSA and RSA keys, 
 - **Licence:** BSD and ISC (`LICENSE`); also copied into the app (`openssh-LICENSE.txt`) and to `/usr/local/tbssh/LICENSE`.
 - **Source:** https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.6p1.tar.gz, checked against the SHA-256 in the release announcement by `fetch.sh`.
 - **Modifications:** none to the sources. It is built **with LibreSSL** (`third_party/libressl`, libcrypto only, linked statically), so every key type works. Tiger Build uses ed25519 with current hosts and RSA with a stock old Remote Login (Tiger to Snow Leopard), switching the old algorithms back on for that host with `-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa -o MACs=+hmac-sha1`; it remembers which, per host, when the host is trusted. From a terminal use the same options for an old host.
-- **Built how:** universal programs in `bin/`: ppc + i386 (10.4 and later, no PIE) and x86_64 (10.5 and later); no sandbox in any (see build-mac.sh). No ppc64 slice: a G5 runs the 32-bit one.
+- **Built how:** universal programs in `bin/`: ppc + i386 (10.4 and later, no PIE), x86_64 and ppc64 (10.5 and later; the ppc64 one has no PIE); no sandbox in any (see build-mac.sh). The ppc64 slice was built and tested (login with ed25519 and RSA keys, a terminal, scp, sftp) on a G5 with Leopard. Both 64-bit slices pass a terminal to the session with the packed control-message layout (patches/darwin-fdpass.patch) on every system.
 
 ## Rebuilding
 

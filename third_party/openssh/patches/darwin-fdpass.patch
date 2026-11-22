@@ -1,23 +1,17 @@
---- a/monitor_fdpass.c	2026-10-20 19:39:03
-+++ b/monitor_fdpass.c	2026-10-20 19:39:03
-@@ -39,6 +39,25 @@
+--- a/monitor_fdpass.c
++++ b/monitor_fdpass.c
+@@ -39,6 +39,19 @@
  #include "log.h"
  #include "monitor_fdpass.h"
  
-+#if defined(__APPLE__) && defined(__x86_64__)
-+#include <sys/utsname.h>
++#if defined(__APPLE__) && (defined(__x86_64__) || defined(__ppc64__))
 +/* A 64-bit program built with the 10.5 SDK lays a control message out with an 8-byte aligned header (the descriptor 16 bytes in); the kernels of
-+   10.6 and later pack it (a 12-byte header, the descriptor right after) and refuse or misread the 10.5 layout, so the server could not hand a
-+   terminal to its session. 10.5's own kernel wants the 10.5 layout. The layout is chosen by the system the program runs on. */
++   10.5 (checked on 10.5.8, Intel and G5) and 10.6 pack it (a 12-byte header, the descriptor right after) and refuse or misread the SDK's layout, so the
++   server could not hand a terminal to its session ("sendmsg: Invalid argument" or "Bad file descriptor"). The 32-bit programs are not affected. */
 +static int
 +tb_cmsg_packed(void)
 +{
-+	static int packed = -1;
-+	struct utsname u;
-+
-+	if (packed < 0)
-+		packed = uname(&u) == 0 && atoi(u.release) >= 10;
-+	return packed;
++	return 1;
 +}
 +#else
 +#define tb_cmsg_packed() 0
@@ -26,7 +20,7 @@
  int
  mm_send_fd(int sock, int fd)
  {
-@@ -69,6 +88,15 @@
+@@ -69,6 +82,15 @@
  	cmsg->cmsg_level = SOL_SOCKET;
  	cmsg->cmsg_type = SCM_RIGHTS;
  	*(int *)CMSG_DATA(cmsg) = fd;
@@ -42,7 +36,7 @@
  #endif
  
  	vec.iov_base = &ch;
-@@ -154,6 +182,19 @@
+@@ -154,6 +176,19 @@
  		return -1;
  	}
  #else

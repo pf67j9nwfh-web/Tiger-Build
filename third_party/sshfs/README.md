@@ -5,7 +5,7 @@
 - **Licence:** GPL-2.0 (`LICENSE`). glib is LGPL-2.1 and is linked statically; its source is in `src/` after `fetch.sh`.
 - **Source:** sshfs-fuse 2.2 from the SourceForge release (the Wayback Machine's copy, the link is gone), glib 2.16.6 from download.gnome.org, pkg-config 0.23 from freedesktop.org; all checked against SHA-256 by `fetch.sh`.
 - **Modifications:** MacFUSE's patch for sshfs 2.2 (`patches/sshfs-2.2-macosx.patch`: Darwin semaphores, volume name, `-F`), built with `-D__FreeBSD__=10 -DDARWIN_SEMAPHORE_COMPAT`. glib's configure is patched to skip the gettext check.
-- **Linked how:** glib statically; libfuse dynamically from `/usr/local/lib`. One universal program (ppc, i386, x86_64), joined with `lipo`.
+- **Linked how:** glib statically; libfuse dynamically from `/usr/local/lib`. One universal program (ppc, i386, x86_64, ppc64), joined with `lipo`.
 
 ## Using it
 
@@ -24,9 +24,11 @@ Unmount with `umount ~/mnt`.
 ## Rebuilding
 
     ./fetch.sh                    # on a current Mac: download, verify
-    ./build-native.sh SLICE       # on a Mac of that kind (ppc, i386 or x86_64), with MacFUSE's SDK in ~/fuse-sdk: bin/sshfs-SLICE
+    ./build-native.sh SLICE       # on a Mac of that kind (ppc, i386, x86_64 or ppc64), with MacFUSE's SDK in ~/fuse-sdk: bin/sshfs-SLICE
     ./join.sh                     # bin/sshfs
 
 The ppc slice was linked on Snow Leopard (`gcc-4.2 -arch ppc -isysroot` the 10.5 SDK) from objects and glib built on Tiger, because Tiger's linker would not take MacFUSE's libfuse; it has not been run on a PowerPC Mac.
+
+The ppc64 slice was built on a G5 with Leopard (`gcc-4.2 -arch ppc64`, glib built as ppc64 as well) and starts with MacFUSE 2.0.3's libfuse (its `-V` prints the versions); it has not mounted anything.
 
 `bin/sshfs` is kept in git.

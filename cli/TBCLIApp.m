@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-static NSString *kVersion = @"2.8.2";
+static NSString *kVersion = @"2.8.3";
 
 /* ---- checkpoints: the files a turn's file tools are about to change, kept for /undo ---- */
 

@@ -5,7 +5,7 @@
 - **Licence:** ISC for LibreSSL's own code, with the original OpenSSL and SSLeay licences for the code derived from them (`LICENSE`); also in the OpenSSH package's licence folder.
 - **Source:** https://cdn.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.3.3.tar.gz, checked against its SHA-256 by `fetch.sh`.
 - **Modifications:** none. Assembly is switched off (`--disable-asm`: Xcode 3.2's assembler cannot read it) and only `crypto/` is built.
-- **Linked how:** statically, as `lib/ppc`, `lib/i386` and `lib/x86_64` (`libcrypto.a`, stripped and re-indexed with `ranlib`), with the headers in `include/`.
+- **Linked how:** statically, as `lib/ppc`, `lib/i386`, `lib/x86_64` and `lib/ppc64` (`libcrypto.a`, stripped and re-indexed with `ranlib`), with the headers in `include/`.
 
 ## Rebuilding
 
