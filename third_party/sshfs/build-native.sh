@@ -7,9 +7,11 @@ set -e
 cd "$(dirname "$0")"
 SLICE=${1:?slice}
 FUSE=${2:-/usr/local}
-# ppc64 is not the default of any Mac this runs on: ask for it (a G5 with Leopard and Xcode 3, the 10.5 SDK, gcc 4.2)
+# the 64-bit slices are built on Leopard (Xcode 3, the 10.5 SDK, gcc 4.2): a G5 for ppc64, an Intel Mac for x86_64. Built on Snow Leopard, the x86_64 slice mounted but hung on Leopard
 ARCH=
-if [ "$SLICE" = ppc64 ]; then ARCH="-arch ppc64 -isysroot /Developer/SDKs/MacOSX10.5.sdk -mmacosx-version-min=10.5"; export CC=gcc-4.2; fi
+if [ "$SLICE" = ppc64 ] || [ "$SLICE" = x86_64 ]; then ARCH="-arch $SLICE -isysroot /Developer/SDKs/MacOSX10.5.sdk -mmacosx-version-min=10.5"; export CC=gcc-4.2; fi
+# the 32-bit slices are built on Tiger itself: its libiconv is version 5, which the 10.5 SDK's would not load there
+MINV=-mmacosx-version-min=10.5; case "$SLICE" in ppc|i386) MINV=-mmacosx-version-min=10.4;; esac
 ROOT="$PWD"
 W="$ROOT/build/$SLICE"
 rm -rf "$W" && mkdir -p "$W" "$ROOT/bin"
@@ -29,7 +31,7 @@ export PKG_CONFIG_PATH="$W/root/lib/pkgconfig"
   && SSHFS_CFLAGS="-I$FUSE/include/fuse -D_FILE_OFFSET_BITS=64 -D_REENTRANT $(pkg-config --cflags glib-2.0 gthread-2.0)" \
      SSHFS_LIBS="-L$FUSE/lib -lfuse $(pkg-config --libs glib-2.0 gthread-2.0)" \
      CFLAGS="$ARCH -O2 -D__FreeBSD__=10 -DDARWIN_SEMAPHORE_COMPAT" ./configure --prefix="$W/root" > ../sshfs.log 2>&1 \
-  && make LDFLAGS="$ARCH -framework Carbon -liconv -mmacosx-version-min=10.5" >> ../sshfs.log 2>&1 )
+  && make LDFLAGS="$ARCH -framework Carbon -liconv $MINV" >> ../sshfs.log 2>&1 )
 cp sshfs-fuse-2.2/sshfs "$ROOT/bin/sshfs-$SLICE"
 strip -x "$ROOT/bin/sshfs-$SLICE"
 file "$ROOT/bin/sshfs-$SLICE"

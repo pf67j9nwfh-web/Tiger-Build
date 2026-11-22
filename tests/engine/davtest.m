@@ -50,6 +50,18 @@ int main(int argc, char **argv)
     expectThat([TBDAV addressForShare:@"nope" problem:&problem] == nil && [problem length], @"dav: an unknown share is refused");
     out = dav(@"OPTIONS", url, nil, nil, &status);
     expectThat(status == 200, @"dav: OPTIONS");
+    if (getenv("TB_TEST_OTHER_USER")) {      /* another account that knows the whole address is not served (needs passwordless sudo to it) */
+        NSTask *t = [[[NSTask alloc] init] autorelease];
+        NSPipe *pp = [NSPipe pipe];
+        NSData *d;
+        [t setLaunchPath:@"/usr/bin/sudo"];
+        [t setArguments:[NSArray arrayWithObjects:@"-n", @"-u", [NSString stringWithUTF8String:getenv("TB_TEST_OTHER_USER")], @"/usr/bin/curl", @"-s", @"-i", @"-X", @"OPTIONS", url, nil]];
+        [t setStandardOutput:pp];
+        [t launch];
+        d = [[pp fileHandleForReading] readDataToEndOfFile];
+        [t waitUntilExit];
+        expectThat([d length] == 0, @"dav: another account is refused even with the address");
+    }
     out = dav(@"PROPFIND", url, [NSArray arrayWithObjects:@"-H", @"Depth: 1", nil], nil, &status);
     expectThat(status == 207 && [out rangeOfString:@"hello.txt"].length && [out rangeOfString:@"<D:collection/>"].length && [out rangeOfString:@"docs/"].length && [out rangeOfString:@"<D:getcontentlength>21</D:getcontentlength>"].length, @"dav: PROPFIND lists the files and folders with their sizes");
     out = dav(@"PROPFIND", [url stringByAppendingString:@"docs/"], [NSArray arrayWithObjects:@"-H", @"Depth: 1", nil], nil, &status);

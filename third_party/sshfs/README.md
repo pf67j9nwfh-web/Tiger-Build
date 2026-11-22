@@ -5,7 +5,7 @@
 - **Licence:** GPL-2.0 (`LICENSE`). glib is LGPL-2.1 and is linked statically; its source is in `src/` after `fetch.sh`.
 - **Source:** sshfs-fuse 2.2 from the SourceForge release (the Wayback Machine's copy, the link is gone), glib 2.16.6 from download.gnome.org, pkg-config 0.23 from freedesktop.org; all checked against SHA-256 by `fetch.sh`.
 - **Modifications:** MacFUSE's patch for sshfs 2.2 (`patches/sshfs-2.2-macosx.patch`: Darwin semaphores, volume name, `-F`), built with `-D__FreeBSD__=10 -DDARWIN_SEMAPHORE_COMPAT`. glib's configure is patched to skip the gettext check.
-- **Linked how:** glib statically; libfuse dynamically from `/usr/local/lib`. One universal program (ppc, i386, x86_64, ppc64), joined with `lipo`.
+- **Linked how:** glib statically; libfuse dynamically from `/usr/local/lib`. One universal program (ppc, i386, x86_64, ppc64), joined with `lipo`. Each slice is built on a Mac that runs it: ppc and i386 on Tiger (Tiger's `libiconv` is version 5; a slice built on a newer system will not load there), x86_64 and ppc64 on Leopard (the x86_64 slice built on Snow Leopard mounted on Leopard but hung). All four have mounted a folder, read, written and unmounted on Tiger PPC, Tiger Intel, Leopard Intel and a G5.
 
 ## Using it
 

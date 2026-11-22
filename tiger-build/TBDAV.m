@@ -815,20 +815,59 @@ static BOOL readRequest(Conn *c, Request *r)
     return YES;
 }
 
+/* The address (and so the token in it) is visible to other accounts in ps and in the mount table, so it is not what keeps them out: a connection is
+   served only when the program on the other end of it belongs to this account, which lsof reads from the connection's client end. If that cannot be
+   told, the connection is refused. */
+static BOOL peerIsThisAccount(int clientPort)
+{
+    NSTask *task = [[[NSTask alloc] init] autorelease];
+    NSPipe *pipe = [NSPipe pipe];
+    NSData *data = nil;
+    NSString *out, *mine = [NSString stringWithFormat:@"n127.0.0.1:%d->127.0.0.1:%d", clientPort, listenPort], *uid = nil, *line;
+    NSEnumerator *e;
+    [task setLaunchPath:@"/usr/sbin/lsof"];
+    [task setArguments:[NSArray arrayWithObjects:@"-nP", @"-F", @"pun", [NSString stringWithFormat:@"-iTCP@127.0.0.1:%d", clientPort], nil]];
+    [task setStandardOutput:pipe];
+    [task setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+    [task setStandardInput:[NSFileHandle fileHandleWithNullDevice]];
+    NS_DURING
+        [task launch];
+        data = [[pipe fileHandleForReading] readDataToEndOfFile];
+        [task waitUntilExit];
+    NS_HANDLER
+        return NO;
+    NS_ENDHANDLER
+    out = [[[NSString alloc] initWithData:data ? data : [NSData data] encoding:NSUTF8StringEncoding] autorelease];
+    for (e = [[out componentsSeparatedByString:@"\n"] objectEnumerator]; (line = [e nextObject]); ) {
+        if ([line hasPrefix:@"p"])
+            uid = nil;
+        else if ([line hasPrefix:@"u"])
+            uid = [line substringFromIndex:1];
+        else if ([line isEqualToString:mine] && uid)      /* the client's own end: its local port is the client port */
+            return [uid intValue] == (int)getuid();
+    }
+    return NO;
+}
+
 @interface TBDAVServer : NSObject
-+ (void)serveConnection:(NSNumber *)fd;
++ (void)serveConnection:(NSArray *)fdAndPort;
 + (void)acceptLoop:(NSNumber *)unused;
 @end
 
 @implementation TBDAVServer
 
-+ (void)serveConnection:(NSNumber *)fdNumber
++ (void)serveConnection:(NSArray *)fdAndPort
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     Conn conn;
     int one = 1;
     struct timeval wait;
-    conn.fd = [fdNumber intValue];
+    conn.fd = [[fdAndPort objectAtIndex:0] intValue];
+    if (!peerIsThisAccount([[fdAndPort objectAtIndex:1] intValue])) {
+        close(conn.fd);
+        [pool release];
+        return;
+    }
     conn.buffer = [NSMutableData data];
     setsockopt(conn.fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
     wait.tv_sec = 120;
@@ -875,7 +914,7 @@ static BOOL readRequest(Conn *c, Request *r)
             [pool release];
             continue;
         }
-        [NSThread detachNewThreadSelector:@selector(serveConnection:) toTarget:self withObject:[NSNumber numberWithInt:fd]];
+        [NSThread detachNewThreadSelector:@selector(serveConnection:) toTarget:self withObject:[NSArray arrayWithObjects:[NSNumber numberWithInt:fd], [NSNumber numberWithInt:ntohs(from.sin_port)], nil]];
         [pool release];
     }
 }
